@@ -1,0 +1,10 @@
+export const EXTENSION_DISPLAY_NAME = "IssueMe";
+export const EXTENSION_STATUS_KEY = "issueme";
+export const EXTENSION_COMMAND_NAME = "issueme";
+export const DEFAULT_CONFIG_PATH = ".pi/agent/issueme.json";
+export const DEFAULT_ISSUES_DIR = "issues";
+export const ISSUE_SCHEMA_VERSION = 1;
+export const GITHUB_API_BASE_URL = "https://api.github.com";
+export const GITHUB_API_VERSION = "2022-11-28";
+export const LOCAL_ISSUE_FILE_EXTENSION = ".json";
+export const MAX_TITLE_SLUG_LENGTH = 80;
