@@ -1,0 +1,68 @@
+{
+  "generatedBy": "npm run test:tui-artifacts",
+  "cases": [
+    {
+      "file": "wide-category-focus.txt",
+      "width": 80,
+      "description": "Wide two-pane layout with category pane focused.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    },
+    {
+      "file": "wide-settings-focus.txt",
+      "width": 80,
+      "description": "Wide two-pane layout with settings pane focused.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    },
+    {
+      "file": "narrow-category.txt",
+      "width": 48,
+      "description": "Narrow category-only view.",
+      "lineCount": 11,
+      "maxLineLength": 48
+    },
+    {
+      "file": "narrow-settings.txt",
+      "width": 48,
+      "description": "Narrow settings-only view.",
+      "lineCount": 11,
+      "maxLineLength": 48
+    },
+    {
+      "file": "tiny.txt",
+      "width": 20,
+      "description": "Tiny no-border fallback.",
+      "lineCount": 4,
+      "maxLineLength": 20
+    },
+    {
+      "file": "search-results.txt",
+      "width": 80,
+      "description": "Search view with matching settings.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    },
+    {
+      "file": "search-empty.txt",
+      "width": 80,
+      "description": "Search view with no matching settings.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    },
+    {
+      "file": "edit-state.txt",
+      "width": 80,
+      "description": "Inline editing footer state.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    },
+    {
+      "file": "validation-error.txt",
+      "width": 80,
+      "description": "Validation error footer state.",
+      "lineCount": 15,
+      "maxLineLength": 80
+    }
+  ]
+}

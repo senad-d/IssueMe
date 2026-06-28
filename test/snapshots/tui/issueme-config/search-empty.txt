@@ -1,0 +1,15 @@
+╭─ Configuration ───────────────────────────────────────────────────── Search ─╮
+│writes .pi/agent/issueme.json • external overrides may apply                  │
+│↑↓ move  Enter edit  Esc clear  q quit                                        │
+├─────────────────────┬────────────────────────────────────────────────────────┤
+│▶ Cache              │SEARCH NOPE                                          0/0│
+│  Defaults           │  No matching settings                                  │
+│  Workflow           │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+├─────────────────────┴────────────────────────────────────────────────────────┤
+│Search: nope • 0/0 • Local issue-cache behavior.                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

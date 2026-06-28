@@ -3,31 +3,14 @@ import { join } from "node:path";
 
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { GitHubRepository } from "../types.ts";
+import { resolveCommonGitDirectory, resolveGitDirectory, resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const REPO_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export function parseGitHubRepository(value: string): GitHubRepository | undefined {
-	const input = value.trim();
-	if (!input) return undefined;
-
-	const shorthand = parseOwnerRepo(input);
-	if (shorthand) return shorthand;
-
-	const scpLike = input.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
-	if (scpLike) return parseOwnerRepo(`${scpLike[1]}/${scpLike[2]}`);
-
-	try {
-		const url = new URL(input);
-		if (url.hostname.toLowerCase() !== "github.com") return undefined;
-		const pathParts = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
-		if (pathParts.length < 2) return undefined;
-		const owner = decodeURIComponent(pathParts[0] ?? "");
-		const repo = decodeURIComponent((pathParts[1] ?? "").replace(/\.git$/i, ""));
-		return parseOwnerRepo(`${owner}/${repo}`);
-	} catch {
-		return undefined;
-	}
+	const parsed = classifyRepositorySource(value);
+	return parsed.kind === "github" ? parsed.repository : undefined;
 }
 
 export function parseGitConfigOriginUrl(configText: string): string | undefined {
@@ -49,6 +32,7 @@ export function parseGitConfigOriginUrl(configText: string): string | undefined 
 export async function resolveCurrentRepository(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
+	options: { allowGitConfig?: boolean } = {},
 ): Promise<GitHubRepository> {
 	const envRepository = env.GITHUB_REPOSITORY?.trim();
 	if (envRepository) {
@@ -60,29 +44,101 @@ export async function resolveCurrentRepository(
 		);
 	}
 
-	let gitConfig: string;
-	try {
-		gitConfig = await readFile(join(cwd, ".git", "config"), "utf8");
-	} catch (error) {
-		if (isNodeError(error) && error.code === "ENOENT") {
-			throw new IssueMeError(
-				"repository_not_found",
-				"Unable to resolve GitHub repository. Set GITHUB_REPOSITORY or run IssueMe in a GitHub checkout.",
-			);
-		}
-		throw new IssueMeError("repository_read_failed", "Unable to read .git/config for repository resolution.");
+	if (options.allowGitConfig === false) {
+		throw new IssueMeError(
+			"repository_untrusted_project",
+			"Project trust is required before IssueMe reads local Git config for repository resolution.",
+		);
 	}
 
-	const originUrl = parseGitConfigOriginUrl(gitConfig);
+	const root = await resolveIssueMeProjectRoot(cwd);
+	if (!root.gitRootFound) {
+		throw new IssueMeError(
+			"repository_not_found",
+			"Unable to resolve GitHub repository. Set GITHUB_REPOSITORY or run IssueMe in a GitHub checkout.",
+		);
+	}
+
+	const configTexts = await readRepositoryConfigTexts(root.root);
+	const originUrl = configTexts.map(parseGitConfigOriginUrl).find((url) => url !== undefined);
 	if (!originUrl) {
-		throw new IssueMeError("repository_origin_missing", "No origin remote URL found in .git/config.");
+		throw new IssueMeError("repository_origin_missing", "No origin remote URL found in local Git config.");
 	}
 
-	const parsed = parseGitHubRepository(originUrl);
-	if (!parsed) {
+	const parsed = classifyRepositorySource(originUrl);
+	if (parsed.kind === "github") return parsed.repository;
+	if (parsed.kind === "non_github") {
 		throw new IssueMeError("repository_origin_not_github", "The origin remote is not a supported GitHub repository URL.");
 	}
-	return parsed;
+	throw new IssueMeError("repository_origin_malformed", "The origin remote URL is malformed and cannot be resolved as a GitHub repository.");
+}
+
+async function readRepositoryConfigTexts(gitRoot: string): Promise<string[]> {
+	try {
+		const gitDirectory = await resolveGitDirectory(gitRoot);
+		const commonGitDirectory = await resolveCommonGitDirectory(gitDirectory);
+		const candidatePaths = uniquePaths([
+			join(gitDirectory, "config"),
+			join(gitDirectory, "config.worktree"),
+			join(commonGitDirectory, "config"),
+		]);
+		const configTexts: string[] = [];
+		for (const path of candidatePaths) {
+			const text = await readConfigIfExists(path);
+			if (text !== undefined) configTexts.push(text);
+		}
+		return configTexts;
+	} catch (error) {
+		if (error instanceof IssueMeError) throw error;
+		throw new IssueMeError("repository_read_failed", "Unable to read Git config for repository resolution.");
+	}
+}
+
+async function readConfigIfExists(path: string): Promise<string | undefined> {
+	try {
+		return await readFile(path, "utf8");
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function uniquePaths(paths: string[]): string[] {
+	return [...new Set(paths)];
+}
+
+type RepositorySourceClassification =
+	| { kind: "github"; repository: GitHubRepository }
+	| { kind: "non_github" }
+	| { kind: "malformed" };
+
+function classifyRepositorySource(value: string): RepositorySourceClassification {
+	const input = value.trim();
+	if (!input) return { kind: "malformed" };
+
+	const shorthand = parseOwnerRepo(input);
+	if (shorthand) return { kind: "github", repository: shorthand };
+
+	const scpLike = input.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/);
+	if (scpLike && !input.includes("://")) {
+		const host = scpLike[1]?.toLowerCase();
+		if (host !== "github.com") return { kind: "non_github" };
+		const repository = parseOwnerRepo(scpLike[2] ?? "");
+		return repository ? { kind: "github", repository } : { kind: "malformed" };
+	}
+
+	try {
+		const url = new URL(input);
+		if (url.hostname.toLowerCase() !== "github.com") return { kind: "non_github" };
+		const pathParts = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+		if (pathParts.length !== 2) return { kind: "malformed" };
+		const owner = safeDecodeURIComponent(pathParts[0] ?? "");
+		const repo = safeDecodeURIComponent((pathParts[1] ?? "").replace(/\.git$/i, ""));
+		const repository = parseOwnerRepo(`${owner}/${repo}`);
+		return repository ? { kind: "github", repository } : { kind: "malformed" };
+	} catch {
+		return { kind: "malformed" };
+	}
 }
 
 function parseOwnerRepo(value: string): GitHubRepository | undefined {
@@ -92,4 +148,12 @@ function parseOwnerRepo(value: string): GitHubRepository | undefined {
 	if (!owner || !repo) return undefined;
 	if (!OWNER_PATTERN.test(owner) || !REPO_PATTERN.test(repo)) return undefined;
 	return { owner, repo, fullName: `${owner}/${repo}` };
+}
+
+function safeDecodeURIComponent(value: string): string {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return "";
+	}
 }

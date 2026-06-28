@@ -1,0 +1,15 @@
+╭─ Configuration ──────────────────────────────────────────────────── Project ─╮
+│writes .pi/agent/issueme.json • external overrides may apply                  │
+│↑↓ move  Tab pane  Enter edit  / search  Esc/q quit  s save                   │
+├─────────────────────┬────────────────────────────────────────────────────────┤
+│▶ Cache              │CACHE                                                1/1│
+│  Defaults           │▶ Issue directory                                 issues│
+│  Workflow           │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+├─────────────────────┴────────────────────────────────────────────────────────┤
+│1/1 • Project-local directory for IssueMe issue JSON files.                   │
+╰──────────────────────────────────────────────────────────────────────────────╯

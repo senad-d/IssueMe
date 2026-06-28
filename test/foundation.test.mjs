@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { loadIssueMeConfig, saveIssueMeConfig } from "../src/config/config.ts";
 import { parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
-import { readIssueByLookup, readIssueByNumber, removeClosedIssueFiles, writeIssueRecord } from "../src/issues/store.ts";
-import { parseProjectEnvTokens, resolveGitHubToken } from "../src/utils/env.ts";
-import { issueFileName, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
+import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
+import { isValidIsoDateOnly } from "../src/utils/date.ts";
+import { parseProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
+import { resolveFileMutationQueuePath } from "../src/utils/mutation-queue.ts";
+import { resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
+import { issueFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
 
 async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-test-"));
@@ -44,6 +47,18 @@ test("project .env token values override process environment", async () => {
 	assert.equal(token.source, "project-env:GH_TOKEN");
 });
 
+test("dotenv parser handles export, quotes, comments, whitespace, empty values, and unsupported multiline values", () => {
+	assert.deepEqual(parseProjectEnvTokens("export GH_TOKEN=abc # comment\nGITHUB_TOKEN=unused"), { GH_TOKEN: "abc", GITHUB_TOKEN: "unused" });
+	assert.deepEqual(parseProjectEnvTokens("export\tGH_TOKEN = abc # comment\n"), { GH_TOKEN: "abc" });
+	assert.deepEqual(parseProjectEnvTokens('GH_TOKEN="abc" # comment\n'), { GH_TOKEN: "abc" });
+	assert.deepEqual(parseProjectEnvTokens("  GH_TOKEN = ' abc # still token ' # comment\n"), { GH_TOKEN: " abc # still token " });
+	assert.deepEqual(parseProjectEnvTokens('GH_TOKEN="abc#still-token"\n'), { GH_TOKEN: "abc#still-token" });
+	assert.deepEqual(parseProjectEnvTokens('GH_TOKEN="a\\"b"\n'), { GH_TOKEN: 'a"b' });
+	assert.deepEqual(parseProjectEnvTokens("GH_TOKEN=abc#not-comment\n"), { GH_TOKEN: "abc#not-comment" });
+	assert.deepEqual(parseProjectEnvTokens("GH_TOKEN=\nGITHUB_TOKEN= fallback \n"), { GITHUB_TOKEN: "fallback" });
+	assert.deepEqual(parseProjectEnvTokens('GH_TOKEN="unterminated\ncontinued"\nGITHUB_TOKEN=ok\n'), { GITHUB_TOKEN: "ok" });
+});
+
 test("process GH_TOKEN takes precedence over process GITHUB_TOKEN when .env has no token", async () => {
 	const cwd = await tempProject();
 	const token = await resolveGitHubToken(cwd, { GH_TOKEN: "process-gh", GITHUB_TOKEN: "process-github" });
@@ -51,42 +66,141 @@ test("process GH_TOKEN takes precedence over process GITHUB_TOKEN when .env has 
 	assert.equal(token.source, "process-env:GH_TOKEN");
 });
 
-test("missing token errors are actionable and do not leak environment values", async () => {
+test("missing token errors and .env read status are actionable and do not leak values", async () => {
 	const cwd = await tempProject();
 	await assert.rejects(() => resolveGitHubToken(cwd, {}), (error) => {
 		assert.match(error.message, /Set GH_TOKEN or GITHUB_TOKEN/);
 		assert.doesNotMatch(error.message, /process-gh|process-github/);
 		return true;
 	});
+	const envDirProject = await tempProject();
+	await mkdir(join(envDirProject, ".env"));
+	const status = await getGitHubTokenStatus(envDirProject, { GH_TOKEN: "process-secret" });
+	assert.equal(status.error, true);
+	assert.doesNotMatch(status.message, /process-secret/);
 });
 
-test("repository resolution supports env and common GitHub origins without shelling out", async () => {
+test("token resolution rejects malformed token values and symlinked project env files safely", async (t) => {
+	const malformedProjectToken = await tempProject();
+	await writeFile(join(malformedProjectToken, ".env"), "GH_TOKEN='bad token value'\nGITHUB_TOKEN=backup-secret\n", "utf8");
+	await assert.rejects(() => resolveGitHubToken(malformedProjectToken, {}), (error) => {
+		assert.equal(error?.code, "invalid_github_token");
+		assert.match(error.message, /project-env:GH_TOKEN/);
+		assert.doesNotMatch(error.message, /bad token value|backup-secret/);
+		return true;
+	});
+	const malformedProcessToken = await tempProject();
+	await assert.rejects(() => resolveGitHubToken(malformedProcessToken, { GH_TOKEN: "bad process token", GITHUB_TOKEN: "backup-secret" }), (error) => {
+		assert.equal(error?.code, "invalid_github_token");
+		assert.match(error.message, /process-env:GH_TOKEN/);
+		assert.doesNotMatch(error.message, /bad process token|backup-secret/);
+		return true;
+	});
+
+	try {
+		const outside = await tempProject();
+		await writeFile(join(outside, "project-env"), "GH_TOKEN=linked-secret\n", "utf8");
+		const symlinkProject = await tempProject();
+		await symlink(join(outside, "project-env"), join(symlinkProject, ".env"));
+		await assert.rejects(() => resolveGitHubToken(symlinkProject, { GH_TOKEN: "process-secret" }), (error) => {
+			assert.equal(error?.code, "env_read_failed");
+			assert.doesNotMatch(error.message, /linked-secret|process-secret/);
+			return true;
+		});
+		const status = await getGitHubTokenStatus(symlinkProject, { GH_TOKEN: "process-secret" });
+		assert.equal(status.error, true);
+		assert.doesNotMatch(status.message, /linked-secret|process-secret/);
+	} catch (error) {
+		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
+			t.skip("symlinks are not permitted on this platform");
+			return;
+		}
+		throw error;
+	}
+});
+
+test("repository resolution supports env precedence, normal checkouts, worktrees, submodules, nested cwd, and safe errors", async () => {
 	assert.deepEqual(parseGitHubRepository("owner/repo"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("https://github.com/owner/repo.git"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("git@github.com:owner/repo.git"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.equal(parseGitHubRepository("https://example.com/owner/repo.git"), undefined);
+	assert.equal(parseGitHubRepository("https://github.com/owner"), undefined);
 
-	const cwd = await tempProject();
-	assert.deepEqual(await resolveCurrentRepository(cwd, { GITHUB_REPOSITORY: "env-owner/env-repo" }), {
+	const envWins = await tempProject();
+	await mkdir(join(envWins, ".git"));
+	await writeFile(join(envWins, ".git", "config"), '[remote "origin"]\n\turl = https://gitlab.com/local/repo.git\n', "utf8");
+	assert.deepEqual(await resolveCurrentRepository(envWins, { GITHUB_REPOSITORY: "env-owner/env-repo" }), {
 		owner: "env-owner",
 		repo: "env-repo",
 		fullName: "env-owner/env-repo",
 	});
-	await mkdir(join(cwd, ".git"));
-	await writeFile(join(cwd, ".git", "config"), '[remote "origin"]\n\turl = git@github.com:local/repo.git\n', "utf8");
-	assert.deepEqual(await resolveCurrentRepository(cwd, {}), { owner: "local", repo: "repo", fullName: "local/repo" });
+
+	const normal = await tempProject();
+	await mkdir(join(normal, ".git"));
+	await writeFile(join(normal, ".git", "config"), '[remote "origin"]\n\turl = git@github.com:local/repo.git\n', "utf8");
+	await mkdir(join(normal, "nested", "dir"), { recursive: true });
+	assert.equal((await resolveIssueMeProjectRoot(join(normal, "nested", "dir"))).root, normal);
+	assert.deepEqual(await resolveCurrentRepository(join(normal, "nested", "dir"), {}), { owner: "local", repo: "repo", fullName: "local/repo" });
+	await assert.rejects(() => resolveCurrentRepository(normal, {}, { allowGitConfig: false }), (error) => error?.code === "repository_untrusted_project");
+
+	const worktree = await tempProject();
+	const commonGitDir = join(worktree, "actual-git");
+	const worktreeGitDir = join(commonGitDir, "worktrees", "feature");
+	await mkdir(worktreeGitDir, { recursive: true });
+	await writeFile(join(worktree, ".git"), "gitdir: actual-git/worktrees/feature\n", "utf8");
+	await writeFile(join(worktreeGitDir, "commondir"), "../..\n", "utf8");
+	await writeFile(join(commonGitDir, "config"), '[remote "origin"]\n\turl = https://github.com/work/tree.git\n', "utf8");
+	assert.deepEqual(await resolveCurrentRepository(worktree, {}), { owner: "work", repo: "tree", fullName: "work/tree" });
+
+	const parent = await tempProject();
+	const submodule = join(parent, "packages", "submodule");
+	const submoduleGitDir = join(parent, ".git", "modules", "packages", "submodule");
+	await mkdir(join(submodule, "src"), { recursive: true });
+	await mkdir(submoduleGitDir, { recursive: true });
+	await writeFile(join(submodule, ".git"), "gitdir: ../../.git/modules/packages/submodule\n", "utf8");
+	await writeFile(join(submoduleGitDir, "config"), '[remote "origin"]\n\turl = ssh://git@github.com/sub/module.git\n', "utf8");
+	assert.deepEqual(await resolveCurrentRepository(join(submodule, "src"), {}), { owner: "sub", repo: "module", fullName: "sub/module" });
+
+	const missingOrigin = await tempProject();
+	await mkdir(join(missingOrigin, ".git"));
+	await writeFile(join(missingOrigin, ".git", "config"), '[remote "upstream"]\n\turl = https://github.com/up/stream.git\n', "utf8");
+	await assert.rejects(() => resolveCurrentRepository(missingOrigin, {}), (error) => error?.code === "repository_origin_missing");
+
+	const malformedOrigin = await tempProject();
+	await mkdir(join(malformedOrigin, ".git"));
+	await writeFile(join(malformedOrigin, ".git", "config"), '[remote "origin"]\n\turl = https://github.com/owner\n', "utf8");
+	await assert.rejects(() => resolveCurrentRepository(malformedOrigin, {}), (error) => error?.code === "repository_origin_malformed");
+
+	const nonGitHubOrigin = await tempProject();
+	await mkdir(join(nonGitHubOrigin, ".git"));
+	await writeFile(join(nonGitHubOrigin, ".git", "config"), '[remote "origin"]\n\turl = git@gitlab.com:owner/repo.git\n', "utf8");
+	await assert.rejects(() => resolveCurrentRepository(nonGitHubOrigin, {}), (error) => error?.code === "repository_origin_not_github");
 });
 
-test("slug and issue paths are safe and stable", async () => {
+test("slug, issue directory, and issue paths are safe and stable", async () => {
 	const cwd = await tempProject();
 	assert.equal(slugifyIssueTitle("Crème brûlée!!! Fix cache"), "creme-brulee-fix-cache");
 	assert.equal(slugifyIssueTitle("你好 👋"), "issue");
 	assert.equal(issueFileName(42, "Fix cache bug"), "42-fix-cache-bug.json");
+	assert.match(resolveIssueDirectory(cwd, "issues/sub"), /issues[/\\]sub$/);
 	assert.match(resolveIssueFilePath(cwd, "issues", 42, "Fix cache bug"), /issues[/\\]42-fix-cache-bug\.json$/);
-	assert.throws(() => resolveIssueFilePath(cwd, "../outside", 1, "Oops"), /inside the current project/);
+	assert.throws(() => resolveIssueFilePath(cwd, "../outside", 1, "Oops"), /path traversal|inside the current project/);
+	assert.throws(() => resolveIssueDirectory(cwd, "."), /project root/);
+	assert.throws(() => resolveIssueDirectory(cwd, ".git"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, ".PI/issues"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, "node_modules/issues"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, "Build/issues"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, "issues\0bad"), /null byte/);
+	assert.throws(() => resolveIssueDirectory(cwd, join(cwd, "issues")), /project-relative/);
+	assert.throws(() => resolveIssueDirectory(cwd, "C:\\tmp\\issues"), /project-relative/);
+	assert.equal(isValidIsoDateOnly("2026-02-28"), true);
+	assert.equal(isValidIsoDateOnly("2024-02-29"), true);
+	assert.equal(isValidIsoDateOnly("2026-02-30"), false);
+	assert.equal(isValidIsoDateOnly("2026-13-01"), false);
+	assert.match(await readFile(".gitignore", "utf8"), /^\/issues\/$/m);
 });
 
-test("config loader/saver handles defaults, non-secret settings, and secret-like key refusal", async () => {
+test("config loader/saver handles defaults, non-secret settings, validation, and nested secret-like key refusal", async () => {
 	const cwd = await tempProject();
 	assert.deepEqual(await loadIssueMeConfig(cwd), {
 		issueDirectory: "issues",
@@ -96,7 +210,7 @@ test("config loader/saver handles defaults, non-secret settings, and secret-like
 	});
 	await saveIssueMeConfig(cwd, {
 		issueDirectory: "issues/custom",
-		defaultLabels: ["bug", "bug", "agent-ready"],
+		defaultLabels: ["bug", "bug", "agent-ready", ""],
 		defaultAssignees: ["octocat"],
 		defaultSkillPath: "skills/issue/SKILL.md",
 	});
@@ -106,14 +220,21 @@ test("config loader/saver handles defaults, non-secret settings, and secret-like
 		defaultAssignees: ["octocat"],
 		defaultSkillPath: "skills/issue/SKILL.md",
 	});
-	await assert.rejects(() => saveIssueMeConfig(cwd, { GH_TOKEN: "secret-value" }), (error) => {
+	await assert.rejects(() => saveIssueMeConfig(cwd, { nested: { GH_TOKEN: "secret-value" } }), (error) => {
 		assert.match(error.message, /secret-like/);
 		assert.doesNotMatch(error.message, /secret-value/);
 		return true;
 	});
+	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: ".pi/issues" }), /protected/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "../issues" }), /path traversal/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "issues\0bad" }), /null byte/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultLabels: ["bug\0secret"] }), /null bytes/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultLabels: ["bug\nnext"] }), /one line/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["octocat\0bad"] }), /null bytes/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["-bad"] }), /valid GitHub usernames/);
 });
 
-test("issue store writes one pretty JSON file, reads by number, renames title changes, and removes closed issues", async () => {
+test("issue store writes pretty JSON, reads by metadata, renames titles, preserves unchanged synced_at, and removes closed issues", async () => {
 	const cwd = await tempProject();
 	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
 	const first = await writeIssueRecord(cwd, config, sampleIssue());
@@ -122,13 +243,150 @@ test("issue store writes one pretty JSON file, reads by number, renames title ch
 	assert.match(await readFile(first.path, "utf8"), /\n  "schemaVersion": 1,/);
 	assert.equal((await readIssueByNumber(cwd, config, 12)).title, "Fix Cache Bug");
 	assert.equal((await readIssueByLookup(cwd, config, "12-fix-cache-bug.json")).number, 12);
+	assert.equal((await findIssueByLookup(cwd, config, "cache bug")).path, first.path);
+
+	const unchanged = await writeIssueRecord(cwd, config, sampleIssue({ synced_at: "2099-01-01T00:00:00Z" }));
+	assert.equal(unchanged.action, "unchanged");
+	assert.match(await readFile(first.path, "utf8"), /2026-06-27T00:00:01Z/);
 
 	const renamed = await writeIssueRecord(cwd, config, sampleIssue({ title: "Fix Cache Bug Properly" }));
-	assert.equal(renamed.action, "created");
+	assert.equal(renamed.action, "renamed");
 	assert.equal(renamed.removedPaths.length, 1);
 	assert.match(renamed.path, /12-fix-cache-bug-properly\.json$/);
 
-	const removed = await removeClosedIssueFiles(cwd, config, new Set());
+	const removed = await removeClosedIssueFiles(cwd, config, new Set(), "owner/repo");
 	assert.equal(removed.length, 1);
-	assert.equal(await readIssueByNumber(cwd, config, 12), undefined);
+	assert.equal(await readIssueByNumber(cwd, config, 12, "owner/repo"), undefined);
+});
+
+test("issue store is repository-aware and reports invalid local files safely", async () => {
+	const cwd = await tempProject();
+	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	await writeIssueRecord(cwd, config, sampleIssue({ repository: "owner/a", number: 1, title: "Repo A", html_url: "https://github.com/owner/a/issues/1" }));
+	await writeIssueRecord(cwd, config, sampleIssue({ repository: "owner/b", number: 1, title: "Repo B", html_url: "https://github.com/owner/b/issues/1" }));
+	await assert.rejects(() => readIssueByNumber(cwd, config, 1), /multiple repositories/);
+	assert.equal((await findIssueByNumber(cwd, config, 1, "owner/b")).metadata.repository, "owner/b");
+	assert.equal((await findIssueByLookup(cwd, config, "Repo B", "owner/b")).metadata.repository, "owner/b");
+
+	await writeIssueRecord(cwd, config, sampleIssue({ repository: "owner/a", number: 2, title: "Repo A stale", html_url: "https://github.com/owner/a/issues/2" }));
+	await writeIssueRecord(cwd, config, sampleIssue({ repository: "owner/b", number: 2, title: "Repo B must stay", html_url: "https://github.com/owner/b/issues/2" }));
+	const staleRemoved = await removeClosedIssueFiles(cwd, config, new Set([1]), "owner/a");
+	assert.equal(staleRemoved.length, 1);
+	assert.equal(await readIssueByNumber(cwd, config, 2, "owner/a"), undefined);
+	assert.equal((await readIssueByNumber(cwd, config, 2, "owner/b")).repository, "owner/b");
+
+	const removed = await removeIssueByNumber(cwd, config, 1, "owner/a");
+	assert.equal(removed.length, 1);
+	assert.equal((await readIssueByNumber(cwd, config, 1, "owner/b")).repository, "owner/b");
+	await assert.rejects(
+		() => writeIssueRecord(cwd, config, sampleIssue({ repository: "owner/c", number: 1, title: "Repo B", html_url: "https://github.com/owner/c/issues/1" })),
+		(error) => error?.code === "issue_cache_repository_collision" && /refusing to overwrite/.test(error.message),
+	);
+	assert.equal((await readIssueByNumber(cwd, config, 1, "owner/b")).repository, "owner/b");
+
+	const invalidCases = [
+		["3-bad-repository.json", sampleIssue({ number: 3, repository: "bad/repo/extra" }), "issue_file_repository_invalid"],
+		["4-bad-number.json", sampleIssue({ number: 0 }), "issue_file_number_invalid"],
+		["5-bad-labels.json", sampleIssue({ number: 5, labels: [""] }), "issue_file_labels_invalid"],
+		["6-bad-assignees.json", sampleIssue({ number: 6, assignees: ["-bad"] }), "issue_file_assignees_invalid"],
+		["7-bad-comments.json", sampleIssue({
+			number: 7,
+			comments: [{
+				id: 0,
+				author: "octocat",
+				body: "PRIVATE COMMENT BODY",
+				created_at: "2026-06-27T00:00:00Z",
+				updated_at: "2026-06-27T00:00:00Z",
+				html_url: "https://github.com/owner/repo/issues/7#issuecomment-0",
+			}],
+		}), "issue_file_comment_id_invalid"],
+		["8-bad-url.json", sampleIssue({ number: 8, html_url: "https://evil.example/owner/repo/issues/8" }), "issue_file_url_invalid"],
+		["9-bad-timestamp.json", sampleIssue({ number: 9, html_url: "https://github.com/owner/repo/issues/9", updated_at: "not-a-timestamp" }), "issue_file_timestamp_invalid"],
+		["10-mismatch.json", sampleIssue({ number: 11, html_url: "https://github.com/owner/repo/issues/11" }), "issue_file_number_mismatch"],
+		["11-bad-assignee-length.json", sampleIssue({ number: 11, assignees: ["a".repeat(40)], html_url: "https://github.com/owner/repo/issues/11" }), "issue_file_assignees_invalid"],
+	];
+	await writeFile(join(cwd, "issues", "2-corrupt.json"), "{not json PRIVATE ISSUE BODY", "utf8");
+	await writeFile(join(cwd, "issues", "not-an-issue.json"), JSON.stringify({ secret: "PRIVATE ISSUE BODY" }), "utf8");
+	for (const [fileName, record] of invalidCases) {
+		await writeFile(join(cwd, "issues", fileName), `${JSON.stringify(record)}\n`, "utf8");
+	}
+	const listed = await listIssueFileEntries(cwd, config);
+	const invalidReasons = listed.invalidFiles.map((file) => file.reason).sort();
+	assert.equal(listed.invalidFiles.length, invalidCases.length + 2);
+	assert.deepEqual(invalidReasons, [
+		"issue_file_assignees_invalid",
+		"issue_file_assignees_invalid",
+		"issue_file_comment_id_invalid",
+		"issue_file_labels_invalid",
+		"issue_file_name_invalid",
+		"issue_file_number_invalid",
+		"issue_file_number_mismatch",
+		"issue_file_parse_failed",
+		"issue_file_repository_invalid",
+		"issue_file_timestamp_invalid",
+		"issue_file_url_invalid",
+	]);
+	assert.doesNotMatch(JSON.stringify(listed.invalidFiles), /PRIVATE|secret/);
+	await assert.rejects(
+		() => readIssueFile(join(cwd, "issues", "5-bad-labels.json")),
+		(error) => error?.code === "issue_file_invalid" && error.safeDetails?.reason === "issue_file_labels_invalid" && !/PRIVATE/.test(error.message),
+	);
+});
+
+test("config and issue store reject symlinked local state paths", async (t) => {
+	const outside = await tempProject();
+	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	try {
+		const configParentSymlinkProject = await tempProject();
+		await symlink(outside, join(configParentSymlinkProject, ".pi"), "dir");
+		await assert.rejects(() => loadIssueMeConfig(configParentSymlinkProject), /symlink/);
+		await assert.rejects(() => saveIssueMeConfig(configParentSymlinkProject, config), /symlink/);
+
+		const configFileSymlinkProject = await tempProject();
+		await mkdir(join(configFileSymlinkProject, ".pi", "agent"), { recursive: true });
+		await writeFile(join(outside, "issueme.json"), JSON.stringify(config), "utf8");
+		await symlink(join(outside, "issueme.json"), join(configFileSymlinkProject, ".pi", "agent", "issueme.json"));
+		await assert.rejects(() => loadIssueMeConfig(configFileSymlinkProject), /symlink/);
+		await assert.rejects(() => saveIssueMeConfig(configFileSymlinkProject, config), /symlink/);
+
+		const directSymlinkProject = await tempProject();
+		await symlink(outside, join(directSymlinkProject, "issues"), "dir");
+		await assert.rejects(() => writeIssueRecord(directSymlinkProject, config, sampleIssue()), /symlink/);
+
+		const parentSymlinkProject = await tempProject();
+		await symlink(outside, join(parentSymlinkProject, "cache"), "dir");
+		assert.equal(await resolveFileMutationQueuePath(join(parentSymlinkProject, "cache", "queued", "file.json")), join(await realpath(outside), "queued", "file.json"));
+		await assert.rejects(
+			() => writeIssueRecord(parentSymlinkProject, { ...config, issueDirectory: "cache/issues" }, sampleIssue()),
+			/symlink|inside the current project/,
+		);
+
+		const fileSymlinkProject = await tempProject();
+		await mkdir(join(fileSymlinkProject, "issues"));
+		await writeFile(join(outside, "outside.json"), JSON.stringify(sampleIssue()), "utf8");
+		await symlink(join(outside, "outside.json"), join(fileSymlinkProject, "issues", "12-fix-cache-bug.json"));
+		await assert.rejects(() => writeIssueRecord(fileSymlinkProject, config, sampleIssue()), /symlink/);
+		await assert.rejects(() => readIssueByLookup(fileSymlinkProject, config, "12-fix-cache-bug.json"), /symlink/);
+
+		const nestedSymlinkProject = await tempProject();
+		const outsideIssueDir = join(outside, "linked-cache");
+		await mkdir(join(nestedSymlinkProject, "issues"));
+		await mkdir(outsideIssueDir);
+		await writeFile(
+			join(outsideIssueDir, "13-linked-escape.json"),
+			JSON.stringify(sampleIssue({ number: 13, title: "Linked Escape", html_url: "https://github.com/owner/repo/issues/13" })),
+			"utf8",
+		);
+		await symlink(outsideIssueDir, join(nestedSymlinkProject, "issues", "linked"), "dir");
+		await assert.rejects(
+			() => readIssueByLookup(nestedSymlinkProject, config, "issues/linked/13-linked-escape.json"),
+			/inside the configured issue directory|inside the current project/,
+		);
+	} catch (error) {
+		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
+			t.skip("symlinks are not permitted on this platform");
+			return;
+		}
+		throw error;
+	}
 });

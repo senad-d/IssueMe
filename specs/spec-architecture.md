@@ -1,14 +1,16 @@
-# Plan: IssueMe Architecture
+# Plan: Archived IssueMe Architecture
+
+> Archive status: this original architecture plan is retained as historical implementation context. It does not define current availability or release readiness. Use `README.md`, `SECURITY.md`, `docs/STRUCTURE.md`, source, and tests for current behavior; use `specs/spec-remediation-tasks.md` for the active hardening backlog.
 
 ## Task Description
 
-Prepare the architecture for `@senad-d/issueme`, a Pi extension that gives agents a structured, REST-only interface for managing GitHub issues in the current repository. The implementation session that follows this preparation will add commands and tools for creating, syncing, reading, updating, commenting, labeling, assigning, and closing issues while maintaining one local JSON file per open issue.
+Record the architecture prepared for `@senad-d/issueme`, a Pi extension that gives agents a structured GitHub REST/GraphQL interface for managing GitHub issues in the current repository. The runtime implementation now includes commands and tools for creating, syncing, reading, updating, commenting, labeling, assigning, closing, and inspecting/linking native sub-issues while maintaining one local JSON file per open issue.
 
-This specification is planning-only. It must not be treated as evidence that the runtime behavior has been implemented.
+This archived specification may contain historical future-tense task language below. Do not treat that language as a current task list or as proof that unverified behavior is release-ready.
 
 ## Objective
 
-Define the module boundaries, Pi integration surfaces, data flow, state/config model, dependencies, security boundaries, and validation approach for the later IssueMe implementation.
+Document the module boundaries, Pi integration surfaces, data flow, state/config model, dependencies, security boundaries, and validation approach that guided the IssueMe implementation.
 
 ## Problem Statement
 
@@ -31,22 +33,24 @@ IssueMe should be built as a small Pi package with a minimal `src/extension.ts` 
 
 ## Relevant Files
 
-Use these files to complete the future implementation:
+Use these files for historical context and current cross-checks:
 
 - `package.json` - Package identity, Pi manifest, scripts, dependency placement, and package contents.
 - `src/extension.ts` - Small Pi extension entry point that should only import modules and call registration functions.
 - `src/constants.ts` - Shared display name, command name, config path constants, issue directory name, and status key.
 - `docs/STRUCTURE.md` - Repository architecture guide that should stay aligned with implementation.
-- `docs/PROJECT_DEFINITION_BRIEF.md` - Approved preparation brief and decision log.
+- `docs/PROJECT_DEFINITION_BRIEF.md` - Approved project brief and decision log.
 - `README.md` - Public user documentation for commands, tools, auth, issue files, and safety model.
 - `SECURITY.md` - Security model for GitHub tokens, `.env`, REST calls, local files, and no shell/webhook behavior.
-- `test/*.test.mjs` - Preparation/metadata tests now, feature tests later.
+- `test/*.test.mjs` - Runtime, safety, schema, command, TUI, and package-content tests.
 
-### New Files
+### Runtime Files
 
-The future implementation should add these files when implementing runtime behavior:
+The implementation created these runtime files:
 
 - `src/commands/issueme-command.ts` - Registers `/issueme`, `/issueme info`, and `/issueme start <skill-path>`.
+- `src/commands/config-tui.ts` - Implements the configuration TUI renderer/component and snapshot helper.
+- `src/tools/issueme-tools.ts` - Aggregates IssueMe tool registration.
 - `src/tools/create-issue.ts` - Registers `issueme_create_issue`.
 - `src/tools/sync-issues.ts` - Registers `issueme_sync_issues`.
 - `src/tools/get-issue.ts` - Registers `issueme_get_issue`.
@@ -60,7 +64,9 @@ The future implementation should add these files when implementing runtime behav
 - `src/config/config.ts` - Loads/saves non-secret config from `.pi/agent/issueme.json` and reads token sources.
 - `src/issues/store.ts` - Reads/writes/removes issue JSON files under `issues/` with safe filenames.
 - `src/issues/format.ts` - Produces human/LLM-friendly issue JSON and text summaries for tool output.
-- `src/utils/env.ts` - Parses project `.env` values with `.env` overriding process environment for GitHub tokens only.
+- `src/utils/env.ts` - Parses project `.env` values with trusted project-token precedence.
+- `src/utils/mutation-queue.ts` - Wraps local file mutations in Pi's file mutation queue.
+- `src/utils/project-root.ts` - Resolves project roots and Git directories without shelling out.
 - `src/utils/slug.ts` - Builds `issues/<number>-<title-slug>.json` safely.
 - `src/types.ts` - Shared domain types for config, issue records, GitHub REST responses, and tool results.
 
@@ -70,8 +76,12 @@ The future implementation should add these files when implementing runtime behav
 | --- | --- | --- | --- |
 | Command | `/issueme` | Open configuration UI | Writes non-secret settings to `.pi/agent/issueme.json` only after user action. |
 | Command | `/issueme info` | Show command/tool/auth/cache status | Should avoid printing secrets. |
-| Command | `/issueme start <skill-path>` | Start a future skill-guided issue workflow | Should send a user message that asks the agent to use the supplied skill path with IssueMe tools. |
-| Tool | `issueme_create_issue` | Create a GitHub issue and cache it locally | REST API only; supports labels and assignees. |
+| Command | `/issueme start <skill-path>` | Start a skill-guided issue workflow | Sends a user message that asks the agent to use the supplied project-local skill path with IssueMe tools. |
+| Tool | `issueme_create_issue` | Create a GitHub issue and cache it locally | REST API; supports labels and assignees. |
+| Tool | `issueme_create_sub_issue` | Create a GitHub issue and attach it under a parent | REST create plus GraphQL `addSubIssue`; no body-only fallback. |
+| Tool | `issueme_add_sub_issue` | Attach an existing issue as a sub-issue | GraphQL `addSubIssue`; no body-only fallback. |
+| Tool | `issueme_remove_sub_issue` | Detach an existing native sub-issue relationship | GraphQL `removeSubIssue`; never closes/deletes issues. |
+| Tool | `issueme_list_sub_issues` | Inspect native parent/sub-issue relationships | GraphQL `subIssues` metadata, bounded output, optional `refreshCache`; no body-only fallback. |
 | Tool | `issueme_sync_issues` | Fetch open issues and rewrite local issue files | Removes local files for closed issues; never deletes remote issues. |
 | Tool | `issueme_get_issue` | Return one issue by number, title slug, or local file | Reads cache and can optionally refresh from GitHub. |
 | Tool | `issueme_update_issue` | Update title/body/labels/assignees/milestone/state fields on open issues | Must reject closed issues. |
@@ -81,7 +91,7 @@ The future implementation should add these files when implementing runtime behav
 | Tool | `issueme_close_issue` | Close an open issue and remove local issue file | Must re-check state before mutation. |
 | Event | `session_start`/`session_shutdown` only if needed | Restore status or clean session-scoped state | No background jobs, no timers, no watchers, no webhooks. |
 | UI | Configuration dialog | Configure non-secret defaults | Guard TUI-only UI with `ctx.mode === "tui"`; use simpler notifications in non-TUI modes. |
-| Resource | Future skill path | Documented integration only | No bundled skill in this preparation. |
+| Resource | Project-local skill path | Documented integration only | No bundled skill; `/issueme start` validates a readable path inside the trusted project. |
 
 ## Data Flow
 
@@ -146,7 +156,7 @@ Large comment lists or bodies should be truncated in tool output, but local file
 ## Config, State, and Persistence
 
 - Non-secret config path: `.pi/agent/issueme.json`.
-- Secret/token sources: project `.env` overrides process `GH_TOKEN` or `GITHUB_TOKEN`; tokens must never be persisted to config or issue files.
+- Secret/token sources: trusted project `.env` `GH_TOKEN`/`GITHUB_TOKEN`, then process `GH_TOKEN`/`GITHUB_TOKEN`; tokens must never be persisted to config or issue files.
 - Issue cache path: `issues/` by default, project-local, containing only open issues.
 - Session state: avoid long-lived in-memory state; use tool result `details` for branch-sensitive state and reconstruct from current files when needed.
 - Cleanup: remove local issue file after successful `issueme_close_issue` or when `issueme_sync_issues` sees the issue is closed.
@@ -155,21 +165,21 @@ Large comment lists or bodies should be truncated in tool output, but local file
 
 - Use Node built-ins for file I/O, path handling, URL parsing, and `fetch`.
 - Keep `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, and `typebox` in `peerDependencies` with `"*"` when imported.
-- Put non-Pi runtime libraries in `dependencies` only if future implementation proves they are required.
+- Put non-Pi runtime libraries in `dependencies` only when implementation proves they are required.
 - Put local development tools and type packages in `devDependencies`.
 - Do not add GitHub CLI dependencies.
 
 ## Security Boundaries
 
 - Do not execute shell commands for GitHub operations or repository resolution.
-- Read only project `.env`, `.git/config`, `.pi/agent/issueme.json`, and files under the configured issue directory.
+- Read only trusted project `.env`, Git metadata, `.pi/agent/issueme.json`, and files under the configured issue directory.
 - Mutate only `.pi/agent/issueme.json` and `issues/*.json` locally.
-- Perform network calls only to GitHub REST API for the resolved current repository.
+- Perform network calls only to GitHub REST endpoints and GraphQL native sub-issue inspection/mutations for the resolved current repository.
 - Never log, write, return, or include GitHub tokens in tool output, details, errors, local issue files, or config files.
 - Reject updates, comments, labels, assignments, and closes when an issue is already closed.
 - Re-check issue state immediately before each remote mutation.
 
-## Implementation Phases
+## Historical Implementation Phases
 
 ### Phase 1: Foundation
 
@@ -191,9 +201,9 @@ Large comment lists or bodies should be truncated in tool output, but local file
 - Update README, SECURITY, CHANGELOG, and tests with each behavior change.
 - Run isolated smoke testing with `pi --no-extensions -e .`.
 
-## Step by Step Tasks
+## Historical Step by Step Tasks
 
-IMPORTANT: Execute every step in order, top to bottom during the later implementation session.
+IMPORTANT: These steps record the original implementation workflow; current remediation work follows `specs/spec-remediation-tasks.md`.
 
 ### 1. Build non-network foundations
 

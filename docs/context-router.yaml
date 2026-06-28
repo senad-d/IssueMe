@@ -1,0 +1,302 @@
+schema_version: docs-context-router.v1
+purpose: Machine-readable routing for IssueMe agents and maintainers. Load only the docs and files needed for the selected task.
+current_state: implementation-first remediation model; src and tests are source of truth, and docs/specs must stay aligned with implemented behavior.
+minimal_load:
+  - docs/context-router.yaml
+  - specs/spec-remediation-tasks.md
+  - docs/STRUCTURE.md
+canonical_paths:
+  active_task_file: specs/spec-remediation-tasks.md
+  issue_management_expansion_task_file: specs/spec-issue-management-expansion-tasks.md
+  architecture_spec: specs/spec-architecture.md
+  guidelines_spec: specs/spec-guidelines.md
+  config_tui_design_spec: specs/spec-configuration-tui-design-standard.md
+  historical_task_file: specs/spec-tasks.md
+  project_brief: docs/PROJECT_DEFINITION_BRIEF.md
+  structure_doc: docs/STRUCTURE.md
+  readme: README.md
+  security: SECURITY.md
+  changelog: CHANGELOG.md
+  contributing: CONTRIBUTING.md
+  package_manifest: package.json
+  package_lock: package-lock.json
+  typescript_config: tsconfig.json
+  extension_entry: src/extension.ts
+  constants: src/constants.ts
+  errors: src/errors.ts
+  shared_types: src/types.ts
+  command_main: src/commands/issueme-command.ts
+  command_config_tui: src/commands/config-tui.ts
+  tool_registry: src/tools/issueme-tools.ts
+  tool_runtime: src/tools/runtime.ts
+  tool_create: src/tools/create-issue.ts
+  tool_sub_issue: src/tools/sub-issue.ts
+  tool_development_links: src/tools/development-links.ts
+  tool_sync: src/tools/sync-issues.ts
+  tool_list: src/tools/list-issues.ts
+  tool_list_labels: src/tools/list-labels.ts
+  tool_list_milestones: src/tools/list-milestones.ts
+  tool_list_assignees: src/tools/list-assignees.ts
+  tool_manage_label: src/tools/manage-label.ts
+  tool_manage_milestone: src/tools/manage-milestone.ts
+  tool_projects: src/tools/projects.ts
+  tool_get: src/tools/get-issue.ts
+  tool_update: src/tools/update-issue.ts
+  tool_comment: src/tools/comment-issue.ts
+  tool_assign: src/tools/assign-issue.ts
+  tool_label: src/tools/label-issue.ts
+  tool_reopen: src/tools/reopen-issue.ts
+  tool_close: src/tools/close-issue.ts
+  tool_bulk: src/tools/bulk-issues.ts
+  github_client: src/github/client.ts
+  github_repository: src/github/repository.ts
+  issue_store: src/issues/store.ts
+  issue_format: src/issues/format.ts
+  config_module: src/config/config.ts
+  env_utils: src/utils/env.ts
+  mutation_queue: src/utils/mutation-queue.ts
+  project_root_utils: src/utils/project-root.ts
+  slug_utils: src/utils/slug.ts
+  tests_root: test
+  tui_snapshots_root: test/snapshots/tui/issueme-config
+  package_check_script: scripts/check-package-contents.mjs
+  format_check_script: scripts/check-format.mjs
+  tui_artifact_script: scripts/generate-tui-artifacts.mjs
+  smoke_observability_script: scripts/smoke-observability.mjs
+  next_task_skill: .pi/skills/next-task/SKILL.md
+runtime_path_patterns:
+  project_config: .pi/agent/issueme.json
+  project_env: .env
+  git_metadata: .git/config or .git gitdir metadata
+  issue_cache_file: issues/<issue-number>-<issue-title-slug>.json
+  generated_tui_snapshot: test/snapshots/tui/issueme-config/<state>.txt
+  generated_package_tarball: "*.tgz"
+canonical_commands:
+  install: npm install
+  typecheck: npm run typecheck
+  format_check: npm run format:check
+  test: npm run test
+  tui_artifacts: npm run test:tui-artifacts
+  smoke_discover: npm run smoke:discover
+  package_check: npm run check
+  package_dry_run: npm run pack:dry-run
+  package_contents_check: npm run check:pack
+  validate: npm run validate
+  isolated_pi_smoke: pi --no-extensions -e .
+ownership_rules:
+  active_backlog:
+    source: specs/spec-remediation-tasks.md
+    rule: This file is the authoritative ordered remediation backlog; mark one task complete only after its acceptance criteria and validation pass.
+  issue_management_expansion_backlog:
+    source: specs/spec-issue-management-expansion-tasks.md
+    rule: This file is the ordered expansion backlog for the broader issue-management surface; mark one task complete only after docs/tests/smoke validation pass.
+  extension_registration:
+    source: docs/STRUCTURE.md
+    rule: src/extension.ts remains small and only calls command/tool registration functions.
+  command_surface:
+    source: README.md
+    rule: /issueme owns config TUI/help/status/start workflow behavior; command tests must avoid live Pi startup.
+  tool_surface:
+    source: docs/STRUCTURE.md
+    rule: Each IssueMe tool owns its schema, prompt metadata, execution mode, safe result details, and mocked behavior tests.
+  github_boundary:
+    source: SECURITY.md
+    rule: GitHub access uses REST for repository-scoped issue operations and GraphQL for native sub-issue inspection/mutations; no GitHub CLI or shell-based repo discovery.
+  local_cache:
+    source: README.md
+    rule: Issue files are repository-aware JSON files under the configured issue directory, with safe paths, symlink refusal, bounded comments, and bounded tool details.
+  config_and_env:
+    source: SECURITY.md
+    rule: Non-secret config is stored in .pi/agent/issueme.json; tokens are read only from trusted .env/process env and never persisted or returned.
+  configuration_tui:
+    source: specs/spec-configuration-tui-design-standard.md
+    rule: TUI rendering follows width modes, theme roles, ANSI-safe line bounds, deterministic snapshots, and non-TUI fallback behavior.
+  testing:
+    source: package.json
+    rule: Default tests use mocks/stubs and must not perform live GitHub calls or live remote mutations.
+  package_contents:
+    source: scripts/check-package-contents.mjs
+    rule: Published package uses src/**/*.ts for source ergonomics, must include every local src TypeScript file, and must exclude specs, .pi, .env, issues, local caches, reports, tarballs, and local state.
+invariants:
+  source: SECURITY.md
+  required:
+    - GitHub REST and GraphQL APIs are used directly for issues, native sub-issues, and Projects v2; no GitHub CLI dependency.
+    - No shell execution for GitHub operations or repository discovery.
+    - No webhooks, background HTTP servers, timers, sockets, or file watchers from the extension factory.
+    - Project-local config, .env, Git metadata, and issue cache are honored only for trusted projects.
+    - GitHub tokens are never persisted, logged, returned, or written to tool details.
+    - Closed issues are not mutated; already-closed close requests are safe no-ops with local cleanup only.
+    - Remote GitHub issues are never deleted.
+    - Local writes are limited to .pi/agent/issueme.json and configured issue-cache JSON files.
+    - Issue paths reject traversal, protected directories, symlinked directories, and symlinked files.
+    - GitHub request and pagination URLs stay inside the resolved repository boundary.
+    - Mutating tools run sequentially to avoid sibling remote mutation races.
+    - Tool outputs, structured details, and cached comments are bounded with explicit truncation metadata.
+    - Tests use mocked GitHub/fetch behavior by default.
+routes:
+  task_backlog:
+    match: [next task, continue, remediation, backlog, checkbox, acceptance criteria, task file]
+    docs:
+      - specs/spec-remediation-tasks.md
+      - specs/spec-issue-management-expansion-tasks.md
+      - docs/context-router.yaml
+      - docs/STRUCTURE.md
+    files:
+      - .pi/skills/next-task/SKILL.md
+  architecture_summary:
+    match: [architecture, module boundary, structure, extension entry, data flow, source of truth]
+    docs:
+      - docs/STRUCTURE.md
+      - specs/spec-architecture.md
+      - docs/PROJECT_DEFINITION_BRIEF.md
+    files:
+      - src/extension.ts
+      - src/types.ts
+      - src/constants.ts
+  commands_tui:
+    match: [command, /issueme, help, info, start, config tui, renderer, snapshot, keyboard, theme]
+    docs:
+      - README.md
+      - specs/spec-configuration-tui-design-standard.md
+      - docs/STRUCTURE.md
+    files:
+      - src/commands/issueme-command.ts
+      - src/commands/config-tui.ts
+      - test/command-and-tui.test.mjs
+      - test/tui-artifacts.test.mjs
+      - scripts/generate-tui-artifacts.mjs
+  tools_runtime:
+    match: [tool, create issue, sync issues, list issues, search issues, filter issues, list labels, repository label discovery, repository label management, manage label, milestone discovery, milestone management, manage milestone, list milestones, assignee discovery, collaborator discovery, list assignees, list projects, project fields, projects v2, add issue to project, update project item, project item, native sub-issue, list sub-issues, reorder sub-issues, reprioritize sub-issues, relationship refresh, linked pull request, development reference, development link, issue dependency, dependency, blocker, tracked-by, get issue, update issue, comment issue, update comment, delete comment, assign issue, label issue, reopen issue, close issue, close reason, bulk issue, bulk update, bulk operations, executionMode, details, truncation]
+    docs:
+      - README.md
+      - docs/STRUCTURE.md
+      - specs/spec-guidelines.md
+    files:
+      - src/tools/issueme-tools.ts
+      - src/tools/runtime.ts
+      - src/tools/create-issue.ts
+      - src/tools/sub-issue.ts
+      - src/tools/development-links.ts
+      - src/tools/sync-issues.ts
+      - src/tools/list-issues.ts
+      - src/tools/list-labels.ts
+      - src/tools/list-milestones.ts
+      - src/tools/list-assignees.ts
+      - src/tools/manage-label.ts
+      - src/tools/manage-milestone.ts
+      - src/tools/projects.ts
+      - src/tools/get-issue.ts
+      - src/tools/update-issue.ts
+      - src/tools/comment-issue.ts
+      - src/tools/assign-issue.ts
+      - src/tools/label-issue.ts
+      - src/tools/reopen-issue.ts
+      - src/tools/close-issue.ts
+      - src/tools/bulk-issues.ts
+      - test/bulk-issues-tool.test.mjs
+      - test/extension-registration.test.mjs
+  github_client:
+    match: [github, rest, api, graphql, pagination, rate limit, retry, user-agent, labels endpoint, repository labels, repository label management, comments, comment edit, comment delete, native sub-issue, subIssues, reprioritizeSubIssue, linked pull request, development reference, timelineItems, issue dependency, blocker, tracked-by, projects v2, project item, closed issue]
+    docs:
+      - SECURITY.md
+      - README.md
+    files:
+      - src/github/client.ts
+      - src/github/repository.ts
+      - test/github-client.test.mjs
+      - test/github-client-remediation.test.mjs
+  issue_cache:
+    match: [issue cache, local issue file, issues directory, slug, symlink, repository-aware, corrupt json, invalid file, comments_truncated]
+    docs:
+      - README.md
+      - SECURITY.md
+      - docs/STRUCTURE.md
+    files:
+      - src/issues/store.ts
+      - src/issues/format.ts
+      - src/utils/slug.ts
+      - test/foundation.test.mjs
+      - test/sync-tool.test.mjs
+      - test/get-tool.test.mjs
+      - test/close-tool.test.mjs
+  config_env_repo:
+    match: [config, default labels, default assignees, skill path, .env, token, trust, repository, worktree, gitdir, project root]
+    docs:
+      - README.md
+      - SECURITY.md
+    files:
+      - src/config/config.ts
+      - src/utils/env.ts
+      - src/utils/project-root.ts
+      - src/github/repository.ts
+      - test/foundation.test.mjs
+      - test/command-and-tui.test.mjs
+  security_privacy:
+    match: [security, credential, token, secret, trust, privacy, network boundary, closed issue, path safety]
+    docs:
+      - SECURITY.md
+      - README.md
+      - specs/spec-guidelines.md
+    files:
+      - src/errors.ts
+      - src/utils/env.ts
+      - src/github/client.ts
+      - src/issues/store.ts
+  tests_validation:
+    match: [test, validate, typecheck, format, package check, smoke, ci, mocked, no live github]
+    docs:
+      - README.md
+      - docs/STRUCTURE.md
+    files:
+      - package.json
+      - scripts/check-format.mjs
+      - scripts/check-package-contents.mjs
+      - scripts/smoke-observability.mjs
+      - test
+  packaging_ci:
+    match: [package, publish, npm, files, check:pack, ci, workflow, package-lock]
+    docs:
+      - README.md
+      - CHANGELOG.md
+      - docs/STRUCTURE.md
+    files:
+      - package.json
+      - package-lock.json
+      - scripts/check-package-contents.mjs
+      - scripts/publish-npm.mjs
+      - .github/workflows/ci.yml
+  docs_release:
+    match: [docs, readme, changelog, contributing, project brief, release, structure]
+    docs:
+      - README.md
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - docs/PROJECT_DEFINITION_BRIEF.md
+      - docs/STRUCTURE.md
+    files:
+      - specs/spec-remediation-tasks.md
+  skills_context:
+    match: [skill, context router, context priming, next-task, handoff, task_file]
+    docs:
+      - docs/context-router.yaml
+      - docs/STRUCTURE.md
+    files:
+      - .pi/skills/next-task/SKILL.md
+      - .pi/skills/next-task/next-task-handoff.template.yaml
+maintenance:
+  when_paths_change:
+    update:
+      - docs/context-router.yaml
+      - docs/STRUCTURE.md
+      - README.md
+  when_commands_or_ownership_change:
+    update:
+      - docs/context-router.yaml
+      - README.md
+      - SECURITY.md
+  when_task_process_changes:
+    update:
+      - docs/context-router.yaml
+      - .pi/skills/next-task/SKILL.md
+      - .pi/skills/next-task/next-task-handoff.template.yaml
+  snippet_policy: Keep one canonical behavior snippet per topic and link or route to it from other docs.

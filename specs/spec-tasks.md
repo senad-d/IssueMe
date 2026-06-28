@@ -1,14 +1,16 @@
-# Plan: IssueMe Implementation Tasks
+# Plan: Archived IssueMe Implementation Tasks
+
+> Archive status: this file records the first implementation-pass backlog after those tasks were completed. `specs/spec-remediation-tasks.md` supersedes it for current remediation work; do not use this file as the active task board.
 
 ## Task Description
 
-Define the ordered task list for a later, separate implementation session for `@senad-d/issueme`. These tasks implement the approved IssueMe architecture and guidelines after repository preparation is complete.
+Record the ordered implementation task list that built the approved IssueMe architecture and guidelines after repository preparation.
 
-This specification is planning-only. All implementation checkboxes must remain unchecked during preparation.
+This archived specification may contain historical preparation/future-tense language below. Do not treat that language as a current task list or as proof that unverified behavior is release-ready.
 
 ## Objective
 
-Provide a concrete, checkbox-based implementation backlog with acceptance criteria for each task so a future session can implement IssueMe one task at a time.
+Provide historical implementation evidence with acceptance criteria for the completed first implementation pass.
 
 ## Problem Statement
 
@@ -20,23 +22,25 @@ Implement foundational pure helpers first, then GitHub REST access, then local i
 
 ## Relevant Files
 
-Use these files to complete the later implementation:
+Use these files for historical context and current cross-checks:
 
 - `docs/PROJECT_DEFINITION_BRIEF.md` - Approved project identity, scope, and decisions.
 - `specs/spec-architecture.md` - Architecture, data flow, module boundaries, and validation plan.
 - `specs/spec-guidelines.md` - Coding, Pi, package, testing, and security rules.
-- `src/extension.ts` - Future registration-only entry point.
+- `src/extension.ts` - Registration-only entry point.
 - `src/constants.ts` - Shared constants.
 - `README.md` - User-facing documentation.
 - `SECURITY.md` - Security model.
 - `test/*.test.mjs` - Unit/behavior tests.
 
-### New Files
+### Runtime Files
 
-The later implementation will likely create:
+The implementation created these runtime files:
 
 - `src/commands/issueme-command.ts`
-- `src/tools/create-issue.ts`
+- `src/commands/config-tui.ts`
+- `src/tools/issueme-tools.ts`
+- `src/tools/create-issue.ts
 - `src/tools/sync-issues.ts`
 - `src/tools/get-issue.ts`
 - `src/tools/update-issue.ts`
@@ -50,6 +54,8 @@ The later implementation will likely create:
 - `src/issues/store.ts`
 - `src/issues/format.ts`
 - `src/utils/env.ts`
+- `src/utils/mutation-queue.ts`
+- `src/utils/project-root.ts`
 - `src/utils/slug.ts`
 - `src/types.ts`
 - Additional focused tests under `test/`
@@ -80,7 +86,7 @@ Use the approved brief and specs as the source of truth. If they conflict, stop 
 
 #### Acceptance criteria
 
-- The implementation session has confirmed the approved scope: REST API only, no GitHub CLI, no webhooks, no mutation of closed issues.
+- The implementation session has confirmed the approved scope: direct GitHub APIs only, no GitHub CLI, no webhooks, no mutation of closed issues.
 - Any ambiguity found in the specs is raised before runtime code is changed.
 
 ### 2. Add shared types and constants
@@ -92,7 +98,7 @@ Keep `src/constants.ts` focused on stable strings such as display name, command 
 #### Acceptance criteria
 
 - TypeScript types cover config, issue JSON records, GitHub issue responses, comment responses, and tool result details.
-- Constants include `IssueMe`, `issueme`, `.pi/agent/issueme.json`, and `issues` without duplicating these strings throughout future modules.
+- Constants include `IssueMe`, `issueme`, `.pi/agent/issueme.json`, and `issues` without duplicating these strings throughout runtime modules.
 - `npm run typecheck` succeeds for the new type/constant files.
 
 ### 3. Implement `.env` and token resolution helpers
@@ -180,7 +186,7 @@ Methods that mutate an existing issue must support an open-state guard.
 
 #### Acceptance criteria
 
-- Tests cover request paths and payloads for each planned issue operation.
+- Tests cover request paths and payloads for each issue operation.
 - Tests cover pagination for issue listing and comments when applicable.
 - Tests prove closed issue mutation attempts fail before remote mutation payloads are sent.
 - Tests prove state is re-checked immediately before mutation.
@@ -317,7 +323,7 @@ The command should support TUI mode and provide a safe fallback or message in no
 
 ### 20. Implement `/issueme info`
 
-- [x] Implement `/issueme info` to show help, configured paths, resolved repo status, token presence status, cache summary, and planned tool names.
+- [x] Implement `/issueme info` to show help, configured paths, resolved repo status, token presence status, cache summary, and tool names.
 
 The command must not print secrets.
 
@@ -366,7 +372,7 @@ Use `pi --no-extensions -e .` for smoke tests unless the user explicitly request
 - `npm run test` passes.
 - `npm run check:pack` passes and excludes `.env`, `.pi/`, `issues/`, `specs/`, reports, caches, tarballs, and local state.
 - `npm run validate` passes.
-- `pi --no-extensions -e .` loads the extension and exposes planned commands/tools after implementation.
+- `pi --no-extensions -e .` loads the extension and exposes registered commands/tools after implementation.
 
 ## Testing Strategy
 
@@ -379,13 +385,13 @@ Use `pi --no-extensions -e .` for smoke tests unless the user explicitly request
 
 ## Acceptance Criteria
 
-- Every task above remains unchecked until completed in a later implementation session.
-- The future implementation follows the approved IssueMe architecture and guidelines.
-- The final implementation passes `npm run validate` and isolated Pi smoke testing.
+- Each task above stayed unchecked until its acceptance criteria were completed.
+- The implementation follows the approved IssueMe architecture and guidelines.
+- Release readiness still depends on the active remediation backlog, `npm run validate`, and isolated Pi smoke testing.
 
 ## Validation Commands
 
-Execute these commands during the later implementation session:
+Historical validation commands used during implementation:
 
 - `npm run typecheck` - Validate TypeScript.
 - `npm run test` - Run tests.
@@ -395,6 +401,6 @@ Execute these commands during the later implementation session:
 
 ## Notes
 
-- Do not run `subagent_tasks` against this spec during preparation.
-- Do not mark any checkbox complete during preparation.
-- Feature development must happen in a new session after the preparation handoff.
+- Do not run `subagent_tasks` against this archived spec for current remediation.
+- Do not mark active remediation checkboxes in this archived file.
+- Feature development now follows `specs/spec-remediation-tasks.md` unless a future spec explicitly supersedes it.

@@ -2,48 +2,84 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { createIssueMeRuntime, requireNonEmptyStrings, refreshIssueRecord, toolText, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolError, requireNonEmptyStrings, refreshIssueRecord, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const LabelIssueParams = Type.Object(
 	{
-		number: Type.Integer({ minimum: 1, description: "Open issue number to label." }),
-		action: StringEnum(["add", "remove", "set"] as const, { description: "Label action to perform." }),
-		labels: Type.Array(Type.String(), { description: "Label names for the action." }),
+		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
+		action: StringEnum(["add", "remove", "set"] as const, { description: "Label action; set [] clears all." }),
+		labels: Type.Array(Type.String(), { description: "Label names." }),
 	},
 	{ additionalProperties: false },
 );
 
-export function registerLabelIssueTool(pi: ExtensionAPI) {
+export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
 			name: "issueme_label_issue",
 			label: "IssueMe Label Issue",
-			description: "Add, remove, or set labels on an open GitHub issue and update the local cache.",
-			promptSnippet: "Add, remove, or set GitHub issue labels for open issues.",
+			description: "Add, remove, or set issue labels.",
+			promptSnippet: "Add/remove/set issue labels.",
 			promptGuidelines: [
-				"Use issueme_label_issue to change labels on open issues; issueme_label_issue refuses closed issues.",
+				"Use issueme_label_issue to add, remove, or set labels on open issues.",
 			],
+			executionMode: "sequential",
 			parameters: LabelIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const labels = requireNonEmptyStrings(params.labels, "labels");
-				const runtime = await createIssueMeRuntime(ctx);
+				const labels = params.action === "set" ? sanitizeStringList(params.labels, "labels") : requireNonEmptyStrings(params.labels, "labels");
+				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				if (params.action === "add") await runtime.client.addLabels(params.number, labels, signal);
 				else if (params.action === "set") await runtime.client.setLabels(params.number, labels, signal);
 				else {
-					for (const label of labels) await runtime.client.removeLabel(params.number, label, signal);
+					let removedLabelMutations = 0;
+					try {
+						for (const label of labels) {
+							const response = await runtime.client.removeLabel(params.number, label, signal);
+							if (response !== undefined) removedLabelMutations += 1;
+						}
+					} catch (error) {
+						if (removedLabelMutations === 0) throw error;
+						const safeError = partialSuccessToolError(error, "remote_partial_success");
+						return toolText(
+							`Removed ${removedLabelMutations} label(s) from issue #${params.number} before a later label removal failed. Run issueme_sync_issues before retrying local work.`,
+							{
+								repository: runtime.repository,
+								changedFields: ["labels"],
+								cacheUpdated: false,
+								needsSync: true,
+								status: "remote_partial_success",
+								message: safeError.message,
+								error: safeError,
+							},
+						);
+					}
 				}
 
-				const record = await refreshIssueRecord(runtime, params.number, signal);
-				const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
-				return toolText(
-					`Labels for issue #${params.number}: ${record.labels.length ? record.labels.join(", ") : "none"}`,
-					{
+				try {
+					const record = await refreshIssueRecord(runtime, params.number, signal);
+					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					return toolText(`Labels for issue #${params.number}: ${record.labels.length ? record.labels.join(", ") : "none"}`, {
 						repository: runtime.repository,
 						issue: summary,
 						changedFields: ["labels"],
 						paths: path ? [path] : [],
-					},
-				);
+						cacheUpdated: true,
+					});
+				} catch (error) {
+					const safeError = partialSuccessToolError(error);
+					return toolText(
+						`Updated labels for issue #${params.number} remotely. Local cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						{
+							repository: runtime.repository,
+							changedFields: ["labels"],
+							cacheUpdated: false,
+							needsSync: true,
+							status: "partial_success",
+							message: safeError.message,
+							error: safeError,
+						},
+					);
+				}
 			},
 		}),
 	);

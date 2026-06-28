@@ -1,7 +1,9 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { DEFAULT_ISSUES_DIR, LOCAL_ISSUE_FILE_EXTENSION, MAX_TITLE_SLUG_LENGTH } from "../constants.ts";
+import { DEFAULT_ISSUES_DIR, LOCAL_ISSUE_FILE_EXTENSION, MAX_TITLE_SLUG_LENGTH, PROTECTED_ISSUE_DIRECTORIES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
+
+const PROTECTED_DIRECTORY_SET = new Set<string>(PROTECTED_ISSUE_DIRECTORIES.map((directory) => directory.toLowerCase()));
 
 export function slugifyIssueTitle(title: string, maxLength = MAX_TITLE_SLUG_LENGTH): string {
 	const normalized = title
@@ -28,13 +30,46 @@ export function parseIssueNumberFromFileName(fileName: string): number | undefin
 	return Number.isSafeInteger(number) && number > 0 ? number : undefined;
 }
 
-export function resolveIssueDirectory(cwd: string, issueDirectory = DEFAULT_ISSUES_DIR): string {
-	const cleanDirectory = stripLeadingAt(issueDirectory.trim() || DEFAULT_ISSUES_DIR);
+export function normalizeIssueDirectoryValue(issueDirectory: string | undefined): string {
+	const cleanDirectory = stripLeadingAt((issueDirectory ?? DEFAULT_ISSUES_DIR).trim() || DEFAULT_ISSUES_DIR);
 	if (cleanDirectory.includes("\0")) {
 		throw new IssueMeError("unsafe_issue_directory", "Issue directory contains an invalid null byte.");
 	}
+	return cleanDirectory;
+}
+
+export function assertSafeIssueDirectoryValue(issueDirectory: string, options: { allowAbsolute?: boolean } = {}): void {
+	const normalized = normalizeIssueDirectoryValue(issueDirectory);
+	if (!options.allowAbsolute && isAbsolutePath(normalized)) {
+		throw new IssueMeError("unsafe_issue_directory", "Issue directory must be project-relative.");
+	}
+	if (normalized === ".") {
+		throw new IssueMeError("unsafe_issue_directory", "Issue directory cannot be the project root.");
+	}
+	if (normalized.startsWith("../") || normalized === ".." || normalized.includes("/../") || normalized.includes("\\..\\")) {
+		throw new IssueMeError("unsafe_issue_directory", "Issue directory cannot use path traversal.");
+	}
+
+	const parts = normalized.split(/[\\/]+/).filter(Boolean);
+	for (const part of parts) {
+		if (part === "..") {
+			throw new IssueMeError("unsafe_issue_directory", "Issue directory cannot use path traversal.");
+		}
+		const normalizedPart = part.toLowerCase();
+		if (PROTECTED_DIRECTORY_SET.has(normalizedPart)) {
+			throw new IssueMeError("unsafe_issue_directory", `Issue directory cannot be or contain protected directory: ${part}.`);
+		}
+	}
+}
+
+export function resolveIssueDirectory(cwd: string, issueDirectory = DEFAULT_ISSUES_DIR): string {
+	const cleanDirectory = normalizeIssueDirectoryValue(issueDirectory);
+	assertSafeIssueDirectoryValue(cleanDirectory);
 	const absolute = resolve(cwd, cleanDirectory);
 	assertPathInside(cwd, absolute, "Issue directory must stay inside the current project.");
+	if (resolve(cwd) === absolute) {
+		throw new IssueMeError("unsafe_issue_directory", "Issue directory cannot be the project root.");
+	}
 	return absolute;
 }
 
@@ -69,6 +104,10 @@ export function assertPathInside(parentDirectory: string, childPath: string, mes
 	throw new IssueMeError("unsafe_path", message);
 }
 
+export function assertPathNotEqual(parentDirectory: string, childPath: string, message: string): void {
+	if (resolve(parentDirectory) === resolve(childPath)) throw new IssueMeError("unsafe_path", message);
+}
+
 function assertIssueNumber(issueNumber: number): void {
 	if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
 		throw new IssueMeError("invalid_issue_number", "Issue number must be a positive safe integer.");
@@ -77,6 +116,10 @@ function assertIssueNumber(issueNumber: number): void {
 
 function stripLeadingAt(value: string): string {
 	return value.startsWith("@") ? value.slice(1) : value;
+}
+
+function isAbsolutePath(value: string): boolean {
+	return isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 }
 
 export function toProjectRelativePath(cwd: string, absolutePath: string): string {

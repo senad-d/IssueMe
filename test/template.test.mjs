@@ -17,7 +17,7 @@ test("package declares the IssueMe Pi extension entry file", async () => {
 });
 
 test("package metadata points at the IssueMe repository", () => {
-  assert.equal(packageJson.description, "Agent-friendly GitHub issue management layer for Pi using GitHub REST API and local issue files.");
+  assert.equal(packageJson.description, "Agent-friendly GitHub issue management layer for Pi using GitHub APIs and local issue files.");
   assert.equal(packageJson.repository?.url, "git+https://github.com/senad-d/issueme.git");
   assert.equal(packageJson.bugs?.url, "https://github.com/senad-d/issueme/issues");
   assert.equal(packageJson.homepage, "https://github.com/senad-d/issueme#readme");
@@ -35,6 +35,6 @@ test("required IssueMe implementation specs exist", async () => {
 test("approved project definition brief is present", async () => {
   const brief = await readFile(new URL("../docs/PROJECT_DEFINITION_BRIEF.md", import.meta.url), "utf8");
   assert.match(brief, /Package name: `@senad-d\/issueme`/);
-  assert.match(brief, /REST API only/);
+  assert.match(brief, /REST and GraphQL APIs/);
   assert.match(brief, /No webhooks now/);
 });

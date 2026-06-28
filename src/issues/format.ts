@@ -1,4 +1,4 @@
-import { ISSUE_SCHEMA_VERSION } from "../constants.ts";
+import { ISSUE_SCHEMA_VERSION, MAX_GET_BODY_CHARS, MAX_GET_COMMENT_CHARS, MAX_GET_COMMENTS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type {
 	GitHubCommentResponse,
@@ -9,6 +9,7 @@ import type {
 	GitHubUserResponse,
 	IssueCommentRecord,
 	IssueRecord,
+	IssueRelationshipSummary,
 	IssueState,
 	ToolIssueSummary,
 } from "../types.ts";
@@ -22,6 +23,19 @@ export interface IssueSummaryFormatOptions {
 export interface FormattedIssueSummary {
 	text: string;
 	truncated: boolean;
+	truncation?: Record<string, unknown>;
+}
+
+export interface CommentFetchMetadata {
+	limit?: number;
+	truncated?: boolean;
+	totalCount?: number;
+}
+
+export interface IssueRelationshipMetadata {
+	parent_issue?: IssueRelationshipSummary | null;
+	sub_issues?: IssueRelationshipSummary[];
+	sub_issues_count?: number;
 }
 
 export function githubIssueToRecord(
@@ -29,10 +43,16 @@ export function githubIssueToRecord(
 	issue: GitHubIssueResponse,
 	comments: GitHubCommentResponse[] = [],
 	syncedAt = new Date().toISOString(),
+	commentFetch: CommentFetchMetadata = {},
 ): IssueRecord {
 	const number = requireNumber(issue.number, "issue.number");
 	const title = requireString(issue.title, "issue.title");
 	const state = normalizeIssueState(issue.state);
+	const normalizedComments = comments.map(normalizeComment);
+	const commentsCount = normalizeCommentCount(issue.comments, commentFetch.totalCount, normalizedComments.length);
+	const commentsFetchLimit = commentFetch.limit ?? normalizedComments.length;
+	const commentsTruncated = commentFetch.truncated ?? commentsCount > normalizedComments.length;
+	const relationships = normalizeIssueRelationships(issue);
 	return {
 		schemaVersion: ISSUE_SCHEMA_VERSION,
 		repository: repository.fullName,
@@ -43,7 +63,13 @@ export function githubIssueToRecord(
 		labels: normalizeLabels(issue.labels),
 		assignees: normalizeAssignees(issue.assignees),
 		milestone: normalizeMilestone(issue.milestone),
-		comments: comments.map(normalizeComment),
+		...(relationships.parent_issue !== undefined ? { parent_issue: relationships.parent_issue } : {}),
+		...(relationships.sub_issues !== undefined ? { sub_issues: relationships.sub_issues } : {}),
+		...(relationships.sub_issues_count !== undefined ? { sub_issues_count: relationships.sub_issues_count } : {}),
+		comments: normalizedComments,
+		comments_truncated: commentsTruncated,
+		comments_count: commentsCount,
+		comments_fetch_limit: commentsFetchLimit,
 		html_url: requireString(issue.html_url, "issue.html_url"),
 		created_at: requireString(issue.created_at, "issue.created_at"),
 		updated_at: requireString(issue.updated_at, "issue.updated_at"),
@@ -66,20 +92,42 @@ export function issueRecordToToolSummary(record: IssueRecord, localPath?: string
 		assignees: [...record.assignees],
 		html_url: record.html_url,
 		...(localPath ? { localPath } : {}),
+		...(record.parent_issue !== undefined ? { parentIssue: record.parent_issue } : {}),
+		...(record.sub_issues !== undefined ? { subIssues: [...record.sub_issues] } : {}),
+		...(record.sub_issues_count !== undefined ? { subIssuesCount: record.sub_issues_count } : {}),
+		...(record.comments_truncated !== undefined ? { commentsTruncated: record.comments_truncated } : {}),
+		...(record.comments_count !== undefined ? { commentsCount: record.comments_count } : {}),
+		...(record.comments_fetch_limit !== undefined ? { commentsFetchLimit: record.comments_fetch_limit } : {}),
+	};
+}
+
+export function applyIssueRelationshipMetadata(record: IssueRecord, relationships: IssueRelationshipMetadata): IssueRecord {
+	return {
+		...record,
+		...(relationships.parent_issue !== undefined ? { parent_issue: relationships.parent_issue } : {}),
+		...(relationships.sub_issues !== undefined ? { sub_issues: relationships.sub_issues } : {}),
+		...(relationships.sub_issues_count !== undefined ? { sub_issues_count: relationships.sub_issues_count } : {}),
 	};
 }
 
 export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFormatOptions = {}): FormattedIssueSummary {
-	const maxBodyChars = options.maxBodyChars ?? 4000;
-	const maxComments = options.maxComments ?? 5;
-	const maxCommentChars = options.maxCommentChars ?? 1200;
+	const maxBodyChars = options.maxBodyChars ?? MAX_GET_BODY_CHARS;
+	const maxComments = options.maxComments ?? MAX_GET_COMMENTS;
+	const maxCommentChars = options.maxCommentChars ?? MAX_GET_COMMENT_CHARS;
 	let truncated = false;
+	const truncation: Record<string, unknown> = {};
 
 	const body = truncateText(record.body || "(no body)", maxBodyChars);
-	if (body.truncated) truncated = true;
+	if (body.truncated) {
+		truncated = true;
+		truncation.body = { maxChars: maxBodyChars, originalChars: (record.body || "(no body)").length, shownChars: body.text.length };
+	}
 
 	const comments = record.comments.slice(0, maxComments);
-	if (comments.length < record.comments.length) truncated = true;
+	if (comments.length < record.comments.length) {
+		truncated = true;
+		truncation.comments = { shown: comments.length, total: record.comments.length, max: maxComments };
+	}
 
 	const lines = [
 		`#${record.number} ${record.title}`,
@@ -88,28 +136,121 @@ export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFor
 		`URL: ${record.html_url}`,
 		`Labels: ${record.labels.length ? record.labels.join(", ") : "none"}`,
 		`Assignees: ${record.assignees.length ? record.assignees.join(", ") : "none"}`,
+		...(record.parent_issue !== undefined ? [`Parent issue: ${record.parent_issue ? formatRelationshipSummary(record.parent_issue) : "none"}`] : []),
+		...(record.sub_issues !== undefined || record.sub_issues_count !== undefined ? [`Sub-issues: ${formatSubIssueSummary(record)}`] : []),
 		`Updated: ${record.updated_at}`,
 		"",
 		"Body:",
 		body.text,
 	];
 
+	if (record.comments_truncated) {
+		truncated = true;
+		truncation.cacheComments = {
+			shown: record.comments.length,
+			...(record.comments_count !== undefined ? { total: record.comments_count } : {}),
+			limit: record.comments_fetch_limit ?? record.comments.length,
+		};
+		lines.push(
+			"",
+			`Comments fetched: ${record.comments.length}${record.comments_count !== undefined ? ` of ${record.comments_count}` : ""} (limit ${record.comments_fetch_limit ?? record.comments.length}; truncated).`,
+		);
+	}
+
 	if (record.comments.length > 0) {
 		lines.push("", `Comments (${record.comments.length}):`);
+		let truncatedCommentBodies = 0;
 		for (const comment of comments) {
 			const commentBody = truncateText(comment.body, maxCommentChars);
-			if (commentBody.truncated) truncated = true;
+			if (commentBody.truncated) {
+				truncated = true;
+				truncatedCommentBodies += 1;
+			}
 			lines.push(`- ${comment.author} at ${comment.updated_at} (${comment.html_url})`, commentBody.text);
+		}
+		if (truncatedCommentBodies > 0) {
+			truncation.commentBodies = { affected: truncatedCommentBodies, maxChars: maxCommentChars };
 		}
 	}
 
 	if (truncated) lines.push("", "[IssueMe output truncated; local issue JSON may contain more detail.]");
-	return { text: lines.join("\n"), truncated };
+	return { text: lines.join("\n"), truncated, ...(truncated ? { truncation } : {}) };
 }
 
 export function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
 	if (text.length <= maxChars) return { text, truncated: false };
 	return { text: `${text.slice(0, Math.max(0, maxChars - 20))}\n… [truncated]`, truncated: true };
+}
+
+function normalizeIssueRelationships(issue: GitHubIssueResponse): IssueRelationshipMetadata {
+	const rawParent = issue.parent_issue ?? issue.parent;
+	const parentIssue = rawParent === null ? null : normalizeRelationshipSummary(rawParent);
+	const subIssues = normalizeSubIssues(issue.sub_issues);
+	const summaryCount = normalizeSubIssuesSummaryCount(issue.sub_issues_summary);
+	const subIssuesCount = summaryCount ?? (subIssues ? subIssues.length : undefined);
+	return {
+		...(rawParent !== undefined ? { parent_issue: parentIssue ?? null } : {}),
+		...(subIssues !== undefined ? { sub_issues: subIssues } : {}),
+		...(subIssuesCount !== undefined ? { sub_issues_count: subIssuesCount } : {}),
+	};
+}
+
+function normalizeRelationshipSummary(value: unknown): IssueRelationshipSummary | undefined {
+	if (!isObject(value)) return undefined;
+	const number = value.number;
+	const title = value.title;
+	const rawUrl = value.html_url ?? value.url;
+	if (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0) return undefined;
+	if (typeof title !== "string" || !title.trim()) return undefined;
+	if (typeof rawUrl !== "string" || !rawUrl.trim()) return undefined;
+	const state = normalizeOptionalIssueState(value.state);
+	return {
+		number,
+		title,
+		...(state ? { state } : {}),
+		html_url: rawUrl,
+	};
+}
+
+function normalizeSubIssues(value: unknown): IssueRelationshipSummary[] | undefined {
+	if (value === undefined) return undefined;
+	const rawNodes = Array.isArray(value)
+		? value
+		: isObject(value) && Array.isArray(value.nodes)
+			? value.nodes
+			: undefined;
+	if (!rawNodes) return undefined;
+	return rawNodes.map(normalizeRelationshipSummary).filter((issue): issue is IssueRelationshipSummary => issue !== undefined);
+}
+
+function normalizeSubIssuesSummaryCount(value: unknown): number | undefined {
+	if (!isObject(value)) return undefined;
+	const total = value.total ?? value.total_count ?? value.totalCount;
+	return typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : undefined;
+}
+
+function normalizeOptionalIssueState(value: unknown): IssueState | undefined {
+	if (value === "open" || value === "OPEN") return "open";
+	if (value === "closed" || value === "CLOSED") return "closed";
+	return undefined;
+}
+
+function formatRelationshipSummary(issue: IssueRelationshipSummary): string {
+	return `#${issue.number} ${issue.title}${issue.state ? ` (${issue.state})` : ""}`;
+}
+
+function formatSubIssueSummary(record: IssueRecord): string {
+	const subIssues = record.sub_issues ?? [];
+	if (subIssues.length === 0) return record.sub_issues_count === undefined ? "none" : `${record.sub_issues_count} total`;
+	const total = record.sub_issues_count ?? subIssues.length;
+	const shown = subIssues.map(formatRelationshipSummary).join(", ");
+	return total > subIssues.length ? `${shown} (${subIssues.length} shown of ${total})` : shown;
+}
+
+function normalizeCommentCount(value: unknown, fallback: number | undefined, minimum: number): number {
+	const candidate = typeof value === "number" ? value : fallback;
+	if (typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= minimum) return candidate;
+	return minimum;
 }
 
 function normalizeLabels(value: unknown): string[] {

@@ -13,6 +13,8 @@ Review the current IssueMe implementation and define an ordered remediation back
 
 ## Review Summary
 
+Current implementation note: the remediation pass has addressed a large subset of this backlog, including source-of-truth notes, placeholder cleanup, project-root resolution, config TUI rendering, command parsing/help aliases, config/env/repository/path hardening, repository-aware cache operations, GitHub client pagination/error hardening, schema cleanup, sequential mutating tools, cache privacy defaults, CI validation, TUI visual artifacts, and documentation/source-of-truth reconciliation. Keep individual task checkboxes authoritative; do not treat unchecked tasks as complete without verifying acceptance criteria.
+
 The first implementation compiles and has useful foundations, but it is not release-ready. Main gaps include:
 
 - `/issueme` opens a raw JSON editor instead of the approved configuration TUI design standard.
@@ -49,7 +51,7 @@ The existing remediation list needed a second pass to capture missing issues, ad
 - Every task has acceptance criteria.
 - Completed tasks are marked with `[x]`.
 
-### 1. [ ] Re-establish current scope and source of truth
+### 1. [x] Re-establish current scope and source of truth
 
 #### Why
 
@@ -57,18 +59,18 @@ The repository now has a partially implemented runtime, while older specs still 
 
 #### How to resolve
 
-- [ ] Re-read `docs/PROJECT_DEFINITION_BRIEF.md`, `specs/spec-architecture.md`, `specs/spec-guidelines.md`, `specs/spec-configuration-tui-design-standard.md`, `specs/spec-tasks.md`, and this file.
-- [ ] Decide whether this remediation file supersedes `specs/spec-tasks.md` or whether `specs/spec-tasks.md` stays as historical implementation-pass evidence.
-- [ ] Add a short note to stale specs/docs pointing readers to this remediation file for the next pass.
-- [ ] Confirm scope remains REST API only, no GitHub CLI, no webhooks, no mutation of closed issues.
+- [x] Re-read `docs/PROJECT_DEFINITION_BRIEF.md`, `specs/spec-architecture.md`, `specs/spec-guidelines.md`, `specs/spec-configuration-tui-design-standard.md`, `specs/spec-tasks.md`, and this file.
+- [x] Decide whether this remediation file supersedes `specs/spec-tasks.md` or whether `specs/spec-tasks.md` stays as historical implementation-pass evidence.
+- [x] Add a short note to stale specs/docs pointing readers to this remediation file for the next pass.
+- [x] Confirm scope remains direct GitHub APIs only, no GitHub CLI, no webhooks, no mutation of closed issues.
 
 #### Acceptance criteria
 
 - There is no ambiguity about which task list drives the next implementation pass.
-- Scope still says REST API only, no GitHub CLI, no webhooks, and no closed-issue mutation.
+- Scope still says direct GitHub APIs only, no GitHub CLI, no webhooks, and no closed-issue mutation.
 - Docs no longer imply the current code is release-ready before remediation is complete.
 
-### 2. [ ] Remove preparation/template leftovers safely
+### 2. [x] Remove preparation/template leftovers safely
 
 #### Why
 
@@ -76,11 +78,11 @@ The repository now has a partially implemented runtime, while older specs still 
 
 #### How to resolve
 
-- [ ] Delete or consolidate `src/commands/example-command.ts`.
-- [ ] Delete or consolidate `src/tools/example-tool.ts`.
-- [ ] Delete `src/events/lifecycle.ts` if no lifecycle hooks are intentionally registered.
-- [ ] Delete `src/utils/format.ts` if it is not used by real runtime behavior.
-- [ ] Update `package.json`, `docs/STRUCTURE.md`, and package-content tests after cleanup.
+- [x] Delete or consolidate `src/commands/example-command.ts`.
+- [x] Delete or consolidate `src/tools/example-tool.ts`.
+- [x] Delete `src/events/lifecycle.ts` if no lifecycle hooks are intentionally registered.
+- [x] Delete `src/utils/format.ts` if it is not used by real runtime behavior.
+- [x] Update `package.json`, `docs/STRUCTURE.md`, and package-content tests after cleanup.
 
 #### Acceptance criteria
 
@@ -89,7 +91,7 @@ The repository now has a partially implemented runtime, while older specs still 
 - `npm run typecheck` passes.
 - `npm run check:pack` excludes specs, `.pi`, `.env`, `issues`, caches, reports, tarballs, and local state.
 
-### 3. [ ] Introduce a single project-root/path context helper
+### 3. [x] Introduce a single project-root/path context helper
 
 #### Why
 
@@ -97,10 +99,10 @@ Multiple modules currently assume `ctx.cwd` is the repository/project root. If P
 
 #### How to resolve
 
-- [ ] Add a helper that determines the project root for IssueMe operations.
-- [ ] Prefer Pi context root if available; otherwise discover the nearest Git root without shelling out.
-- [ ] Make config, env, repository, and issue-store modules use this root consistently.
-- [ ] Keep behavior documented for nested working directories.
+- [x] Add a helper that determines the project root for IssueMe operations.
+- [x] Prefer Pi context root if available; otherwise discover the nearest Git root without shelling out.
+- [x] Make config, env, repository, and issue-store modules use this root consistently.
+- [x] Keep behavior documented for nested working directories.
 
 #### Acceptance criteria
 
@@ -108,7 +110,7 @@ Multiple modules currently assume `ctx.cwd` is the repository/project root. If P
 - Repository discovery remains shell-free.
 - Tests cover root cwd and nested cwd behavior.
 
-### 4. [ ] Redesign command parsing around one help/status surface
+### 4. [x] Redesign command parsing around one help/status surface
 
 #### Why
 
@@ -116,11 +118,11 @@ Multiple modules currently assume `ctx.cwd` is the repository/project root. If P
 
 #### How to resolve
 
-- [ ] Extract command parsing into a pure helper, for example `parseIssueMeCommand(args)`.
-- [ ] Parse exact subcommands only: empty, `info`, `help`, `--help`, `-h`, and `start`.
-- [ ] Make `/issueme info`, `/issueme help`, `/issueme --help`, and `/issueme -h` render the same combined help/status view.
-- [ ] Route unknown subcommands to the combined help/status view with a concise warning.
-- [ ] Keep `/issueme` with no args dedicated to configuration.
+- [x] Extract command parsing into a pure helper, for example `parseIssueMeCommand(args)`.
+- [x] Parse exact subcommands only: empty, `info`, `help`, `--help`, `-h`, and `start`.
+- [x] Make `/issueme info`, `/issueme help`, `/issueme --help`, and `/issueme -h` render the same combined help/status view.
+- [x] Route unknown subcommands to the combined help/status view with a concise warning.
+- [x] Keep `/issueme` with no args dedicated to configuration.
 
 #### Acceptance criteria
 
@@ -128,7 +130,7 @@ Multiple modules currently assume `ctx.cwd` is the repository/project root. If P
 - `/issueme starter` does not run the start workflow.
 - Tests cover empty args, info/help aliases, start args, and unknown commands.
 
-### 5. [ ] Make command UI mode-safe
+### 5. [x] Make command UI mode-safe
 
 #### Why
 
@@ -136,10 +138,10 @@ Some command paths call `ctx.ui.notify` without checking `ctx.hasUI`, and the fu
 
 #### How to resolve
 
-- [ ] Audit every command handler for `ctx.hasUI` and `ctx.mode` checks.
-- [ ] Use `ctx.mode === "tui"` before custom TUI rendering.
-- [ ] Use `ctx.hasUI` before notifications/dialogs.
-- [ ] Provide safe non-TUI output via `pi.sendMessage` or returned command text where appropriate.
+- [x] Audit every command handler for `ctx.hasUI` and `ctx.mode` checks.
+- [x] Use `ctx.mode === "tui"` before custom TUI rendering.
+- [x] Use `ctx.hasUI` before notifications/dialogs.
+- [x] Provide safe non-TUI output via `pi.sendMessage` or returned command text where appropriate.
 
 #### Acceptance criteria
 
@@ -147,7 +149,7 @@ Some command paths call `ctx.ui.notify` without checking `ctx.hasUI`, and the fu
 - No TUI-only component is attempted outside TUI mode.
 - Tests cover no-UI and UI-capable command contexts.
 
-### 6. [ ] Implement the approved configuration TUI design standard
+### 6. [x] Implement the approved configuration TUI design standard
 
 #### Why
 
@@ -155,15 +157,15 @@ The current `/issueme` configuration command opens a raw JSON editor, which does
 
 #### How to resolve
 
-- [ ] Create a dedicated config TUI component/module.
-- [ ] Implement wide mode with category and setting panes.
-- [ ] Implement narrow mode with one pane at a time.
-- [ ] Implement tiny mode with the no-border four-line fallback.
-- [ ] Use the `▶ ` selection marker and ` • ` footer separator.
-- [ ] Use theme roles instead of hardcoded ANSI colors.
-- [ ] Right-align values and clip/pad every line ANSI-safely.
-- [ ] Add search, focus state, keyboard help, save/cancel, and edit states.
-- [ ] Keep non-TUI fallback concise and non-interactive.
+- [x] Create a dedicated config TUI component/module.
+- [x] Implement wide mode with category and setting panes.
+- [x] Implement narrow mode with one pane at a time.
+- [x] Implement tiny mode with the no-border four-line fallback.
+- [x] Use the `▶ ` selection marker and ` • ` footer separator.
+- [x] Use theme roles instead of hardcoded ANSI colors.
+- [x] Right-align values and clip/pad every line ANSI-safely.
+- [x] Add search, focus state, keyboard help, save/cancel, and edit states.
+- [x] Keep non-TUI fallback concise and non-interactive.
 
 #### Acceptance criteria
 
@@ -174,7 +176,7 @@ The current `/issueme` configuration command opens a raw JSON editor, which does
 - No hardcoded ANSI colors are used.
 - Config UI edits only non-secret settings.
 
-### 7. [ ] Validate configuration before saving
+### 7. [x] Validate configuration before saving
 
 #### Why
 
@@ -182,12 +184,12 @@ Config persistence currently normalizes values but does not fully validate safet
 
 #### How to resolve
 
-- [ ] Add a config validation function separate from raw normalization.
-- [ ] Validate `issueDirectory` with the final project-root helper.
-- [ ] Sanitize and deduplicate `defaultLabels` and `defaultAssignees`.
-- [ ] Decide whether `defaultSkillPath` can be absolute or must be project-local.
-- [ ] Reject secret-like keys at every nesting level.
-- [ ] Use a file mutation queue or equivalent full safe write window for `.pi/agent/issueme.json`.
+- [x] Add a config validation function separate from raw normalization.
+- [x] Validate `issueDirectory` with the final project-root helper.
+- [x] Sanitize and deduplicate `defaultLabels` and `defaultAssignees`.
+- [x] Decide whether `defaultSkillPath` can be absolute or must be project-local.
+- [x] Reject secret-like keys at every nesting level.
+- [x] Use a file mutation queue or equivalent full safe write window for `.pi/agent/issueme.json`.
 
 #### Acceptance criteria
 
@@ -196,7 +198,7 @@ Config persistence currently normalizes values but does not fully validate safet
 - Config writes create only `.pi/agent/issueme.json` and needed parent directories.
 - Tests cover path traversal, absolute paths, duplicate values, blank values, and secret-like keys.
 
-### 8. [ ] Add project-trust gates for project-local reads
+### 8. [x] Add project-trust gates for project-local reads
 
 #### Why
 
@@ -204,11 +206,11 @@ IssueMe reads project-local `.env`, `.git/config`, `.pi/agent/issueme.json`, and
 
 #### How to resolve
 
-- [ ] Define a trust policy for commands and tools.
-- [ ] Check `ctx.isProjectTrusted()` before honoring project-local config and `.env`.
-- [ ] Decide whether repository resolution from `.git/config` also requires trust.
-- [ ] Provide safe error/fallback behavior when project trust is missing.
-- [ ] Document trust behavior in README and SECURITY.
+- [x] Define a trust policy for commands and tools.
+- [x] Check `ctx.isProjectTrusted()` before honoring project-local config and `.env`.
+- [x] Decide whether repository resolution from `.git/config` also requires trust.
+- [x] Provide safe error/fallback behavior when project trust is missing.
+- [x] Document trust behavior in README and SECURITY.
 
 #### Acceptance criteria
 
@@ -216,7 +218,7 @@ IssueMe reads project-local `.env`, `.git/config`, `.pi/agent/issueme.json`, and
 - Trusted projects retain expected behavior.
 - Tests cover trusted and untrusted contexts without live Pi startup.
 
-### 9. [ ] Harden repository resolution
+### 9. [x] Harden repository resolution
 
 #### Why
 
@@ -224,11 +226,11 @@ Repository resolution only reads `.git/config` directly under `cwd`; it does not
 
 #### How to resolve
 
-- [ ] Support `.git` directories.
-- [ ] Support `.git` files containing `gitdir: ...`.
-- [ ] Support nested cwd by walking to the project/repo root without shelling out.
-- [ ] Keep `GITHUB_REPOSITORY` precedence over local Git config.
-- [ ] Add safe errors for missing origin, malformed origin, and non-GitHub origin.
+- [x] Support `.git` directories.
+- [x] Support `.git` files containing `gitdir: ...`.
+- [x] Support nested cwd by walking to the project/repo root without shelling out.
+- [x] Keep `GITHUB_REPOSITORY` precedence over local Git config.
+- [x] Add safe errors for missing origin, malformed origin, and non-GitHub origin.
 
 #### Acceptance criteria
 
@@ -236,7 +238,7 @@ Repository resolution only reads `.git/config` directly under `cwd`; it does not
 - Error messages are safe and actionable.
 - No shell/GitHub CLI commands are introduced.
 
-### 10. [ ] Harden `.env` parsing and token status behavior
+### 10. [x] Harden `.env` parsing and token status behavior
 
 #### Why
 
@@ -244,12 +246,12 @@ The current `.env` parser handles simple cases but fails common dotenv edge case
 
 #### How to resolve
 
-- [ ] Correct parsing for `GH_TOKEN="abc" # comment`.
-- [ ] Support `export GH_TOKEN=...` consistently.
-- [ ] Preserve quoted `#` characters inside values.
-- [ ] Decide and document whether multiline values are unsupported.
-- [ ] Make `/issueme info/help` show token status as present/missing/error without throwing on unreadable `.env`.
-- [ ] Keep reading only known token keys.
+- [x] Correct parsing for `GH_TOKEN="abc" # comment`.
+- [x] Support `export GH_TOKEN=...` consistently.
+- [x] Preserve quoted `#` characters inside values.
+- [x] Decide and document whether multiline values are unsupported.
+- [x] Make `/issueme info/help` show token status as present/missing/error without throwing on unreadable `.env`.
+- [x] Keep reading only known token keys.
 
 #### Acceptance criteria
 
@@ -257,7 +259,7 @@ The current `.env` parser handles simple cases but fails common dotenv edge case
 - Token status never prints or returns token values.
 - Tests cover comments, quoted values, escaped quotes, `export`, empty values, whitespace, quoted `#`, and unreadable `.env`.
 
-### 11. [ ] Protect dangerous issue-directory configurations
+### 11. [x] Protect dangerous issue-directory configurations
 
 #### Why
 
@@ -265,11 +267,11 @@ A broad or protected issue directory could make IssueMe scan or mutate unintende
 
 #### How to resolve
 
-- [ ] Reject `issueDirectory` values that resolve to the project root.
-- [ ] Reject `.git`, `.pi`, `node_modules`, and other protected directories.
-- [ ] Reject path traversal and null bytes.
-- [ ] Add `issues/` to `.gitignore` so local cache files are not accidentally committed.
-- [ ] Document how users can intentionally share issue files later if desired.
+- [x] Reject `issueDirectory` values that resolve to the project root.
+- [x] Reject `.git`, `.pi`, `node_modules`, and other protected directories.
+- [x] Reject path traversal and null bytes.
+- [x] Add `issues/` to `.gitignore` so local cache files are not accidentally committed.
+- [x] Document how users can intentionally share issue files later if desired.
 
 #### Acceptance criteria
 
@@ -277,7 +279,7 @@ A broad or protected issue directory could make IssueMe scan or mutate unintende
 - Generated local issue cache files are ignored by git by default.
 - Tests cover protected directories and normal valid directories.
 
-### 12. [ ] Make local path handling symlink-safe
+### 12. [x] Make local path handling symlink-safe
 
 #### Why
 
@@ -285,10 +287,10 @@ Current path checks are lexical. A symlink inside the project could point outsid
 
 #### How to resolve
 
-- [ ] Resolve existing directories/files with `realpath` where possible.
-- [ ] Prevent issue directories from resolving outside the project root through symlinks.
-- [ ] Prevent writes through symlinked target files.
-- [ ] Document behavior for symlinked issue directories.
+- [x] Resolve existing directories/files with `realpath` where possible.
+- [x] Prevent issue directories from resolving outside the project root through symlinks.
+- [x] Prevent writes through symlinked target files.
+- [x] Document behavior for symlinked issue directories.
 
 #### Acceptance criteria
 
@@ -296,7 +298,7 @@ Current path checks are lexical. A symlink inside the project could point outsid
 - Tests cover symlinked issue directory and symlinked issue file cases where the platform supports symlinks.
 - Safe valid paths continue to work.
 
-### 13. [ ] Fix local issue cache repository safety
+### 13. [x] Fix local issue cache repository safety
 
 #### Why
 
@@ -304,10 +306,10 @@ Issue cache operations are keyed mostly by issue number and path. If multiple re
 
 #### How to resolve
 
-- [ ] Make listing, reading, writing, and removing issue files repository-aware.
-- [ ] Filter stale removals by current repository.
-- [ ] Include repository in lookup metadata.
-- [ ] Return safe ambiguity errors when issue number matches multiple repositories.
+- [x] Make listing, reading, writing, and removing issue files repository-aware.
+- [x] Filter stale removals by current repository.
+- [x] Include repository in lookup metadata.
+- [x] Return safe ambiguity errors when issue number matches multiple repositories.
 
 #### Acceptance criteria
 
@@ -315,7 +317,7 @@ Issue cache operations are keyed mostly by issue number and path. If multiple re
 - Closing issue `#1` in repo A never removes repo B `#1` file.
 - Tests cover mixed-repository issue cache directories.
 
-### 14. [ ] Queue every local file mutation path
+### 14. [x] Queue every local file mutation path
 
 #### Why
 
@@ -323,10 +325,10 @@ Parallel tool calls can race. Some removals are queued, but stale title-file rem
 
 #### How to resolve
 
-- [ ] Queue the target write path for every write.
-- [ ] Queue each stale-file removal by that stale file's real absolute path.
-- [ ] Queue closed-file removals consistently.
-- [ ] Review config writes and issue-store writes/removes for full read-modify-write queue windows.
+- [x] Queue the target write path for every write.
+- [x] Queue each stale-file removal by that stale file's real absolute path.
+- [x] Queue closed-file removals consistently.
+- [x] Review config writes and issue-store writes/removes for full read-modify-write queue windows.
 
 #### Acceptance criteria
 
@@ -334,7 +336,7 @@ Parallel tool calls can race. Some removals are queued, but stale title-file rem
 - Tests cover title rename and stale-file removal behavior.
 - No read-modify-write/remove window mutates files outside its queue.
 
-### 15. [ ] Fix sync unchanged/updated semantics
+### 15. [x] Fix sync unchanged/updated semantics
 
 #### Why
 
@@ -342,10 +344,10 @@ Parallel tool calls can race. Some removals are queued, but stale title-file rem
 
 #### How to resolve
 
-- [ ] Compare remote issue content excluding `synced_at`.
-- [ ] Preserve old `synced_at` when content is unchanged, or report sync timestamp separately.
-- [ ] Add a distinct outcome for title-slug filename rename.
-- [ ] Update sync counts and details to distinguish created, updated, renamed, unchanged, and removed.
+- [x] Compare remote issue content excluding `synced_at`.
+- [x] Preserve old `synced_at` when content is unchanged, or report sync timestamp separately.
+- [x] Add a distinct outcome for title-slug filename rename.
+- [x] Update sync counts and details to distinguish created, updated, renamed, unchanged, and removed.
 
 #### Acceptance criteria
 
@@ -353,7 +355,7 @@ Parallel tool calls can race. Some removals are queued, but stale title-file rem
 - Title changes are reported as updates/renames, not misleading duplicate creates.
 - Tests cover repeated sync and title rename.
 
-### 16. [ ] Improve corrupt/invalid local issue-file handling
+### 16. [x] Improve corrupt/invalid local issue-file handling
 
 #### Why
 
@@ -361,10 +363,10 @@ Invalid local issue JSON files are silently ignored during listing, which hides 
 
 #### How to resolve
 
-- [ ] Return invalid-file diagnostics from listing helpers without exposing private file contents.
-- [ ] Validate labels, assignees, comments, URLs, timestamps, issue number, and repository more thoroughly.
-- [ ] Decide whether invalid files are quarantined, ignored with warnings, or left untouched with diagnostics.
-- [ ] Ensure invalid files are never silently deleted.
+- [x] Return invalid-file diagnostics from listing helpers without exposing private file contents.
+- [x] Validate labels, assignees, comments, URLs, timestamps, issue number, and repository more thoroughly.
+- [x] Decide whether invalid files are quarantined, ignored with warnings, or left untouched with diagnostics.
+- [x] Ensure invalid files are never silently deleted.
 
 #### Acceptance criteria
 
@@ -372,7 +374,7 @@ Invalid local issue JSON files are silently ignored during listing, which hides 
 - Invalid issue cache files are not deleted by sync unless an explicit remediation policy says so.
 - Tests cover corrupt JSON and invalid schema files.
 
-### 17. [ ] Improve `issueme_get_issue` lookup and refresh behavior
+### 17. [x] Improve `issueme_get_issue` lookup and refresh behavior
 
 #### Why
 
@@ -380,10 +382,10 @@ Invalid local issue JSON files are silently ignored during listing, which hides 
 
 #### How to resolve
 
-- [ ] Make lookup helpers return `{ record, path, metadata }` instead of only a record.
-- [ ] Allow refresh by local lookup by resolving the cached issue number first.
-- [ ] Return the actual matched local path.
-- [ ] Return safe ambiguity errors for multiple title/slug matches.
+- [x] Make lookup helpers return `{ record, path, metadata }` instead of only a record.
+- [x] Allow refresh by local lookup by resolving the cached issue number first.
+- [x] Return the actual matched local path.
+- [x] Return safe ambiguity errors for multiple title/slug matches.
 
 #### Acceptance criteria
 
@@ -391,7 +393,7 @@ Invalid local issue JSON files are silently ignored during listing, which hides 
 - Tool details include the actual local path.
 - Ambiguous lookup does not return a random issue.
 
-### 18. [ ] Correct GitHub label endpoint response types and idempotency
+### 18. [x] Correct GitHub label endpoint response types and idempotency
 
 #### Why
 
@@ -399,11 +401,11 @@ GitHub label endpoints return label arrays for add/set/remove label operations, 
 
 #### How to resolve
 
-- [ ] Add a `GitHubLabelListResponse` type or equivalent.
-- [ ] Update `addLabels`, `setLabels`, and `removeLabel` return types.
-- [ ] Decide whether removing a missing label is idempotent or a safe error.
-- [ ] Document missing-label behavior.
-- [ ] Refresh the full issue after label changes to return final issue metadata.
+- [x] Add a `GitHubLabelListResponse` type or equivalent.
+- [x] Update `addLabels`, `setLabels`, and `removeLabel` return types.
+- [x] Decide whether removing a missing label is idempotent or a safe error.
+- [x] Document missing-label behavior.
+- [x] Refresh the full issue after label changes to return final issue metadata.
 
 #### Acceptance criteria
 
@@ -411,7 +413,7 @@ GitHub label endpoints return label arrays for add/set/remove label operations, 
 - `issueme_label_issue` returns final labels after refresh.
 - Missing-label behavior is tested and documented.
 
-### 19. [ ] Harden GitHub pagination and network boundaries
+### 19. [x] Harden GitHub pagination and network boundaries
 
 #### Why
 
@@ -419,17 +421,17 @@ Pagination currently follows any `rel="next"` URL returned in a Link header whil
 
 #### How to resolve
 
-- [ ] Validate every pagination URL before following it.
-- [ ] Only follow `https://api.github.com/repos/<owner>/<repo>/...` next links.
-- [ ] Reject off-host, off-repo, non-HTTPS, or malformed pagination URLs.
-- [ ] Map invalid JSON and unexpected response shapes to `GitHubApiError` safely.
+- [x] Validate every pagination URL before following it.
+- [x] Only follow `https://api.github.com/repos/<owner>/<repo>/...` next links.
+- [x] Reject off-host, off-repo, non-HTTPS, or malformed pagination URLs.
+- [x] Map invalid JSON and unexpected response shapes to `GitHubApiError` safely.
 
 #### Acceptance criteria
 
 - Client never follows off-repo/off-host pagination links.
 - API, network, abort, invalid JSON, invalid pagination, and unexpected shape errors are safe and tested.
 
-### 20. [ ] Add GitHub rate-limit and request-policy handling
+### 20. [x] Add GitHub rate-limit and request-policy handling
 
 #### Why
 
@@ -437,10 +439,10 @@ The client does not surface rate-limit guidance and does not define retry/backof
 
 #### How to resolve
 
-- [ ] Add a safe `User-Agent` header if needed for GitHub API hygiene.
-- [ ] Surface rate-limit status from `x-ratelimit-*` headers in safe details/errors.
-- [ ] Decide whether to retry transient 5xx/secondary-rate-limit responses or fail fast.
-- [ ] Document the chosen retry/backoff policy.
+- [x] Add a safe `User-Agent` header if needed for GitHub API hygiene.
+- [x] Surface rate-limit status from `x-ratelimit-*` headers in safe details/errors.
+- [x] Decide whether to retry transient 5xx/secondary-rate-limit responses or fail fast.
+- [x] Document the chosen retry/backoff policy.
 
 #### Acceptance criteria
 
@@ -448,7 +450,7 @@ The client does not surface rate-limit guidance and does not define retry/backof
 - Retry behavior is deterministic and tested, or explicitly documented as unsupported.
 - No token or request body content is leaked in rate-limit errors.
 
-### 21. [ ] Replace provider-hostile schemas
+### 21. [x] Replace provider-hostile schemas
 
 #### Why
 
@@ -456,10 +458,10 @@ LLM-facing schemas should avoid provider-hostile `Type.Union`/nullable patterns 
 
 #### How to resolve
 
-- [ ] Redesign milestone updates with explicit fields, such as `milestoneNumber` and `clearMilestone`, or an enum action.
-- [ ] Remove nullable union schemas from tool parameters.
-- [ ] Keep string enums implemented with `StringEnum` from `@earendil-works/pi-ai`.
-- [ ] Add schema inspection tests for all IssueMe tools.
+- [x] Redesign milestone updates with explicit fields, such as `milestoneNumber` and `clearMilestone`, or an enum action.
+- [x] Remove nullable union schemas from tool parameters.
+- [x] Keep string enums implemented with `StringEnum` from `@earendil-works/pi-ai`.
+- [x] Add schema inspection tests for all IssueMe tools.
 
 #### Acceptance criteria
 
@@ -467,7 +469,7 @@ LLM-facing schemas should avoid provider-hostile `Type.Union`/nullable patterns 
 - No LLM-facing string enum uses `Type.Union`/`Type.Literal` instead of `StringEnum`.
 - Tests catch reintroduction of provider-hostile schema patterns.
 
-### 22. [ ] Fix create/update default and sanitization semantics
+### 22. [x] Fix create/update default and sanitization semantics
 
 #### Why
 
@@ -475,11 +477,11 @@ LLM-facing schemas should avoid provider-hostile `Type.Union`/nullable patterns 
 
 #### How to resolve
 
-- [ ] Distinguish omitted fields from explicit empty arrays.
-- [ ] Apply defaults only when fields are omitted.
-- [ ] Sanitize labels and assignees consistently across create, update, assign, and label tools.
-- [ ] Reject empty titles.
-- [ ] Decide how to support intentional body clearing without confusing blank input.
+- [x] Distinguish omitted fields from explicit empty arrays.
+- [x] Apply defaults only when fields are omitted.
+- [x] Sanitize labels and assignees consistently across create, update, assign, and label tools.
+- [x] Reject empty titles.
+- [x] Decide how to support intentional body clearing without confusing blank input.
 
 #### Acceptance criteria
 
@@ -487,7 +489,7 @@ LLM-facing schemas should avoid provider-hostile `Type.Union`/nullable patterns 
 - Defaults apply only when fields are omitted.
 - Tests cover defaults, explicit empty arrays, duplicate values, blank values, empty title, and safe errors.
 
-### 23. [ ] Add per-issue mutation serialization or execution controls
+### 23. [x] Add per-issue mutation serialization or execution controls
 
 #### Why
 
@@ -495,10 +497,10 @@ Pi can execute sibling tool calls in parallel. Two remote mutations against the 
 
 #### How to resolve
 
-- [ ] Decide between `executionMode: "sequential"` for mutating tools or a per-repository/per-issue mutation queue.
-- [ ] Apply the chosen mechanism to update, comment, assign, label, and close tools.
-- [ ] Document behavior for parallel tool calls.
-- [ ] Add tests where practical.
+- [x] Decide between `executionMode: "sequential"` for mutating tools or a per-repository/per-issue mutation queue.
+- [x] Apply the chosen mechanism to update, comment, assign, label, and close tools.
+- [x] Document behavior for parallel tool calls.
+- [x] Add tests where practical.
 
 #### Acceptance criteria
 
@@ -506,7 +508,7 @@ Pi can execute sibling tool calls in parallel. Two remote mutations against the 
 - Behavior is documented.
 - Tests cover the selected serialization mechanism where practical.
 
-### 24. [ ] Handle partial success after remote mutations
+### 24. [x] Handle partial success after remote mutations
 
 #### Why
 
@@ -514,10 +516,10 @@ Remote mutation can succeed while local refresh/write/remove fails afterward. Th
 
 #### How to resolve
 
-- [ ] Audit create, update, comment, assign, label, and close flows.
-- [ ] Return explicit partial-success results for remote-success/local-failure cases.
-- [ ] Add `cacheUpdated`, `needsSync`, and safe error metadata to tool details.
-- [ ] Avoid retry guidance that could duplicate issue creation or comments.
+- [x] Audit create, update, comment, assign, label, and close flows.
+- [x] Return explicit partial-success results for remote-success/local-failure cases.
+- [x] Add `cacheUpdated`, `needsSync`, and safe error metadata to tool details.
+- [x] Avoid retry guidance that could duplicate issue creation or comments.
 
 #### Acceptance criteria
 
@@ -525,7 +527,7 @@ Remote mutation can succeed while local refresh/write/remove fails afterward. Th
 - Remote close success with local removal failure reports closed issue and local cleanup failure safely.
 - Representative partial-success paths are tested.
 
-### 25. [ ] Make `issueme_close_issue` idempotent for already-closed issues
+### 25. [x] Make `issueme_close_issue` idempotent for already-closed issues
 
 #### Why
 
@@ -533,10 +535,10 @@ The spec says closed issues must not be mutated. An already-closed issue should 
 
 #### How to resolve
 
-- [ ] Fetch the issue state first.
-- [ ] If closed, do not send a close mutation payload.
-- [ ] Remove matching local cache files for that issue/repository as stale local state.
-- [ ] Return details distinguishing `closed_now` from `already_closed`.
+- [x] Fetch the issue state first.
+- [x] If closed, do not send a close mutation payload.
+- [x] Remove matching local cache files for that issue/repository as stale local state.
+- [x] Return details distinguishing `closed_now` from `already_closed`.
 
 #### Acceptance criteria
 
@@ -545,7 +547,7 @@ The spec says closed issues must not be mutated. An already-closed issue should 
 - Matching stale local cache files are removed.
 - Tests cover open close and already-closed no-op behavior.
 
-### 26. [ ] Bound comment fetching and local cache growth
+### 26. [x] Bound comment fetching and local cache growth
 
 #### Why
 
@@ -553,10 +555,10 @@ Sync currently fetches all comments for every open issue. Large repositories can
 
 #### How to resolve
 
-- [ ] Define a comment-fetch policy, such as default max comments, optional full comments, or metadata-only comments.
-- [ ] Add config/tool options for comment inclusion if needed.
-- [ ] Track and report when comments are incomplete/truncated.
-- [ ] Avoid unbounded arrays in local files and tool details.
+- [x] Define a comment-fetch policy, such as default max comments, optional full comments, or metadata-only comments.
+- [x] Add config/tool options for comment inclusion if needed.
+- [x] Track and report when comments are incomplete/truncated.
+- [x] Avoid unbounded arrays in local files and tool details.
 
 #### Acceptance criteria
 
@@ -564,7 +566,7 @@ Sync currently fetches all comments for every open issue. Large repositories can
 - Tool output and local metadata indicate when comments are incomplete/truncated.
 - Tests cover comment truncation/omission metadata.
 
-### 27. [ ] Bound tool result output and details consistently
+### 27. [x] Bound tool result output and details consistently
 
 #### Why
 
@@ -572,10 +574,10 @@ Tool text is sometimes truncated, but structured details such as sync `paths` ca
 
 #### How to resolve
 
-- [ ] Define shared limits for text, issue summaries, paths, comments, and changed fields in tool details.
-- [ ] Apply limits consistently to all IssueMe tools.
-- [ ] Include truncation metadata whenever any output or detail list is truncated.
-- [ ] Keep full local issue files separate from concise tool results.
+- [x] Define shared limits for text, issue summaries, paths, comments, and changed fields in tool details.
+- [x] Apply limits consistently to all IssueMe tools.
+- [x] Include truncation metadata whenever any output or detail list is truncated.
+- [x] Keep full local issue files separate from concise tool results.
 
 #### Acceptance criteria
 
@@ -583,7 +585,7 @@ Tool text is sometimes truncated, but structured details such as sync `paths` ca
 - Truncation is explicit and machine-readable.
 - Tests cover oversized sync and get outputs.
 
-### 28. [ ] Improve tool result and error detail consistency
+- [x] Improve tool result and error detail consistency
 
 #### Why
 
@@ -591,11 +593,11 @@ Tool result details differ by tool and errors mostly rely on thrown exceptions. 
 
 #### How to resolve
 
-- [ ] Define shared detail interfaces for success, partial success, and safe errors.
-- [ ] Include safe `repository`, `issue`, `paths`, `removedPaths`, `changedFields`, `cacheUpdated`, `needsSync`, and truncation metadata consistently.
-- [ ] Include comment URL/ID details for `issueme_comment_issue`.
-- [ ] Include closed issue URL/title/state details for `issueme_close_issue`.
-- [ ] Ensure errors never contain tokens, `.env` contents, private config dumps, or large issue body/comment content.
+- Define shared detail interfaces for success, partial success, and safe errors.
+- Include safe `repository`, `issue`, `paths`, `removedPaths`, `changedFields`, `cacheUpdated`, `needsSync`, and truncation metadata consistently.
+- Include comment URL/ID details for `issueme_comment_issue`.
+- Include closed issue URL/title/state details for `issueme_close_issue`.
+- Ensure errors never contain tokens, `.env` contents, private config dumps, or large issue body/comment content.
 
 #### Acceptance criteria
 
@@ -603,7 +605,7 @@ Tool result details differ by tool and errors mostly rely on thrown exceptions. 
 - Closed-issue refusal details are clear and safe.
 - Tests verify token/body redaction in representative error paths.
 
-### 29. [ ] Tighten `/issueme start` path handling
+- [x] Tighten `/issueme start` path handling
 
 #### Why
 
@@ -611,12 +613,12 @@ Tool result details differ by tool and errors mostly rely on thrown exceptions. 
 
 #### How to resolve
 
-- [ ] Parse `start` as an exact subcommand.
-- [ ] Reject missing paths.
-- [ ] Reject directories and unreadable files.
-- [ ] Decide whether absolute paths outside the project are allowed.
-- [ ] Preserve quoted paths with spaces if Pi command args support them.
-- [ ] Keep busy-agent delivery as `followUp` and idle delivery immediate.
+- Parse `start` as an exact subcommand.
+- Reject missing paths.
+- Reject directories and unreadable files.
+- Decide whether absolute paths outside the project are allowed.
+- Preserve quoted paths with spaces if Pi command args support them.
+- Keep busy-agent delivery as `followUp` and idle delivery immediate.
 
 #### Acceptance criteria
 
@@ -624,7 +626,7 @@ Tool result details differ by tool and errors mostly rely on thrown exceptions. 
 - Missing, directory, unreadable, and unsafe paths produce clear safe errors.
 - Tests cover idle and busy delivery modes.
 
-### 30. [ ] Add command tests
+- [x] Add command tests
 
 #### Why
 
@@ -632,11 +634,11 @@ Command behavior is currently largely untested.
 
 #### How to resolve
 
-- [ ] Test command parsing helper.
-- [ ] Test info/help output construction.
-- [ ] Test `/issueme start <skill-path>` prompt construction.
-- [ ] Test busy/idle delivery choices.
-- [ ] Test config save validation helpers.
+- Test command parsing helper.
+- Test info/help output construction.
+- Test `/issueme start <skill-path>` prompt construction.
+- Test busy/idle delivery choices.
+- Test config save validation helpers.
 
 #### Acceptance criteria
 
@@ -644,7 +646,7 @@ Command behavior is currently largely untested.
 - Tests do not require live GitHub calls.
 - All command alias and error paths are covered.
 
-### 31. [ ] Add tool integration tests with injected GitHub client/fetch
+- [x] Add tool integration tests with injected GitHub client/fetch
 
 #### Why
 
@@ -652,10 +654,10 @@ Current tests cover helpers and GitHub client basics, but not each registered Is
 
 #### How to resolve
 
-- [ ] Refactor tool runtime so tests can inject config, repository, token, and fetch/client behavior.
-- [ ] Add mocked success tests for each `issueme_*` tool.
-- [ ] Add safety tests for closed-issue refusal paths.
-- [ ] Add cache write/remove tests for create, sync, update, and close tools.
+- Refactor tool runtime so tests can inject config, repository, token, and fetch/client beor.
+- Add mocked success tests for each `issueme_*` tool.
+- Add safety tests for closed-issue refusal paths.
+- Add cache write/remove tests for create, sync, update, and close tools.
 
 #### Acceptance criteria
 
@@ -663,7 +665,7 @@ Current tests cover helpers and GitHub client basics, but not each registered Is
 - Each tool has success and safety-path tests.
 - Tests verify no token values appear in output/details.
 
-### 32. [ ] Add configuration TUI renderer tests
+- [x] Add configuration TUI renderer tests
 
 #### Why
 
@@ -671,12 +673,12 @@ The configuration TUI design standard is detailed enough to require automated co
 
 #### How to resolve
 
-- [ ] Test wide render mode.
-- [ ] Test narrow category/settings render modes.
-- [ ] Test tiny render mode.
-- [ ] Test ANSI-aware clipping/padding.
-- [ ] Test keyboard navigation, search, edit, save, and cancel behavior.
-- [ ] Test theme-role usage with injected theme stubs.
+- Test wide render mode.
+- Test narrow category/settings render modes.
+- Test tiny render mode.
+- Test ANSI-aware clipping/padding.
+- Test keyboard navigation, search, edit, save, and cancel behavior.
+- Test theme-role usage with injected theme stubs.
 
 #### Acceptance criteria
 
@@ -684,7 +686,7 @@ The configuration TUI design standard is detailed enough to require automated co
 - Render assertions prove no line exceeds width.
 - Search/focus/edit states are covered.
 
-### 33. [ ] Add extension registration and schema tests
+- [x] Add extension registration and schema tests
 
 #### Why
 
@@ -692,11 +694,11 @@ Smoke testing should prove tools and commands are registered, and tests should p
 
 #### How to resolve
 
-- [ ] Create a lightweight fake `ExtensionAPI` for tests.
-- [ ] Load `src/extension.ts` against the fake API.
-- [ ] Assert `/issueme` is registered once.
-- [ ] Assert all eight `issueme_*` tools are registered.
-- [ ] Assert each tool has description, `promptSnippet`, `promptGuidelines`, and strict schema metadata.
+- Create a lightweight fake `ExtensionAPI` for tests.
+- Load `src/extension.ts` against the fake API.
+- Assert `/issueme` is registered once.
+- Assert all registered `issueme_*` tools are registered.
+- Assert each tool has description, `promptSnippet`, `promptGuidelines`, and strict schema metadata.
 
 #### Acceptance criteria
 
@@ -704,7 +706,7 @@ Smoke testing should prove tools and commands are registered, and tests should p
 - Missing tool registration or missing prompt metadata fails tests.
 - Schema compatibility tests fail on forbidden patterns.
 
-### 34. [ ] Reconcile documentation with remediated behavior
+- [x] Reconcile documentation with remediated behavior
 
 #### Why
 
@@ -712,12 +714,12 @@ README, SECURITY, CHANGELOG, project brief, structure docs, and specs currently 
 
 #### How to resolve
 
-- [ ] Update README after behavior fixes are complete.
-- [ ] Update SECURITY after trust, path, network, and token behavior is final.
-- [ ] Update CHANGELOG with remediation changes.
-- [ ] Update `docs/STRUCTURE.md` after file cleanup/refactors.
-- [ ] Update `CONTRIBUTING.md` to point at this remediation task list.
-- [ ] Update or archive specs that say runtime behavior is future-only.
+- Update README after behavior fixes are complete.
+- Update SECURITY after trust, path, network, and token behavior is final.
+- Update CHANGELOG with remediation changes.
+- Update `docs/STRUCTURE.md` after file cleanup/refactors.
+- Update `CONTRIBUTING.md` to point at this remediation task list.
+- Update or archive specs that say runtime behavior is future-only.
 
 #### Acceptance criteria
 
@@ -725,7 +727,7 @@ README, SECURITY, CHANGELOG, project brief, structure docs, and specs currently 
 - No unimplemented behavior is documented as available.
 - Contributors can identify the active task list unambiguously.
 
-### 35. [ ] Strengthen CI and validation scripts
+- [x] Strengthen CI and validation scripts
 
 #### Why
 
@@ -733,10 +735,10 @@ README, SECURITY, CHANGELOG, project brief, structure docs, and specs currently 
 
 #### How to resolve
 
-- [ ] Add `npm run format:check` to `npm run validate` or `npm run lint` and CI.
-- [ ] Prefer `npm ci` in GitHub Actions when `package-lock.json` is present.
-- [ ] Verify GitHub Action versions are real/supported or pin to known-good versions.
-- [ ] Keep local validation aligned with CI validation.
+- Add `npm run format:check` to `npm run validate` or `npm run lint` and CI.
+- Prefer `npm ci` in GitHub Actions when `package-lock.json` is present.
+- Verify GitHub Action versions are real/supported or pin to known-good versions.
+- Keep local validation aligned with CI validation.
 
 #### Acceptance criteria
 
@@ -744,7 +746,7 @@ README, SECURITY, CHANGELOG, project brief, structure docs, and specs currently 
 - Local `npm run validate` matches CI expectations.
 - CI action versions are valid and documented.
 
-### 36. [ ] Review package-maintenance ergonomics
+- [x] Review package-maintenance ergonomics
 
 #### Why
 
@@ -752,9 +754,9 @@ Enumerating each source file keeps package contents tight but makes it easy to o
 
 #### How to resolve
 
-- [ ] Decide whether `package.json` should enumerate each source file or use `src/**/*.ts` after placeholder cleanup.
-- [ ] Add package-content tests that fail when real runtime modules are omitted.
-- [ ] Keep specs, tests, local state, `.env`, `.pi`, `issues`, reports, and tarballs excluded.
+- Decide whether `package.json` should enumerate each source file or use `src/**/*.ts` after placeholder cleanup.
+- Add package-content tests that fail when real runtime modules are omitted.
+- Keep specs, tests, local state, `.env`, `.pi`, `issues`, reports, and tarballs excluded.
 
 #### Acceptance criteria
 
@@ -762,7 +764,7 @@ Enumerating each source file keeps package contents tight but makes it easy to o
 - Placeholder/spec/local-state files remain excluded.
 - `npm run check:pack` remains deterministic and useful.
 
-### 37. [ ] Improve issue-cache privacy defaults
+- [x] Improve issue-cache privacy defaults
 
 #### Why
 
@@ -770,10 +772,10 @@ Issue cache files can contain private issue bodies and comments. They should be 
 
 #### How to resolve
 
-- [ ] Add `issues/` to `.gitignore`.
-- [ ] Mention cache privacy in README and SECURITY.
-- [ ] Add troubleshooting guidance for users who intentionally want to commit/share issue cache files.
-- [ ] Ensure package dry-run excludes `issues/`.
+- Add `issues/` to `.gitignore`.
+- Mention cache privacy in README and SECURITY.
+- Add troubleshooting guidance for users who intentionally want to commit/share issue cache files.
+- Ensure package dry-run excludes `issues/`.
 
 #### Acceptance criteria
 
@@ -781,7 +783,7 @@ Issue cache files can contain private issue bodies and comments. They should be 
 - Users are warned that issue cache files may contain private content.
 - Package dry-run excludes local issue cache files.
 
-### 38. [ ] Add smoke-test observability
+- [x] Add smoke-test observability
 
 #### Why
 
@@ -789,11 +791,11 @@ A no-output `pi --no-extensions -e .` run only proves startup did not immediatel
 
 #### How to resolve
 
-- [ ] Find a repeatable Pi mode or command that lists registered commands/tools.
-- [ ] Document manual smoke-test steps if automatic discovery is not available.
-- [ ] Verify `/issueme` command discovery.
-- [ ] Verify all eight `issueme_*` tool discoveries.
-- [ ] Keep live GitHub mutation out of smoke tests.
+- Find a repeatable Pi mode or command that lists registered commands/tools.
+- Document manual smoke-test steps if automatic discovery is not available.
+- Verify `/issueme` command discovery.
+- Verify all registered `issueme_*` tool discoveries.
+- Keep live GitHub mutation out of smoke tests.
 
 #### Acceptance criteria
 
@@ -801,7 +803,7 @@ A no-output `pi --no-extensions -e .` run only proves startup did not immediatel
 - A no-output startup run is not treated as sufficient by itself.
 - Smoke procedure is documented.
 
-### 39. [ ] Add safe error taxonomy and user-facing recovery guidance
+- [x] Add safe error taxonomy and user-facing recovery guidance
 
 #### Why
 
@@ -809,10 +811,10 @@ Errors currently mix `IssueMeError`, `GitHubApiError`, `ClosedIssueMutationError
 
 #### How to resolve
 
-- [ ] Define error codes for config, trust, auth, repo, GitHub API, closed issue, local cache, validation, and partial success cases.
-- [ ] Replace generic thrown errors in tools/commands with `IssueMeError` variants where appropriate.
-- [ ] Add safe recovery hints without secrets or private issue content.
-- [ ] Ensure tool errors and command errors are concise.
+- Define error codes for config, trust, auth, repo, GitHub API, closed issue, local cache, validation, and partial success cases.
+- Replace generic thrown errors in tools/commands with `IssueMeError` variants where appropriate.
+- Add safe recovery hints without secrets or private issue content.
+- Ensure tool errors and command errors are concise.
 
 #### Acceptance criteria
 
@@ -820,7 +822,7 @@ Errors currently mix `IssueMeError`, `GitHubApiError`, `ClosedIssueMutationError
 - Recovery guidance is actionable.
 - Tests verify representative error codes/messages.
 
-### 40. [ ] Add TUI visual artifact capture tests
+### 40. [x] Add TUI visual artifact capture tests
 
 #### Why
 
@@ -828,14 +830,14 @@ The configuration TUI can technically pass renderer unit tests while still looki
 
 #### How to resolve
 
-- [ ] Build a test-only TUI render harness that instantiates the IssueMe configuration component without starting a live Pi session.
-- [ ] Render the configuration UI across representative widths and states, including wide, narrow category view, narrow settings view, tiny mode, focused category pane, focused settings pane, search with results, search with no results, edit/save state, validation-error state, and disabled/empty values.
-- [ ] Save each rendered state to deterministic artifact files, for example under `test-artifacts/tui/issueme-config/` or `test/snapshots/tui/issueme-config/`.
-- [ ] Store both plain-text captures and ANSI/themed captures if useful: plain text for diff readability, ANSI text for visual/theme debugging.
-- [ ] Add a manifest file that explains each capture: width, mode, focused pane, selected item, search text, expected behavior, and source test name.
-- [ ] Make the artifact generation deterministic by using fixed config values, fixed terminal widths, fixed timestamps, stable theme stubs, and no live GitHub calls.
-- [ ] Decide whether visual artifacts are committed snapshots or generated CI artifacts, then document the workflow.
-- [ ] Add a script such as `npm run test:tui-artifacts` or a test flag that refreshes these captures intentionally.
+- [x] Build a test-only TUI render harness that instantiates the IssueMe configuration component without starting a live Pi session.
+- [x] Render the configuration UI across representative widths and states, including wide, narrow category view, narrow settings view, tiny mode, focused category pane, focused settings pane, search with results, search with no results, edit/save state, validation-error state, and disabled/empty values.
+- [x] Save each rendered state to deterministic artifact files, for example under `test-artifacts/tui/issueme-config/` or `test/snapshots/tui/issueme-config/`.
+- [x] Store both plain-text captures and ANSI/themed captures if useful: plain text for diff readability, ANSI text for visual/theme debugging.
+- [x] Add a manifest file that explains each capture: width, mode, focused pane, selected item, search text, expected behavior, and source test name.
+- [x] Make the artifact generation deterministic by using fixed config values, fixed terminal widths, fixed timestamps, stable theme stubs, and no live GitHub calls.
+- [x] Decide whether visual artifacts are committed snapshots or generated CI artifacts, then document the workflow.
+- [x] Add a script such as `npm run test:tui-artifacts` or a test flag that refreshes these captures intentionally.
 
 #### Acceptance criteria
 
@@ -847,7 +849,7 @@ The configuration TUI can technically pass renderer unit tests while still looki
 - CI either verifies committed snapshots are current or uploads generated artifacts without creating noisy git diffs.
 - No secrets, tokens, `.env` contents, or private issue content appear in visual artifacts.
 
-### 41. [ ] Final validation and smoke testing
+- [x] Final validation and smoke testing
 
 #### Why
 
@@ -855,11 +857,11 @@ The remediation pass is complete only after automated validation and isolated sm
 
 #### How to resolve
 
-- [ ] Run `npm run typecheck`.
-- [ ] Run `npm run test`.
-- [ ] Run `npm run check:pack`.
-- [ ] Run `npm run validate`.
-- [ ] Run the documented isolated Pi smoke test and verify command/tool discovery.
+- Run `npm run typecheck`.
+- Run `npm run test`.
+- Run `npm run check:pack`.
+- Run `npm run validate`.
+- Run the documented isolated Pi smoke test and verify command/tool discovery.
 
 #### Acceptance criteria
 

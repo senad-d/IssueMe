@@ -1,14 +1,16 @@
-# Plan: IssueMe Implementation Guidelines
+# Plan: Archived IssueMe Implementation Guidelines
+
+> Archive status: these original guidelines remain useful engineering context, but they do not define the active task order or current availability. Use `README.md`, `SECURITY.md`, `docs/STRUCTURE.md`, source, and tests for current behavior; use `specs/spec-remediation-tasks.md` for the active hardening backlog.
 
 ## Task Description
 
-Define coding, Pi extension, package metadata, documentation, testing, security, privacy, and smoke-test guidelines for the later implementation of `@senad-d/issueme`.
+Record coding, Pi extension, package metadata, documentation, testing, security, privacy, and smoke-test guidelines prepared for `@senad-d/issueme`.
 
-This specification is planning-only. It must not be treated as evidence that the runtime behavior has been implemented.
+This archived specification may contain historical preparation/future-tense language below. Do not treat that language as a current task list or as proof that unverified behavior is release-ready.
 
 ## Objective
 
-Provide durable engineering rules that future implementation work must follow so IssueMe remains safe, agent-friendly, Pi-native, and maintainable.
+Provide durable engineering rules for IssueMe so it remains safe, agent-friendly, Pi-native, and maintainable.
 
 ## Problem Statement
 
@@ -16,11 +18,11 @@ IssueMe will combine Pi tools, local file writes, environment-based credentials,
 
 ## Solution Approach
 
-Use strict modular boundaries, explicit schemas, safe file handling, REST-only GitHub access, conservative local persistence, and clear docs/tests. Treat every remote mutation and every local file write as security-sensitive.
+Use strict modular boundaries, explicit schemas, safe file handling, direct GitHub REST/GraphQL access, conservative local persistence, and clear docs/tests. Treat every remote mutation and every local file write as security-sensitive.
 
 ## Relevant Files
 
-Use these files to guide future implementation:
+Use these files for historical context and current cross-checks:
 
 - `specs/spec-architecture.md` - Architecture and module boundaries.
 - `specs/spec-tasks.md` - Ordered implementation tasks with acceptance criteria.
@@ -71,7 +73,7 @@ Use these files to guide future implementation:
 
 ## Planned Tool Naming Rules
 
-Use these exact planned tool names unless a future approved spec revision changes them:
+Use these exact tool names unless a future approved spec revision changes them:
 
 - `issueme_create_issue`
 - `issueme_sync_issues`
@@ -90,7 +92,7 @@ Do not add webhook tools in the first implementation.
 - Parse subcommands from command args:
   - empty args: open configuration UI.
   - `info`: show help/status.
-  - `start <skill-path>`: start the future skill-guided workflow.
+  - `start <skill-path>`: start a skill-guided workflow using a user-supplied project-local skill file.
 - `/issueme` configuration must write only non-secret settings to `.pi/agent/issueme.json`.
 - `/issueme info` must include useful status without printing secrets.
 - `/issueme start <skill-path>` must accept project-relative or absolute skill paths and send a clear user message that instructs the agent to read/use the supplied skill and IssueMe tools.
@@ -111,7 +113,7 @@ Do not add webhook tools in the first implementation.
 
 - README must clearly state which features are implemented and which are planned/pending.
 - README must document GitHub token sources and `.env` precedence.
-- README must document that IssueMe uses GitHub REST API only and does not use GitHub CLI.
+- README must document that IssueMe uses GitHub REST/GraphQL APIs directly and does not use GitHub CLI.
 - README must document local issue files as `issues/<issue-number>-<issue-title-slug>.json`.
 - README must document that closed issues are read-only to IssueMe and local closed issue files are removed.
 - SECURITY must document file reads, file writes, network access, credential handling, and no telemetry.
@@ -137,7 +139,7 @@ Do not add webhook tools in the first implementation.
 - Token resolution order: project `.env`, then process `GH_TOKEN`, then process `GITHUB_TOKEN`.
 - Do not write tokens to `.pi/agent/issueme.json`, `issues/*.json`, tool output, details, logs, or errors.
 - Do not execute shell commands for GitHub operations or repo discovery.
-- Limit network access to GitHub REST endpoints for the resolved current repository.
+- Limit network access to GitHub REST endpoints and GraphQL native sub-issue inspection/mutations for the resolved current repository.
 - Re-check remote issue state before mutation.
 - Never update/comment/assign/label/close closed issues.
 - Never delete remote GitHub issues.
@@ -152,12 +154,12 @@ Do not add webhook tools in the first implementation.
 - Use a disposable test repository or dry-run/mocked mode for early mutation tests when possible.
 - Confirm no token values appear in the UI, session transcript, or local files.
 
-## Implementation Phases
+## Historical Implementation Phases
 
 ### Phase 1: Preparation-safe cleanup
 
 - Keep the repository identity and docs aligned with IssueMe.
-- Keep runtime feature code unimplemented until a separate implementation session.
+- Keep runtime feature code out of the initial preparation-only session.
 
 ### Phase 2: Feature implementation
 
@@ -171,9 +173,9 @@ Do not add webhook tools in the first implementation.
 - Run validation and isolated smoke testing.
 - Prepare npm publishing only after package metadata and docs are complete.
 
-## Step by Step Tasks
+## Historical Step by Step Tasks
 
-IMPORTANT: Execute every step in order in the later implementation session.
+IMPORTANT: These steps record the original implementation workflow; current remediation work follows `specs/spec-remediation-tasks.md`.
 
 ### 1. Confirm scope before coding
 
@@ -204,11 +206,11 @@ IMPORTANT: Execute every step in order in the later implementation session.
 
 ## Testing Strategy
 
-Future tests should combine pure helper unit tests, mocked GitHub REST client tests, command parsing tests, issue-store filesystem tests in temporary directories, and safety tests for secret redaction and closed issue mutation refusal.
+Tests combine pure helper unit tests, mocked GitHub REST client tests, command parsing tests, issue-store filesystem tests in temporary directories, and safety tests for secret redaction and closed issue mutation refusal.
 
 ## Acceptance Criteria
 
-- Future implementation follows the approved tool and command names.
+- The implementation follows the approved tool and command names.
 - No GitHub CLI, shell execution, or webhook listener is introduced in the first implementation.
 - `src/extension.ts` remains small and registration-only.
 - Every custom tool has TypeBox schema, descriptions, snippets, and tool-specific prompt guidelines.
@@ -229,5 +231,5 @@ Execute these commands during implementation and release readiness:
 
 ## Notes
 
-- The preparation session intentionally does not implement commands/tools/events/UI/network behavior.
-- The future skill referenced by `/issueme start <skill-path>` is external and should not be bundled until separately designed and approved.
+- The initial preparation session intentionally did not implement commands/tools/events/UI/network behavior.
+- The skill referenced by `/issueme start <skill-path>` is user-supplied and must stay outside the bundled extension unless separately designed and approved.

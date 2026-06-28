@@ -15,16 +15,20 @@ coverage/
 
 # Environment, secrets, and local pi runtime state
 .env
-.env.*
+!.env.*
 .pi/
 
 # Local caches and generated reports
 .cache/
 .local/
 .trivycache/
+/issues/
 trivy-reports/
 odc-reports/
 
 # Temporary files
 tmp/
 temp/
+
+!.pi/skills/**
+!.pi/issues/**

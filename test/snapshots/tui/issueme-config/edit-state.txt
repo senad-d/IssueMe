@@ -1,0 +1,15 @@
+╭─ Configuration ──────────────────────────────────────────────────── Editing ─╮
+│writes .pi/agent/issueme.json • external overrides may apply                  │
+│Type value  Enter save  Esc cancel                                            │
+├─────────────────────┬────────────────────────────────────────────────────────┤
+│▶ Cache              │CACHE                                                1/1│
+│  Defaults           │▶ Issue directory                                 issues│
+│  Workflow           │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+│                     │                                                        │
+├─────────────────────┴────────────────────────────────────────────────────────┤
+│1/1 • Editing issues-next • Enter save • Esc cancel                           │
+╰──────────────────────────────────────────────────────────────────────────────╯

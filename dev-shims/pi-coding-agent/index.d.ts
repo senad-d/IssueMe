@@ -9,6 +9,8 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 
+export const CONFIG_DIR_NAME = ".pi";
+
 export type NotificationLevel = "info" | "warning" | "error" | "success" | string;
 
 export interface KeybindingsManager {

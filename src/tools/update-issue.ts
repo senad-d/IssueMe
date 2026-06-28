@@ -1,50 +1,86 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { createIssueMeRuntime, listChangedFields, refreshIssueRecord, toolText, writeAndSummarizeIssue } from "./runtime.ts";
+import { IssueMeError } from "../errors.ts";
+import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
+import type { IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
+import { createIssueMeRuntime, listChangedFields, normalizeIssueBody, partialSuccessToolError, refreshIssueRecord, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const UpdateIssueParams = Type.Object(
 	{
-		number: Type.Integer({ minimum: 1, description: "Open issue number to update." }),
-		title: Type.Optional(Type.String({ description: "New issue title." })),
-		body: Type.Optional(Type.String({ description: "New issue body." })),
-		labels: Type.Optional(Type.Array(Type.String(), { description: "Complete label set to apply." })),
-		assignees: Type.Optional(Type.Array(Type.String(), { description: "Complete assignee set to apply." })),
-		milestone: Type.Optional(Type.Union([Type.Integer({ minimum: 1 }), Type.Null()], { description: "Milestone number or null to clear." })),
+		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
+		title: Type.Optional(Type.String({ description: "New title. Non-empty." })),
+		body: Type.Optional(Type.String({ description: "New body. Empty clears intentionally." })),
+		labels: Type.Optional(Type.Array(Type.String(), { description: "Complete label set." })),
+		assignees: Type.Optional(Type.Array(Type.String(), { description: "Complete assignee set." })),
+		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number." })),
+		clearMilestone: Type.Optional(Type.Boolean({ description: "True clears milestone." })),
 	},
 	{ additionalProperties: false },
 );
 
-export function registerUpdateIssueTool(pi: ExtensionAPI) {
+export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
 			name: "issueme_update_issue",
 			label: "IssueMe Update Issue",
-			description: "Update explicit fields on an open GitHub issue and refresh its local IssueMe JSON file.",
-			promptSnippet: "Update title, body, labels, assignees, or milestone for an open GitHub issue.",
+			description: "Update open issue fields and refresh cache.",
+			promptSnippet: "Update open issue fields.",
 			promptGuidelines: [
-				"Use issueme_update_issue only for explicit requested changes; issueme_update_issue refuses closed issues.",
+				"Use issueme_update_issue only for explicit field changes on open issues; omit body to keep it unchanged.",
 			],
+			executionMode: "sequential",
 			parameters: UpdateIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const { number, ...updates } = params;
-				const changedFields = listChangedFields(updates);
-				if (changedFields.length === 0) throw new Error("Provide at least one field to update.");
+				const updatePayload: {
+					title?: string;
+					body?: string;
+					labels?: string[];
+					assignees?: string[];
+					milestone?: number | null;
+				} = {};
+				if (params.title !== undefined) updatePayload.title = requireNonEmptyTitle(params.title);
+				if (params.body !== undefined) updatePayload.body = normalizeIssueBody(params.body, "update");
+				if (params.labels !== undefined) updatePayload.labels = sanitizeStringList(params.labels, "labels");
+				if (params.assignees !== undefined) updatePayload.assignees = sanitizeGitHubLoginList(params.assignees, "assignees");
+				if (params.milestoneNumber !== undefined && params.clearMilestone) {
+					throw new IssueMeError("invalid_tool_input", "Use milestoneNumber or clearMilestone, not both.", { fields: ["milestoneNumber", "clearMilestone"] });
+				}
+				if (params.milestoneNumber !== undefined) updatePayload.milestone = params.milestoneNumber;
+				if (params.clearMilestone) updatePayload.milestone = null;
 
-				const runtime = await createIssueMeRuntime(ctx);
-				await runtime.client.updateIssue(number, updates, signal);
-				const record = await refreshIssueRecord(runtime, number, signal);
-				const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record);
-				return toolText(
-					`Updated issue #${number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`,
-					{
+				const changedFields = listChangedFields(updatePayload);
+				if (changedFields.length === 0) throw new IssueMeError("invalid_tool_input", "Provide at least one field to update.");
+
+				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const updatedIssue = await runtime.client.updateIssue(params.number, updatePayload, signal);
+				let updatedSummary: ToolIssueSummary | undefined;
+				try {
+					updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
+					const record = await refreshIssueRecord(runtime, params.number, signal);
+					const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record);
+					return toolText(`Updated issue #${params.number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`, {
 						repository: runtime.repository,
 						issue: summary,
 						changedFields,
 						paths: path ? [path] : [],
 						removedPaths,
-					},
-				);
+						cacheUpdated: true,
+					});
+				} catch (error) {
+					const safeError = partialSuccessToolError(error);
+					const details: IssueMeToolDetails = {
+						repository: runtime.repository,
+						...(updatedSummary ? { issue: updatedSummary } : {}),
+						changedFields,
+						cacheUpdated: false,
+						needsSync: true,
+						status: "partial_success",
+						message: safeError.message,
+						error: safeError,
+					};
+					return toolText(`Updated issue #${params.number} remotely: ${changedFields.join(", ")}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`, details);
+				}
 			},
 		}),
 	);

@@ -1,10 +1,12 @@
 # IssueMe Configuration TUI Design Standard
 
+> Current status: this design standard is implemented by `src/commands/config-tui.ts` and covered by TUI renderer tests plus visual artifacts. Active remediation tracking remains in `specs/spec-remediation-tasks.md`.
+
 ## Purpose
 
-This supplemental planning document defines a reusable visual standard for the future `/issueme` terminal-based configuration interface. It describes only how the interface should look and behave visually. It does not implement UI behavior and does not define secrets, GitHub tokens, REST calls, or feature logic.
+This supplemental design document defines the visual contract for the implemented `/issueme` terminal-based configuration interface. It describes how the interface should look and behave visually; runtime behavior, secrets, GitHub tokens, REST calls, and persistence rules are documented in `README.md`, `SECURITY.md`, and source.
 
-This file is retained from the template because IssueMe needs a polished configuration UI for non-secret settings in `.pi/agent/issueme.json`. The three required implementation specs remain `spec-architecture.md`, `spec-guidelines.md`, and `spec-tasks.md`.
+This file is retained because IssueMe needs a polished configuration UI for non-secret settings in `.pi/agent/issueme.json`. Historical implementation specs remain archived context; this TUI standard continues to be the current renderer contract.
 
 ## Design Goal
 
@@ -95,7 +97,7 @@ Wide layout skeleton:
 ```text
 ╭─ Configuration ───────────────────────────────────── Scope ─╮
 │writes <target> • external overrides may apply               │
-│↑↓ move  Tab pane  Enter edit  / search  Esc back  q quit    │
+│↑↓ move  Tab pane  Enter edit  / search  Esc/q quit  s save  │
 ├──────────────────────┬──────────────────────────────────────┤
 │▶ Category            │SECTION TITLE                      1/6│
 │  Category            │▶ Setting label                 value │
@@ -120,7 +122,7 @@ Narrow category-view skeleton:
 ```text
 ╭─ Configuration ───────────────── Scope ─╮
 │writes <target> • external overrides...  │
-│↑↓ category  Enter open  / search  q quit│
+│Esc/q quit  s save  ↑↓ category  Enter open│
 ├─────────────────────────────────────────┤
 │▶ Category                               │
 │  Category                               │
@@ -135,7 +137,7 @@ Narrow settings-view skeleton:
 ```text
 ╭─ Configuration ───────────────────────────── Scope ─╮
 │writes <target> • external overrides...              │
-│↑↓ move  Enter edit  Esc categories  / search  q quit│
+│Esc/q quit  s save  ↑↓ move  Enter edit│
 ├─────────────────────────────────────────────────────┤
 │SECTION TITLE                                    1/6 │
 │▶ Setting label                                value │
@@ -157,7 +159,7 @@ Tiny layout:
 Configuration
 Scope
 Selected label: value
-q quit
+s save  Esc/q quit
 ```
 
 Rules:
@@ -243,23 +245,25 @@ Rules:
 
 ### Keyboard Help Line
 
-Wide mode:
+Normal wide mode:
 
 ```text
-↑↓ move  Tab pane  Enter edit  / search  Esc back  q quit
+↑↓ move  Tab pane  Enter edit  / search  Esc/q quit  s save
 ```
 
-Narrow category mode:
+Normal narrow category mode:
 
 ```text
-↑↓ category  Enter open  / search  q quit
+Esc/q quit  s save  ↑↓ category  Enter open
 ```
 
-Narrow settings mode:
+Normal narrow settings mode:
 
 ```text
-↑↓ move  Enter edit  Esc categories  / search  q quit
+Esc/q quit  s save  ↑↓ move  Enter edit
 ```
+
+Search mode may replace the normal line with `Esc clear  q quit` plus core movement/editing hints. Editing mode may replace it with `Type value  Enter save  Esc cancel`.
 
 Rules:
 

@@ -1,63 +1,133 @@
+import { basename } from "node:path";
+
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { MAX_CACHE_COMMENTS, MAX_TOOL_ISSUES } from "../constants.ts";
+import { IssueMeError } from "../errors.ts";
 import { issueRecordToToolSummary, isPullRequestIssue } from "../issues/format.ts";
-import { listIssueFiles, relativeIssuePath, removeClosedIssueFiles, writeIssueRecord } from "../issues/store.ts";
-import type { IssueMeToolDetails } from "../types.ts";
-import { createIssueMeRuntime, fetchIssueRecord, toolText } from "./runtime.ts";
+import { issueFileDiagnosticReason, listIssueFileEntries, relativeIssuePath, removeClosedIssueFiles, writeIssueRecord } from "../issues/store.ts";
+import type { InvalidIssueFileDiagnostic, IssueMeToolDetails, IssueWriteResult } from "../types.ts";
+import { resolveIssueFilePath } from "../utils/slug.ts";
+import { createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const SyncIssuesParams = Type.Object({}, { additionalProperties: false });
 
-export function registerSyncIssuesTool(pi: ExtensionAPI) {
+export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
 			name: "issueme_sync_issues",
 			label: "IssueMe Sync Issues",
-			description: "Fetch open GitHub issues for the current repository, rewrite local IssueMe JSON files, and remove local files for closed issues.",
-			promptSnippet: "Sync open GitHub issues into local issues/<number>-<title-slug>.json files.",
+			description: "Sync open issues to local cache; remove stale closed issue files.",
+			promptSnippet: "Sync open issues to local cache.",
 			promptGuidelines: [
-				"Use issueme_sync_issues before editing local issue files directly or before planning work from GitHub issues.",
+				ISSUEME_SHARED_PROMPT_GUIDELINE,
+				"Use issueme_sync_issues before backlog planning or after partial cache-refresh failures.",
 			],
+			executionMode: "sequential",
 			parameters: SyncIssuesParams,
 			async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
-				const runtime = await createIssueMeRuntime(ctx);
-				const before = await listIssueFiles(ctx.cwd, runtime.config);
+				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const beforeEntries = await listIssueFileEntries(runtime.projectRoot, runtime.config, { repository: runtime.repository });
+				const before = beforeEntries.files;
+				const invalidFiles = relativeInvalidFileDiagnostics(runtime.projectRoot, beforeEntries.invalidFiles);
 				const issues = (await runtime.client.listOpenIssues(signal)).filter((issue) => !isPullRequestIssue(issue));
 				const openNumbers = new Set<number>();
-				const counts = { created: 0, updated: 0, unchanged: 0, removed: 0 };
+				const counts = { created: 0, updated: 0, renamed: 0, unchanged: 0, removed: 0, invalid: invalidFiles.length };
 				const paths: string[] = [];
+				const removedPaths: string[] = [];
+				const fileActions: NonNullable<IssueMeToolDetails["fileActions"]> = [];
 				const summaries = [];
 
 				for (const issue of issues) {
 					const record = await fetchIssueRecord(runtime, issue, signal);
 					openNumbers.add(record.number);
-					const result = await writeIssueRecord(ctx.cwd, runtime.config, record);
-					counts[result.action] += 1;
+					let result: IssueWriteResult;
+					try {
+						result = await writeIssueRecord(runtime.projectRoot, runtime.config, record);
+					} catch (error) {
+						if (!isInvalidIssueFileError(error)) throw error;
+						const targetPath = resolveIssueFilePath(runtime.projectRoot, runtime.config.issueDirectory, record.number, record.title);
+						const localPath = relativeIssuePath(runtime.projectRoot, targetPath) ?? basename(targetPath);
+						pushInvalidFileDiagnostic(invalidFiles, { path: localPath, fileName: basename(targetPath), reason: issueFileDiagnosticReason(error) });
+						counts.invalid = invalidFiles.length;
+						const summary = issueRecordToToolSummary(record, localPath);
+						summaries.push(summary);
+						fileActions.push({ action: "unchanged", path: localPath, issue: summary });
+						continue;
+					}
+					if (result.action in counts) counts[result.action as keyof typeof counts] += 1;
 					counts.removed += result.removedPaths.length;
-					const localPath = relativeIssuePath(ctx.cwd, result.path);
+					const localPath = relativeIssuePath(runtime.projectRoot, result.path);
+					const removedActionPaths = result.removedPaths.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
+					removedPaths.push(...removedActionPaths);
 					if (localPath) paths.push(localPath);
-					summaries.push(issueRecordToToolSummary(record, localPath));
+					const summary = issueRecordToToolSummary(record, localPath);
+					summaries.push(summary);
+					fileActions.push({
+						action: result.action,
+						...(localPath ? { path: localPath } : {}),
+						...(removedActionPaths.length ? { removedPaths: removedActionPaths } : {}),
+						issue: summary,
+					});
 				}
 
-				const removed = await removeClosedIssueFiles(ctx.cwd, runtime.config, openNumbers);
+				const removed = await removeClosedIssueFiles(runtime.projectRoot, runtime.config, openNumbers, runtime.repository);
 				counts.removed += removed.length;
-				const removedPaths = removed.map((path) => relativeIssuePath(ctx.cwd, path) ?? path);
+				const staleRemovedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
+				removedPaths.push(...staleRemovedPaths);
+				for (const path of staleRemovedPaths) fileActions.push({ action: "removed", path });
+				const commentTruncation = runtime.commentsTruncated ? commentTruncationDetails(runtime.truncatedCommentIssues) : undefined;
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
 					counts,
 					paths,
 					removedPaths,
-					issues: summaries.slice(0, 50),
-					truncated: summaries.length > 50,
+					fileActions,
+					invalidFiles,
+					issues: summaries,
+					cacheUpdated: true,
+					truncated: runtime.commentsTruncated,
+					...(commentTruncation ? { truncation: { comments: commentTruncation } } : {}),
 				};
 				const staleBefore = before.length - openNumbers.size;
 				const text = [
 					`Synced ${issues.length} open issue(s) for ${runtime.repository}.`,
-					`Created: ${counts.created}, updated: ${counts.updated}, unchanged: ${counts.unchanged}, removed local files: ${counts.removed}.`,
+					`Created: ${counts.created}, updated: ${counts.updated}, renamed: ${counts.renamed}, unchanged: ${counts.unchanged}, removed local files: ${counts.removed}.`,
+					counts.invalid > 0 ? `Invalid local issue files: ${counts.invalid} left untouched with safe diagnostics in details.invalidFiles.` : undefined,
+					runtime.commentsTruncated ? `Some issue comments were truncated in local cache according to the IssueMe comment policy (${MAX_CACHE_COMMENTS} comments per issue).` : undefined,
 					staleBefore > 0 ? `Local cache had ${before.length} file(s) before sync.` : undefined,
 				].filter(Boolean).join("\n");
 				return toolText(text, details);
 			},
 		}),
 	);
+}
+
+function commentTruncationDetails(issueNumbers: number[]): Record<string, unknown> {
+	const shownIssueNumbers = issueNumbers.slice(0, MAX_TOOL_ISSUES);
+	return {
+		policy: "bounded_per_issue",
+		maxPerIssue: MAX_CACHE_COMMENTS,
+		issueCount: issueNumbers.length,
+		issueNumbers: shownIssueNumbers,
+		...(shownIssueNumbers.length < issueNumbers.length ? { issueNumbersTruncated: true } : {}),
+	};
+}
+
+function relativeInvalidFileDiagnostics(projectRoot: string, diagnostics: InvalidIssueFileDiagnostic[]): InvalidIssueFileDiagnostic[] {
+	return diagnostics.map((diagnostic) => ({
+		...diagnostic,
+		path: relativeIssuePath(projectRoot, diagnostic.path) ?? diagnostic.fileName,
+	}));
+}
+
+function pushInvalidFileDiagnostic(diagnostics: InvalidIssueFileDiagnostic[], diagnostic: InvalidIssueFileDiagnostic): void {
+	if (diagnostics.some((existing) => existing.path === diagnostic.path)) return;
+	diagnostics.push(diagnostic);
+	diagnostics.sort((left, right) => left.fileName.localeCompare(right.fileName));
+}
+
+function isInvalidIssueFileError(error: unknown): boolean {
+	return error instanceof IssueMeError && ["issue_file_parse_failed", "issue_file_invalid", "unsafe_issue_file"].includes(error.code);
 }

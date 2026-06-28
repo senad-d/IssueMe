@@ -1,66 +1,124 @@
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { loadIssueMeConfig } from "../config/config.ts";
+import { IssueMeError } from "../errors.ts";
+import type { IssueMeConfig } from "../types.ts";
+import { resolveCurrentRepository } from "../github/repository.ts";
 import { formatIssueSummary, issueRecordToToolSummary } from "../issues/format.ts";
-import { readIssueByLookup, readIssueByNumber, relativeIssuePath } from "../issues/store.ts";
-import { resolveIssueFilePath } from "../utils/slug.ts";
-import { createIssueMeRuntime, refreshIssueRecord, toolText, writeAndSummarizeIssue } from "./runtime.ts";
+import { findIssueByLookup, findIssueByNumber, relativeIssuePath } from "../issues/store.ts";
+import { assertTrustedProject, createIssueMeRuntime, getIssueMeProjectRoot, normalizeRuntimeRepository, refreshIssueRecord, resolveRuntimeOptions, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const GetIssueParams = Type.Object(
 	{
-		number: Type.Optional(Type.Integer({ minimum: 1, description: "Issue number to read." })),
-		lookup: Type.Optional(Type.String({ description: "Issue number, local filename, title slug, or title fragment." })),
-		refresh: Type.Optional(Type.Boolean({ description: "Refresh from GitHub before returning the issue. Defaults to false." })),
+		number: Type.Optional(Type.Integer({ minimum: 1, description: "Issue number." })),
+		lookup: Type.Optional(Type.String({ description: "Number, filename, slug, or title fragment." })),
+		refresh: Type.Optional(Type.Boolean({ description: "True refreshes known issue from GitHub." })),
 	},
 	{ additionalProperties: false },
 );
 
-export function registerGetIssueTool(pi: ExtensionAPI) {
+export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
 			name: "issueme_get_issue",
 			label: "IssueMe Get Issue",
-			description: "Return one IssueMe issue from the local cache, optionally refreshing it from GitHub first.",
-			promptSnippet: "Read one cached GitHub issue by number, filename, slug, or title fragment.",
+			description: "Read cached issue or refresh known issue.",
+			promptSnippet: "Read cached or refresh known issue.",
 			promptGuidelines: [
-				"Use issueme_get_issue to inspect cached issue details; use refresh only when current GitHub state matters.",
+				"Use issueme_get_issue for cached details; set refresh true only for current remote state or focused closed/open reconciliation.",
 			],
 			parameters: GetIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				if (params.number === undefined && !params.lookup) {
-					throw new Error("Provide number or lookup for issueme_get_issue.");
+				const lookup = typeof params.lookup === "string" ? params.lookup.trim() : undefined;
+				const hasLookup = lookup !== undefined && lookup.length > 0;
+				if (params.number === undefined && !hasLookup) {
+					throw new IssueMeError("invalid_tool_input", "Provide number or lookup for issueme_get_issue.");
+				}
+				if (params.number !== undefined && hasLookup) {
+					throw new IssueMeError("invalid_tool_input", "Use number or lookup for issueme_get_issue, not both.", { fields: ["number", "lookup"] });
 				}
 
 				if (params.refresh) {
-					if (params.number === undefined) throw new Error("Refreshing from GitHub requires an issue number.");
-					const runtime = await createIssueMeRuntime(ctx);
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const runtime = await createIssueMeRuntime(ctx, options.runtime);
+					let issueNumber = params.number;
+					let previousPath: string | undefined;
+					if (issueNumber === undefined && hasLookup) {
+						const localLookup = await findIssueByLookup(runtime.projectRoot, runtime.config, lookup, runtime.repository);
+						if (!localLookup) throw new IssueMeError("issue_not_found", "Issue not found in local IssueMe cache; provide a number to refresh directly from GitHub.");
+						issueNumber = localLookup.record.number;
+						previousPath = relativeIssuePath(runtime.projectRoot, localLookup.path);
+					}
+					if (issueNumber === undefined) throw new IssueMeError("invalid_tool_input", "Refreshing from GitHub requires an issue number or a local lookup that resolves to one.");
+					const record = await refreshIssueRecord(runtime, issueNumber, signal);
+					const { summary, path, removedPaths, action } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const allRemovedPaths = uniquePaths([
+						...removedPaths,
+						...(previousPath && previousPath !== path ? [previousPath] : []),
+					]);
 					const formatted = formatIssueSummary(record);
-					return toolText(`${formatted.text}\n\nLocal file: ${path ?? "removed (issue is closed)"}`, {
+					return toolText(`${formatted.text}\n\nLocal cache action: ${action}\nLocal file: ${path ?? "removed (issue is closed)"}`, {
 						repository: runtime.repository,
-						issue: issueRecordToToolSummary(record, path),
+						issue: summary,
 						paths: path ? [path] : [],
+						removedPaths: allRemovedPaths,
+						fileActions: [{
+							action,
+							...(path ? { path } : {}),
+							...(allRemovedPaths.length ? { removedPaths: allRemovedPaths } : {}),
+							issue: summary,
+						}],
+						cacheUpdated: true,
+						status: `cache_${action}`,
 						truncated: formatted.truncated,
+						...(formatted.truncation ? { truncation: formatted.truncation } : {}),
 					});
 				}
 
-				const config = await loadIssueMeConfig(ctx.cwd);
-				const record = params.number !== undefined
-					? await readIssueByNumber(ctx.cwd, config, params.number)
-					: await readIssueByLookup(ctx.cwd, config, params.lookup ?? "");
-				if (!record) throw new Error("Issue not found in local IssueMe cache. Run issueme_sync_issues or use refresh with a number.");
+				const localScope = await createLocalLookupScope(ctx, options);
+				const localLookup = params.number !== undefined
+					? await findIssueByNumber(localScope.projectRoot, localScope.config, params.number, localScope.repository)
+					: await findIssueByLookup(localScope.projectRoot, localScope.config, lookup ?? "", localScope.repository);
+				if (!localLookup) throw new IssueMeError("issue_not_found", "Issue not found in the current repository's local IssueMe cache. Run issueme_sync_issues or use refresh with a number.");
 
-				const formatted = formatIssueSummary(record);
-				const path = relativeIssuePath(ctx.cwd, resolveIssueFilePath(ctx.cwd, config.issueDirectory, record.number, record.title));
+				const { projectRoot } = localScope;
+
+				const formatted = formatIssueSummary(localLookup.record);
+				const path = relativeIssuePath(projectRoot, localLookup.path);
 				return toolText(formatted.text, {
-					repository: record.repository,
-					issue: issueRecordToToolSummary(record, path),
+					repository: localLookup.record.repository,
+					issue: issueRecordToToolSummary(localLookup.record, path),
 					paths: path ? [path] : [],
 					truncated: formatted.truncated,
+					...(formatted.truncation ? { truncation: formatted.truncation } : {}),
 				});
 			},
 		}),
 	);
+}
+
+async function createLocalLookupScope(ctx: ExtensionContext, options: IssueMeToolRegistrationOptions): Promise<{
+	projectRoot: string;
+	config: IssueMeConfig;
+	repository: string;
+}> {
+	assertTrustedProject(ctx, "issueme_get_issue requires project trust before reading local issue cache files.");
+	const runtimeOptions = await resolveRuntimeOptions(ctx, options.runtime);
+	const projectRoot = runtimeOptions.projectRoot ?? await getIssueMeProjectRoot(ctx.cwd);
+	const config = runtimeOptions.config ?? await loadIssueMeConfig(projectRoot);
+	if (runtimeOptions.client && runtimeOptions.repository) {
+		const requestedRepository = normalizeRuntimeRepository(runtimeOptions.repository);
+		if (runtimeOptions.client.repository.fullName !== requestedRepository.fullName) {
+			throw new IssueMeError("runtime_repository_mismatch", "Injected IssueMe runtime client repository does not match the requested repository.");
+		}
+	}
+	const repository = runtimeOptions.client?.repository
+		?? (runtimeOptions.repository
+			? normalizeRuntimeRepository(runtimeOptions.repository)
+			: await resolveCurrentRepository(projectRoot, runtimeOptions.env ?? process.env, { allowGitConfig: true }));
+	return { projectRoot, config, repository: repository.fullName };
+}
+
+function uniquePaths(paths: string[]): string[] {
+	return [...new Set(paths)];
 }
