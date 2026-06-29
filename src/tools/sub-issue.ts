@@ -5,9 +5,12 @@ import { MAX_TOOL_ISSUES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueReorderResult, NativeSubIssueSummary } from "../github/client.ts";
 import { applyIssueRelationshipMetadata, githubIssueToRecord, issueRecordToToolSummary, type IssueRelationshipMetadata } from "../issues/format.ts";
-import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
+import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, SafeToolError, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
+import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import {
+	assertNotAborted,
 	createIssueMeRuntime,
+	isAbortError,
 	normalizeIssueBody,
 	partialSuccessToolError,
 	refreshIssueRecord,
@@ -239,6 +242,7 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 			promptGuidelines: [
 				"Use issueme_list_sub_issues before native relationship changes; refreshCache true only when cache updates are intended.",
 			],
+			executionMode: "sequential",
 			parameters: ListSubIssuesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const normalized = normalizeListSubIssuesParams(params as ListSubIssuesToolParams);
@@ -251,6 +255,7 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 					const cache = await refreshRelationshipCache(ctx, runtime, result, normalized.limit, signal);
 					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, cache), buildListSubIssuesDetails(runtime.repository, result, normalized, cache));
 				} catch (error) {
+					if (isAbortError(error)) throw error;
 					const safeError = partialSuccessToolError(error, "sub_issue_cache_refresh_failed");
 					return toolText(`${formatListSubIssuesText(runtime.repository, result, normalized, undefined)}\nLocal relationship inspection succeeded, but cache refresh failed; run issueme_sync_issues before relying on local cache metadata.`, {
 						...buildListSubIssuesDetails(runtime.repository, result, normalized),
@@ -267,9 +272,7 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 }
 
 function normalizeReorderSubIssuesParams(params: ReorderSubIssuesToolParams): NormalizedReorderSubIssuesParams {
-	if (!Number.isSafeInteger(params.parentNumber) || params.parentNumber === undefined || params.parentNumber <= 0) {
-		throw new IssueMeError("invalid_tool_input", "parentNumber must be a positive integer.", { field: "parentNumber" });
-	}
+	const parentNumber = normalizePositiveSafeInteger(params.parentNumber, "parentNumber");
 	if (!Array.isArray(params.orderedChildNumbers) || params.orderedChildNumbers.length === 0) {
 		throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must list every current child issue number in the desired order.", { field: "orderedChildNumbers" });
 	}
@@ -279,36 +282,33 @@ function normalizeReorderSubIssuesParams(params: ReorderSubIssuesToolParams): No
 	const seen = new Set<number>();
 	const orderedChildNumbers: number[] = [];
 	for (const [index, value] of params.orderedChildNumbers.entries()) {
-		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must contain only positive integer issue numbers.", { field: "orderedChildNumbers", index });
+		const childNumber = normalizePositiveSafeInteger(value, "orderedChildNumbers", {
+			message: "orderedChildNumbers must contain only positive integer issue numbers.",
+			details: { index },
+		});
+		if (childNumber === parentNumber) {
+			throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must not include parentNumber.", { field: "orderedChildNumbers", parentNumber });
 		}
-		if (value === params.parentNumber) {
-			throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must not include parentNumber.", { field: "orderedChildNumbers", parentNumber: params.parentNumber });
+		if (seen.has(childNumber)) {
+			throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must not contain duplicates.", { field: "orderedChildNumbers", duplicate: childNumber });
 		}
-		if (seen.has(value)) {
-			throw new IssueMeError("invalid_tool_input", "orderedChildNumbers must not contain duplicates.", { field: "orderedChildNumbers", duplicate: value });
-		}
-		seen.add(value);
-		orderedChildNumbers.push(value);
+		seen.add(childNumber);
+		orderedChildNumbers.push(childNumber);
 	}
-	return { parentNumber: params.parentNumber, orderedChildNumbers };
+	return { parentNumber, orderedChildNumbers };
 }
 
 function normalizeListSubIssuesParams(params: ListSubIssuesToolParams): NormalizedListSubIssuesParams {
-	if (!Number.isSafeInteger(params.issueNumber) || params.issueNumber === undefined || params.issueNumber <= 0) {
-		throw new IssueMeError("invalid_tool_input", "issueNumber must be a positive integer.", { field: "issueNumber" });
-	}
+	const issueNumber = normalizePositiveSafeInteger(params.issueNumber, "issueNumber");
 	return {
-		issueNumber: params.issueNumber,
+		issueNumber,
 		limit: normalizeSubIssueLimit(params.limit),
 		refreshCache: params.refreshCache === true,
 	};
 }
 
 function normalizeSubIssueLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_ISSUES) return value;
-	throw new IssueMeError("invalid_tool_input", `limit must be an integer between 1 and ${MAX_TOOL_ISSUES}.`, { field: "limit" });
+	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_ISSUES, defaultValue: 25 });
 }
 
 function buildListSubIssuesDetails(
@@ -385,8 +385,9 @@ async function refreshRelationshipCache(
 	const removedPaths: string[] = [];
 	const fileActions: ToolFileActionSummary[] = [];
 	for (const [issueNumber, relationships] of targets) {
+		assertNotAborted(signal);
 		const record = await refreshIssueRecordWithRelationship(runtime, issueNumber, relationships, signal);
-		const cached = await writeAndSummarizeIssue(ctx, runtime, record);
+		const cached = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 		if (cached.path) paths.push(cached.path);
 		removedPaths.push(...cached.removedPaths);
 		fileActions.push({
@@ -494,8 +495,8 @@ async function cacheRelationshipAfterSuccess(
 		const parentRelationship = await runtime.client.listSubIssueRelationships(relationship.parent.number, { limit: MAX_TOOL_ISSUES }, signal);
 		const parentRecord = await refreshIssueRecordWithRelationship(runtime, relationship.parent.number, relationshipMetadataFromResult(parentRelationship), signal);
 		const childRecord = await refreshIssueRecordWithRelationship(runtime, relationship.child.number, childRelationshipMetadata(relationship, action), signal);
-		const parentCached = await writeAndSummarizeIssue(ctx, runtime, parentRecord);
-		const childCached = await writeAndSummarizeIssue(ctx, runtime, childRecord);
+		const parentCached = await writeAndSummarizeIssue(ctx, runtime, parentRecord, signal);
+		const childCached = await writeAndSummarizeIssue(ctx, runtime, childRecord, signal);
 		const paths = [parentCached.path, childCached.path].filter((path): path is string => Boolean(path));
 		const issues = [parentCached.summary, childCached.summary];
 		return toolText(`${text}\nLocal files: ${paths.length ? paths.join(", ") : "none"}`, {
@@ -533,32 +534,37 @@ async function cacheCreatedIssueAfterAttachFailure(
 	attachError: unknown,
 ) {
 	const record = githubIssueToRecord(runtime.client.repository, childIssue, []);
-	const safeAttachError = safeToolError(attachError);
+	const safeAttachError = subIssueAttachPartialSuccessError(attachError, record, parentNumber);
+	const guidance = subIssueAttachPartialSuccessGuidance(parentNumber, record.number);
 	try {
 		const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
 		return toolText(
-			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.\nURL: ${record.html_url}\nLocal file: ${path}\nError: ${safeAttachError.message}`,
+			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.\nURL: ${record.html_url}\nLocal file: ${path}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
+				result: "partial_success",
 				issue: summary,
+				issues: [summary],
 				paths: path ? [path] : [],
 				cacheUpdated: true,
 				needsSync: false,
-				status: "sub_issue_attach_failed",
+				status: "sub_issue_attach_partial_success",
 				message: safeAttachError.message,
 				error: safeAttachError,
 			},
 		);
 	} catch (cacheError) {
-		const safeCacheError = partialSuccessToolError(cacheError, "sub_issue_attach_failed_cache_failed");
+		const safeCacheError = partialSuccessToolError(cacheError, "sub_issue_attach_partial_success_cache_failed");
 		return toolText(
-			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references. Local cache update also failed; run issueme_sync_issues before retrying local work.\nURL: ${record.html_url}\nError: ${safeAttachError.message}`,
+			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references. Local cache update also failed; run issueme_sync_issues before relying on local cache state.\nURL: ${record.html_url}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
+				result: "partial_success",
 				issue: issueRecordToToolSummary(record),
+				issues: [issueRecordToToolSummary(record)],
 				cacheUpdated: false,
 				needsSync: true,
-				status: "sub_issue_attach_failed_cache_failed",
+				status: "sub_issue_attach_partial_success_cache_failed",
 				message: safeAttachError.message,
 				error: {
 					...safeAttachError,
@@ -570,6 +576,31 @@ async function cacheCreatedIssueAfterAttachFailure(
 			},
 		);
 	}
+}
+
+function subIssueAttachPartialSuccessGuidance(parentNumber: number, childNumber: number): string {
+	return `Do not rerun issueme_create_sub_issue blindly; after resolving the native attachment blocker, reuse the already-created issue with issueme_add_sub_issue using parentNumber ${parentNumber} and childNumber ${childNumber}.`;
+}
+
+function subIssueAttachPartialSuccessError(error: unknown, record: IssueRecord, parentNumber: number): SafeToolError {
+	const safeError = partialSuccessToolError(error, "sub_issue_attach_partial_success");
+	const recoveryHint = subIssueAttachPartialSuccessGuidance(parentNumber, record.number);
+	return {
+		...safeError,
+		recoveryHint,
+		details: {
+			parentNumber,
+			createdIssue: {
+				number: record.number,
+				title: record.title,
+				html_url: record.html_url,
+			},
+			retrySafeGuidance: recoveryHint,
+			...(safeError.details ?? {}),
+			partialSuccessStatus: "sub_issue_attach_partial_success",
+			partialSuccessRecoveryHint: recoveryHint,
+		},
+	};
 }
 
 function subIssueMutationFailure(runtime: IssueMeRuntime, parentNumber: number, childNumber: number, action: "attach" | "remove", error: unknown) {

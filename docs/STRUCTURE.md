@@ -10,7 +10,7 @@ IssueMe is a TypeScript Pi extension package that exposes direct GitHub REST and
 src/
 ├── extension.ts                  # small registration-only entry point
 ├── commands/
-│   ├── issueme-command.ts         # /issueme, help/status aliases, /issueme start <skill-path>
+│   ├── issueme-command.ts         # /issueme, help/status aliases, /issueme start [skill-path]
 │   └── config-tui.ts              # configuration TUI renderer/component and snapshot helper
 ├── tools/
 │   ├── issueme-tools.ts           # tool registration aggregator
@@ -58,7 +58,7 @@ No template placeholder command/tool/lifecycle modules remain.
 ## Module boundaries
 
 - `src/extension.ts` only calls registration functions.
-- `src/commands/` owns user commands, command parsing, configuration TUI rendering, and workflow kickoff.
+- `src/commands/` owns user commands, command parsing, configuration TUI rendering, and workflow kickoff, including `defaultSkillPath` fallback for `/issueme start`.
 - `src/tools/` owns LLM-callable tool definitions, schemas, prompt snippets, prompt guidelines, and tool-level orchestration.
 - `src/github/` owns REST API calls, native sub-issue GraphQL inspection/mutations/reordering, issue development-link GraphQL inspection, Projects v2 GraphQL discovery/item mutations, pagination validation, response/error handling, mutation guards, and repository resolution.
 - `src/issues/` owns local `issues/<issue-number>-<issue-title-slug>.json` files, repository-aware cache lookups, symlink-escape checks for explicit cache paths, safe removals, and invalid-file diagnostics; `issueme_get_issue` filters local reads through the resolved current repository and uses the shared write/remove policy for focused any-state refreshes.
@@ -70,8 +70,8 @@ No template placeholder command/tool/lifecycle modules remain.
 - No long-lived processes, file watchers, timers, sockets, HTTP listeners, or webhooks are started from the extension factory.
 - Every IssueMe tool includes concise `promptSnippet` and tool-specific `promptGuidelines`; shared IssueMe terms are centralized in one loaded prompt guideline to avoid repeating them across tools.
 - String enum tool schema fields use `StringEnum` from `@earendil-works/pi-ai`.
-- Mutating tools use `executionMode: "sequential"` to avoid parallel remote mutation races.
-- Local config and issue-file mutations use safe path resolution and Pi's file mutation queue helper.
+- Tools that can mutate GitHub or local issue-cache files use `executionMode: "sequential"`; this includes conditional cache refresh modes in `issueme_get_issue` and `issueme_list_sub_issues`.
+- Local config and issue-file mutations use safe path resolution and Pi's file mutation queue helper, with abort checkpoints before long-running refresh flows enter local write/remove phases.
 - Large issue output and structured details are bounded/truncated and secret-free; tool details share `result`, repository, issue/path/change/cache/sync fields, optional comment ID/URL fields, bounded bulk per-issue `bulkResults`, and safe error metadata with stable codes, categories, and recovery hints.
 - Label and assignee arrays are normalized through shared helpers; values must be single-line, and assignees must match GitHub username syntax before defaults are persisted or tool mutations are sent.
 - `issueme_list_milestones` discovers repository milestone numbers/titles read-only so agents can safely choose `milestoneNumber` before `issueme_update_issue`.
@@ -81,7 +81,7 @@ No template placeholder command/tool/lifecycle modules remain.
 - `issueme_manage_label` mutates repository label taxonomy only; delete requires explicit confirmation and never deletes issue objects, while issue-label assignment remains owned by `issueme_label_issue`.
 - `issueme_manage_milestone` mutates repository milestone planning metadata only; delete requires explicit confirmation and removes milestone associations from existing issues, while issue milestone assignment remains owned by `issueme_update_issue`.
 - `issueme_update_comment` and `issueme_delete_comment` verify the requested issue is open and the comment belongs to that issue before editing/deleting the comment; they refresh the parent issue cache afterward.
-- `issueme_list_sub_issues` inspects native parent/sub-issue relationships read-only against GitHub, bounds child lists with truncation metadata, and refreshes local relationship metadata only when `refreshCache: true` is explicit.
+- `issueme_list_sub_issues` inspects native parent/sub-issue relationships read-only against GitHub, bounds child lists with truncation metadata, and refreshes local relationship metadata only when `refreshCache: true` is explicit; the registration is sequential because that mode writes cache files.
 - `issueme_list_issue_development_links` inspects linked pull requests, PR branch names, commits, and closing/reference metadata read-only through GitHub issue timeline GraphQL data when GitHub exposes it; it keeps same-number pull requests distinct by URL, bounds results, fetches no PR bodies, writes no local cache, and documents standalone-branch/private-reference limitations.
 - `issueme_reorder_sub_issues` reorders native child priority with GitHub's `reprioritizeSubIssue` GraphQL mutation, requires every current child number exactly once, refuses closed parent/child issues, and refreshes local relationship metadata afterward.
 - Native issue dependency/blocker/tracked-by tools are intentionally not registered until GitHub exposes a stable native REST or GraphQL API with documented list/add/remove semantics; IssueMe does not create body-only dependency references as a fallback.
@@ -100,13 +100,14 @@ npm run typecheck
 npm run format:check
 npm run test
 npm run smoke:discover
+npm run smoke:packaged
 npm run check:pack
 npm run validate
 pi --no-extensions -e .
 ```
 
-`npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, and the package dry-run contents check. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
+`npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, the package dry-run contents check, and the packed production-style smoke check. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
 
-Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-eight `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. The probe loads registrations only; it does not invoke handlers, call GitHub, or mutate issues.
+Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-eight `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. The probes load registrations only; they do not invoke handlers, call GitHub, publish, update dependencies, or mutate issues.
 
 Use `pi --no-extensions -e .` for isolated manual startup testing so other configured extensions cannot interfere. Release smoke testing must pair startup checks with command/tool discovery; a no-output startup alone is insufficient.

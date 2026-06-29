@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import issueMeExtension from "../src/extension.ts";
 import { ClosedIssueMutationError } from "../src/errors.ts";
 import { GitHubClient } from "../src/github/client.ts";
 import { writeIssueRecord } from "../src/issues/store.ts";
@@ -16,9 +17,12 @@ const repository = { owner: "owner", repo: "repo", fullName: REPOSITORY };
 const config = { issueDirectory: "issues", defaultLabels: ["from-config"], defaultAssignees: ["octocat"], defaultSkillPath: null };
 
 function fakePi() {
+	const commands = new Map();
 	const tools = new Map();
 	return {
+		commands,
 		tools,
+		registerCommand(name, options) { commands.set(name, options); },
 		registerTool(tool) { tools.set(tool.name, tool); },
 	};
 }
@@ -456,6 +460,46 @@ test("registered IssueMe tools run with injected config, repository, token, and 
 	assert.ok(mock.calls.every((call) => call.authorization === `Bearer ${TOKEN}`));
 	assert.equal(mock.calls.some((call) => call.path === "/repos/owner/repo/issues" && call.method === "POST"), true);
 	assert.equal(mock.calls.some((call) => call.path === "/repos/owner/repo/issues/10" && call.method === "PATCH" && call.body?.state === "closed"), true);
+});
+
+test("cache-refresh tools stay sequential and order same-issue cache writes with update flows", async () => {
+	const extensionPi = fakePi();
+	issueMeExtension(extensionPi);
+	assert.equal(extensionPi.commands.has("issueme"), true);
+	for (const name of ["issueme_get_issue", "issueme_list_sub_issues", "issueme_sync_issues", "issueme_update_issue"]) {
+		assert.equal(extensionPi.tools.get(name).executionMode, "sequential", `${name} must serialize cache write phases`);
+	}
+
+	const projectRoot = await tempProject();
+	const mock = makeSuccessFetch();
+	const tools = registerInjectedTools(mock.fetchFn);
+
+	const syncResult = await execute(tools.get("issueme_sync_issues"), projectRoot, {});
+	assert.equal(syncResult.details.cacheUpdated, true);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-sync-target.json"]);
+
+	const getRefresh = await execute(tools.get("issueme_get_issue"), projectRoot, { number: 10, refresh: true });
+	assert.equal(getRefresh.details.cacheUpdated, true);
+	assert.deepEqual(getRefresh.details.paths, ["issues/10-sync-target.json"]);
+
+	const relationshipRefresh = await execute(tools.get("issueme_list_sub_issues"), projectRoot, { issueNumber: 10, refreshCache: true });
+	assert.equal(relationshipRefresh.details.cacheUpdated, true);
+	assert.deepEqual(relationshipRefresh.details.paths, ["issues/10-sync-target.json"]);
+	assert.equal((await readJson(join(projectRoot, "issues", "10-sync-target.json"))).sub_issues_count, 0);
+
+	const updateResult = await execute(tools.get("issueme_update_issue"), projectRoot, { number: 10, title: "Ordered Target", labels: ["ready"] });
+	assert.equal(updateResult.details.cacheUpdated, true);
+	assert.deepEqual(updateResult.details.paths, ["issues/10-ordered-target.json"]);
+	assert.deepEqual(updateResult.details.removedPaths, ["issues/10-sync-target.json"]);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-ordered-target.json"]);
+	const finalRecord = await readJson(join(projectRoot, "issues", "10-ordered-target.json"));
+	assert.equal(finalRecord.title, "Ordered Target");
+	assert.deepEqual(finalRecord.labels, ["ready"]);
+
+	const listSubIssuesCallIndex = mock.calls.findIndex((call) => call.path === "/graphql" && call.body?.operationName === "IssueMeListSubIssues");
+	const patchCallIndex = mock.calls.findIndex((call) => call.path === "/repos/owner/repo/issues/10" && call.method === "PATCH");
+	assert.ok(listSubIssuesCallIndex >= 0, "relationship refresh should use the mocked GraphQL list operation");
+	assert.ok(patchCallIndex > listSubIssuesCallIndex, "update mutation should run after the relationship refresh in this same-issue scenario");
 });
 
 test("IssueMe runtime validates injected repository objects", () => {

@@ -8,7 +8,9 @@ import type { GitHubIssueCloseReason, GitHubProjectV2ItemMutationResult } from "
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueMeToolResult, SafeToolError, ToolBulkIssueResultSummary, ToolIssueSummary } from "../types.ts";
+import { normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import {
+	assertNotAborted,
 	createIssueMeRuntime,
 	partialSuccessToolError,
 	refreshIssueRecord,
@@ -123,6 +125,7 @@ async function runBulkIssueOperation(
 	for (let index = 0; index < params.issueNumbers.length; index++) {
 		const issueNumber = params.issueNumbers[index];
 		try {
+			assertNotAborted(signal);
 			const result = await applyBulkAction(ctx, runtime, params, issueNumber, signal);
 			results.push(result);
 			if (result.status === "success") counts.succeeded += 1;
@@ -217,7 +220,7 @@ async function refreshIssueAfterRemoteSuccess(
 	try {
 		if (updatedIssue) updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
 		const record = await refreshIssueRecord(runtime, issueNumber, signal);
-		const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record);
+		const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 		return {
 			number: issueNumber,
 			action: params.action,
@@ -274,6 +277,7 @@ async function closeIssueForBulk(
 	const issue = alreadyClosed ? current : await runtime.client.closeIssue(issueNumber, { reason: params.reason }, signal);
 	const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
 	try {
+		assertNotAborted(signal);
 		const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, issueNumber, runtime.repository);
 		const removedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
 		return {
@@ -436,14 +440,9 @@ function normalizeCloseReason(value: GitHubIssueCloseReason): GitHubIssueCloseRe
 }
 
 function normalizeRequiredText(value: string | undefined, field: string): string {
-	if (typeof value !== "string") throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} is required for this bulk action.`, { field });
-	const trimmed = value.trim();
-	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not be empty.`, { field });
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not contain null bytes.`, { field });
-	return trimmed;
+	return normalizeRequiredTrimmedText(value, field, { requiredMessage: `${field} is required for this bulk action.` });
 }
 
 function normalizePositiveInteger(value: number | undefined, field: string): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must be a positive integer.`, { field });
+	return normalizePositiveSafeInteger(value, field);
 }

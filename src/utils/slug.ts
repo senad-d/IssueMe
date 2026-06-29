@@ -100,8 +100,12 @@ export function assertPathInside(parentDirectory: string, childPath: string, mes
 	const parent = resolve(parentDirectory);
 	const child = resolve(childPath);
 	const rel = relative(parent, child);
-	if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return;
+	if (rel === "" || (!isParentTraversalRelativePath(rel) && !isAbsolute(rel))) return;
 	throw new IssueMeError("unsafe_path", message);
+}
+
+function isParentTraversalRelativePath(value: string): boolean {
+	return value === ".." || value.startsWith("../") || value.startsWith("..\\");
 }
 
 export function assertPathNotEqual(parentDirectory: string, childPath: string, message: string): void {

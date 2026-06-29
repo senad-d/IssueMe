@@ -97,8 +97,8 @@ async function registerGetTool(options) {
 	return pi.getTool;
 }
 
-async function executeGet(tool, cwd, params) {
-	return tool.execute("get-call", params, undefined, undefined, {
+async function executeGet(tool, cwd, params, signal) {
+	return tool.execute("get-call", params, signal, undefined, {
 		cwd,
 		isProjectTrusted: () => true,
 	});
@@ -135,6 +135,11 @@ async function withMockedGitHub(fetchFn, callback) {
 		restoreEnv("GITHUB_REPOSITORY", originalGithubRepository);
 	}
 }
+
+test("issueme_get_issue registers sequential execution because refresh can mutate cache files", async () => {
+	const getTool = await registerGetTool();
+	assert.equal(getTool.executionMode, "sequential");
+});
 
 test("issueme_get_issue resolves number, filename, slug, and title fragment to the actual local path", async () => {
 	const projectRoot = await setupLookupProject();
@@ -325,6 +330,31 @@ test("issueme_get_issue refresh creates one open issue file and reports the cach
 		assert.equal(result.details.status, "cache_created");
 		assert.equal(result.details.issue.localPath, "issues/30-single-open-refresh.json");
 		assert.equal(result.details.cacheUpdated, true);
+	});
+});
+
+test("issueme_get_issue refresh aborts before writing local cache after remote reads", async () => {
+	const projectRoot = await tempProject();
+	const getTool = await registerGetTool();
+	const calls = [];
+	const controller = new AbortController();
+
+	await withMockedGitHub(async (input) => {
+		const url = new URL(input.toString());
+		calls.push(url.pathname);
+		if (url.pathname === "/repos/owner/repo/issues/33") return jsonResponse(githubIssue(33, "Abort Before Write"));
+		if (url.pathname === "/repos/owner/repo/issues/33/comments") {
+			controller.abort();
+			return jsonResponse([]);
+		}
+		throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
+	}, async () => {
+		await assert.rejects(
+			() => executeGet(getTool, projectRoot, { number: 33, refresh: true }, controller.signal),
+			(error) => error?.code === "github_request_aborted",
+		);
+		assert.deepEqual(calls, ["/repos/owner/repo/issues/33", "/repos/owner/repo/issues/33/comments"]);
+		await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 	});
 });
 

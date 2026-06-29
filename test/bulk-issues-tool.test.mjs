@@ -36,8 +36,8 @@ function registerBulkTool(fetchFn) {
 	return pi.tools.get("issueme_bulk_update_issues");
 }
 
-async function executeBulk(tool, cwd, params) {
-	return tool.execute("bulk-call", params, undefined, undefined, {
+async function executeBulk(tool, cwd, params, signal) {
+	return tool.execute("bulk-call", params, signal, undefined, {
 		cwd,
 		isProjectTrusted: () => true,
 	});
@@ -156,6 +156,50 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 	assertNoToken(result);
 });
 
+test("issueme_bulk_update_issues reports partial success if aborted before cache refresh write", async () => {
+	const projectRoot = await tempProject();
+	const controller = new AbortController();
+	const calls = [];
+	const issues = new Map([[1, githubIssue(1, "Abort Bulk Refresh")]]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(issues.get(1));
+		if (url.pathname === "/repos/owner/repo/issues/1/labels" && method === "POST") {
+			const updated = githubIssue(1, "Abort Bulk Refresh", { labels: body.labels });
+			issues.set(1, updated);
+			return jsonResponse(updated.labels);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments" && method === "GET") {
+			controller.abort();
+			return jsonResponse([]);
+		}
+
+		throw new Error(`Unexpected bulk abort request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "add_labels", labels: ["triage"] }, controller.signal);
+
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"POST /repos/owner/repo/issues/1/labels",
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1/comments",
+	]);
+	assert.equal(result.details.result, "partial_success");
+	assert.deepEqual(result.details.counts, { requested: 1, succeeded: 0, partial: 1, failed: 0, skipped: 0 });
+	assert.equal(result.details.bulkResults[0].status, "partial_success");
+	assert.equal(result.details.bulkResults[0].error.code, "github_request_aborted");
+	assert.equal(result.details.cacheUpdated, false);
+	assert.equal(result.details.needsSync, true);
+	assert.match(result.details.bulkResults[0].message, /remotely, but local cache refresh failed/);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+	assertNoToken(result);
+});
+
 test("issueme_bulk_update_issues adds explicitly listed issues to a project and returns item details", async () => {
 	const projectRoot = await tempProject();
 	const calls = [];
@@ -206,6 +250,26 @@ test("issueme_bulk_update_issues adds explicitly listed issues to a project and 
 	assert.deepEqual(result.details.paths, []);
 	assert.equal(result.details.bulkResults[0].projectItem.id, "PVTI_existing_7");
 	assert.match(result.content[0].text, /Added or confirmed issue #7/);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues stops sequential mutation flow on an already-aborted signal", async () => {
+	const projectRoot = await tempProject();
+	let calls = 0;
+	const controller = new AbortController();
+	controller.abort();
+	const tool = registerBulkTool(async () => {
+		calls += 1;
+		return jsonResponse(githubIssue(1, "Should Not Fetch"));
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"] }, controller.signal);
+
+	assert.equal(calls, 0);
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.error.code, "github_request_aborted");
+	assert.deepEqual(result.details.counts, { requested: 2, succeeded: 0, partial: 0, failed: 1, skipped: 1 });
+	assert.deepEqual(result.details.bulkResults.map((item) => item.status), ["failed", "skipped"]);
 	assertNoToken(result);
 });
 
@@ -304,6 +368,44 @@ test("issueme_bulk_update_issues stops by default after a failed issue and marks
 	assert.doesNotMatch(result.details.bulkResults[1].error.message, new RegExp(TOKEN));
 	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/issues/3"), false);
 	assert.match(result.content[0].text, /Do not blindly rerun/);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues keeps local cache when aborted after remote close before cleanup", async () => {
+	const projectRoot = await tempProject();
+	const controller = new AbortController();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		if (url.pathname === "/repos/owner/repo/issues/6" && method === "GET") {
+			return jsonResponse(githubIssue(6, "Close Abort"));
+		}
+		if (url.pathname === "/repos/owner/repo/issues/6" && method === "PATCH") {
+			controller.abort();
+			return jsonResponse(githubIssue(6, "Close Abort", { state: "closed", closed_at: "2026-06-27T01:00:00Z" }));
+		}
+		throw new Error(`Unexpected bulk close abort request: ${method} ${url.pathname}`);
+	});
+
+	await writeIssueRecord(projectRoot, config, issueRecord(6, "Close Abort"));
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [6], action: "close", reason: "completed" }, controller.signal);
+
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/6",
+		"GET /repos/owner/repo/issues/6",
+		"PATCH /repos/owner/repo/issues/6",
+	]);
+	assert.equal(calls[2].body.state, "closed");
+	assert.equal(result.details.result, "partial_success");
+	assert.deepEqual(result.details.counts, { requested: 1, succeeded: 0, partial: 1, failed: 0, skipped: 0 });
+	assert.equal(result.details.bulkResults[0].status, "partial_success");
+	assert.equal(result.details.bulkResults[0].error.code, "github_request_aborted");
+	assert.equal(result.details.cacheUpdated, false);
+	assert.equal(result.details.needsSync, true);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["6-close-abort.json"]);
 	assertNoToken(result);
 });
 

@@ -6,7 +6,7 @@ import { MAX_TOOL_PROJECT_FIELD_OPTIONS, MAX_TOOL_PROJECT_FIELDS, MAX_TOOL_PROJE
 import { IssueMeError } from "../errors.ts";
 import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2Scope } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
-import { isValidIsoDateOnly } from "../utils/date.ts";
+import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredIsoDateOnly, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
@@ -25,7 +25,7 @@ const ProjectFieldValueType = StringEnum(["single_select", "iteration", "date", 
 const ListProjectsParams = Type.Object(
 	{
 		scope: Type.Optional(ProjectScope),
-		owner: Type.Optional(Type.String({ description: "Org/user login; defaults repo owner." })),
+		owner: Type.Optional(Type.String({ description: "Org/user login; only valid when scope is organization or user; defaults repo owner." })),
 		query: Type.Optional(Type.String({ description: "Projects v2 search text." })),
 		includeClosed: Type.Optional(Type.Boolean({ description: "Include closed boards. Default false." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECTS, description: `Max results. Default ${DEFAULT_PROJECT_LIST_LIMIT}; max ${MAX_TOOL_PROJECTS}.` })),
@@ -35,10 +35,10 @@ const ListProjectsParams = Type.Object(
 
 const GetProjectFieldsParams = Type.Object(
 	{
-		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID; omit only with projectNumber." })),
+		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID; when provided, owner/scope/projectNumber are ignored." })),
 		scope: Type.Optional(ProjectScope),
-		owner: Type.Optional(Type.String({ description: "Org/user login; ignored with projectId." })),
-		projectNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Project number for scope." })),
+		owner: Type.Optional(Type.String({ description: "Org/user login; only valid when scope is organization or user; ignored with projectId." })),
+		projectNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Project number for scope; ignored with projectId." })),
 		fieldLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_FIELDS, description: `Max fields. Default ${DEFAULT_PROJECT_FIELD_LIMIT}; max ${MAX_TOOL_PROJECT_FIELDS}.` })),
 		optionLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_FIELD_OPTIONS, description: `Max options/field. Default ${DEFAULT_PROJECT_FIELD_OPTION_LIMIT}; max ${MAX_TOOL_PROJECT_FIELD_OPTIONS}.` })),
 		iterationLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_ITERATIONS, description: `Max iterations/field. Default ${DEFAULT_PROJECT_ITERATION_LIMIT}; max ${MAX_TOOL_PROJECT_ITERATIONS}.` })),
@@ -153,7 +153,7 @@ export function registerListProjectsTool(pi: ExtensionAPI, options: IssueMeToolR
 			description: "Discover Projects v2 boards for repo/org/user.",
 			promptSnippet: "Discover Projects v2 boards.",
 			promptGuidelines: [
-				"Use issueme_list_projects before project mutations when board ID/number is unknown; bound scope/owner/query/limit.",
+				"Use issueme_list_projects before project mutations when board ID/number is unknown; bound scope/query/limit and omit owner for repository scope.",
 			],
 			parameters: ListProjectsParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -186,7 +186,7 @@ export function registerGetProjectFieldsTool(pi: ExtensionAPI, options: IssueMeT
 			description: "List Projects v2 fields, options, and iterations.",
 			promptSnippet: "List Projects v2 fields/options.",
 			promptGuidelines: [
-				"Use issueme_get_project_fields after issueme_list_projects and before issueme_update_project_item to get field/option/iteration IDs.",
+				"Use issueme_get_project_fields after issueme_list_projects and before issueme_update_project_item to get field/option/iteration IDs; projectId ignores scope/owner/projectNumber.",
 			],
 			parameters: GetProjectFieldsParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -285,6 +285,7 @@ function normalizeListProjectsParams(params: ListProjectsToolParams): Normalized
 	const scope = normalizeScope(params.scope);
 	const owner = normalizeOptionalText(params.owner, "owner");
 	const query = normalizeOptionalText(params.query, "query");
+	assertProjectOwnerScope(scope, owner);
 	return {
 		scope,
 		...(owner ? { owner } : {}),
@@ -298,6 +299,7 @@ function normalizeGetProjectFieldsParams(params: GetProjectFieldsToolParams): No
 	const scope = normalizeScope(params.scope);
 	const projectId = normalizeOptionalText(params.projectId, "projectId");
 	const owner = normalizeOptionalText(params.owner, "owner");
+	if (!projectId) assertProjectOwnerScope(scope, owner);
 	if (!projectId && params.projectNumber === undefined) {
 		throw new IssueMeError("invalid_tool_input", "projectNumber is required when projectId is not provided.", { field: "projectNumber" });
 	}
@@ -363,31 +365,27 @@ function normalizeScope(value: GitHubProjectV2Scope | undefined): GitHubProjectV
 	throw new IssueMeError("invalid_tool_input", "scope must be repository, organization, or user.", { field: "scope" });
 }
 
+function assertProjectOwnerScope(scope: GitHubProjectV2Scope, owner: string | undefined): void {
+	if (scope === "repository" && owner) {
+		throw new IssueMeError("invalid_tool_input", "owner is only supported when scope is organization or user; repository scope uses the resolved current repository.", { field: "owner", scope });
+	}
+}
+
 function normalizeOptionalText(value: string | undefined, field: string): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (!trimmed) return undefined;
-	if (trimmed.includes("\0")) throw new IssueMeError("invalid_tool_input", `${field} must not contain null bytes.`, { field });
-	return trimmed;
+	return normalizeOptionalTextFilter(value, field);
 }
 
 function normalizeRequiredText(value: string | undefined, field: string): string {
-	if (typeof value !== "string") throw new IssueMeError("invalid_tool_input", `${field} is required.`, { field });
-	const trimmed = value.trim();
-	if (!trimmed) throw new IssueMeError("invalid_tool_input", `${field} must not be empty.`, { field });
-	if (trimmed.includes("\0")) throw new IssueMeError("invalid_tool_input", `${field} must not contain null bytes.`, { field });
-	return trimmed;
+	return normalizeRequiredTrimmedText(value, field);
 }
 
 function normalizeDateValue(value: string | undefined): string {
-	const date = normalizeRequiredText(value, "date");
-	if (!isValidIsoDateOnly(date)) throw new IssueMeError("invalid_tool_input", "date must be a valid YYYY-MM-DD date for GitHub Projects v2 date fields.", { field: "date" });
-	return date;
+	return normalizeRequiredIsoDateOnly(value, "date", { invalidMessage: "date must be a valid YYYY-MM-DD date for GitHub Projects v2 date fields." });
 }
 
 function normalizeTextValue(value: string | undefined): string {
 	if (typeof value !== "string") throw new IssueMeError("invalid_tool_input", "text is required for text project fields.", { field: "text" });
-	if (value.includes("\0")) throw new IssueMeError("invalid_tool_input", "text project field value must not contain null bytes.", { field: "text" });
+	assertNoNullBytes(value, "text", "text project field value must not contain null bytes.");
 	if (!value.trim()) throw new IssueMeError("invalid_tool_input", "text project field value must not be blank.", { field: "text" });
 	return value;
 }
@@ -398,14 +396,11 @@ function normalizeNumberValue(value: number | undefined): number {
 }
 
 function normalizeLimit(value: number | undefined, max: number, defaultValue: number, field: string): number {
-	if (value === undefined) return defaultValue;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= max) return value;
-	throw new IssueMeError("invalid_tool_input", `${field} must be an integer between 1 and ${max}.`, { field });
+	return normalizeBoundedToolLimit(value, { field, max, defaultValue });
 }
 
 function normalizePositiveInteger(value: number | undefined, field: string): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError("invalid_tool_input", `${field} must be a positive integer.`, { field });
+	return normalizePositiveSafeInteger(value, field);
 }
 
 function formatListProjectsText(

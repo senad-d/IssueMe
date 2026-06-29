@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,8 +23,8 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-sub-issue-tool-test-"));
 }
 
-async function execute(tool, cwd, params) {
-	return tool.execute("tool-call", params, undefined, undefined, {
+async function execute(tool, cwd, params, signal) {
+	return tool.execute("tool-call", params, signal, undefined, {
 		cwd,
 		isProjectTrusted: () => true,
 	});
@@ -193,6 +193,9 @@ function makeSubIssueFetch(options = {}) {
 						},
 					},
 				});
+			}
+			if (options.unsupported && body.operationName === "IssueMeAddSubIssue") {
+				return jsonResponse({ data: null, errors: [{ type: "undefinedField", message: "Field 'addSubIssue' doesn't exist on type 'Mutation'" }] });
 			}
 			const parent = [...issues.values()].find((issue) => issue.node_id === body.variables.issueId);
 			const child = [...issues.values()].find((issue) => issue.node_id === body.variables.subIssueId);
@@ -415,6 +418,7 @@ test("issueme_list_sub_issues inspects parent and child relationship shapes with
 	assert.equal(childResult.details.issue.parentIssue.number, 1);
 	assert.deepEqual(childResult.details.issue.subIssues, []);
 	assert.equal(mock.calls.filter((call) => call.path === "/graphql" && call.body.operationName === "IssueMeListSubIssues").length, 2);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
 
 test("issueme_list_sub_issues reports no native relationships clearly", async () => {
@@ -476,6 +480,48 @@ test("issueme_list_sub_issues intentionally refreshes local relationship metadat
 	assert.equal(mock.calls.filter((call) => call.path === "/graphql" && call.body.operationName === "IssueMeListSubIssues").length, 2);
 });
 
+test("issueme_list_sub_issues refreshCache aborts before relationship cache writes", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch();
+	const controller = new AbortController();
+	const tools = registerInjectedTools(async (input, init) => {
+		const response = await mock.fetchFn(input, init);
+		const url = new URL(input.toString());
+		if (url.pathname === "/repos/owner/repo/issues/2/comments") controller.abort();
+		return response;
+	});
+
+	await assert.rejects(
+		() => execute(tools.get("issueme_list_sub_issues"), projectRoot, { issueNumber: 2, refreshCache: true }, controller.signal),
+		(error) => error?.code === "github_request_aborted",
+	);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body.operationName === "IssueMeListSubIssues"), true);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+});
+
+test("issueme_add_sub_issue reports partial success when aborted before relationship cache writes", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch();
+	const controller = new AbortController();
+	const tools = registerInjectedTools(async (input, init) => {
+		const response = await mock.fetchFn(input, init);
+		const url = new URL(input.toString());
+		if (url.pathname === "/repos/owner/repo/issues/1/comments") controller.abort();
+		return response;
+	});
+
+	const result = await execute(tools.get("issueme_add_sub_issue"), projectRoot, { parentNumber: 1, childNumber: 2 }, controller.signal);
+
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.cacheUpdated, false);
+	assert.equal(result.details.needsSync, true);
+	assert.equal(result.details.error.code, "github_request_aborted");
+	assert.equal(result.details.error.details.partialSuccessStatus, "sub_issue_cache_refresh_failed");
+	assert.match(result.content[0].text, /relationship changed on GitHub, but local cache refresh failed/i);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /addSubIssue/.test(call.body.query)), true);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+});
+
 test("issueme_list_sub_issues reports forbidden or unsupported native sub-issue GraphQL clearly", async () => {
 	const projectRoot = await tempProject();
 	const forbiddenTools = registerInjectedTools(makeSubIssueFetch({ forbidden: true }).fetchFn);
@@ -491,7 +537,7 @@ test("issueme_list_sub_issues reports forbidden or unsupported native sub-issue 
 	);
 });
 
-test("issueme_create_sub_issue reports forbidden native sub-issue permissions without body-only fallback", async () => {
+test("issueme_create_sub_issue reports forbidden native attachment as retry-safe partial success", async () => {
 	const projectRoot = await tempProject();
 	const mock = makeSubIssueFetch({ forbidden: true });
 	const tools = registerInjectedTools(mock.fetchFn);
@@ -502,14 +548,48 @@ test("issueme_create_sub_issue reports forbidden native sub-issue permissions wi
 		body: "Child body",
 	});
 
-	assert.equal(result.details.result, "error");
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "sub_issue_attach_partial_success");
 	assert.equal(result.details.error.code, "github_sub_issue_forbidden");
 	assert.match(result.details.error.message, /lacks permission for native sub-issues/i);
 	assert.match(result.content[0].text, /did not fall back to body-only references/i);
+	assert.match(result.content[0].text, /Retry-safe guidance: Do not rerun issueme_create_sub_issue blindly/i);
+	assert.match(result.details.error.recoveryHint, /issueme_add_sub_issue/);
+	assert.equal(result.details.error.details.parentNumber, 1);
+	assert.deepEqual(result.details.error.details.createdIssue, {
+		number: 3,
+		title: "Permission Child",
+		html_url: "https://github.com/owner/repo/issues/3",
+	});
+	assert.match(result.details.error.details.retrySafeGuidance, /childNumber 3/);
 	assert.equal(result.details.cacheUpdated, true);
 	assert.equal(result.details.needsSync, false);
 	const child = await readJson(join(projectRoot, "issues", "3-permission-child.json"));
 	assert.equal(child.title, "Permission Child");
 	assert.equal(child.parent_issue, undefined);
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /addSubIssue/.test(call.body.query)), true);
+});
+
+test("issueme_create_sub_issue reports unsupported native attachment as retry-safe partial success", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({ unsupported: true });
+	const tools = registerInjectedTools(mock.fetchFn);
+
+	const result = await execute(tools.get("issueme_create_sub_issue"), projectRoot, {
+		parentNumber: 1,
+		title: "Unsupported Child",
+		body: "Child body",
+	});
+
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "sub_issue_attach_partial_success");
+	assert.equal(result.details.error.code, "github_sub_issue_unsupported");
+	assert.match(result.content[0].text, /reuse the already-created issue with issueme_add_sub_issue/i);
+	assert.match(result.details.error.recoveryHint, /childNumber 3/);
+	assert.equal(result.details.error.details.createdIssue.number, 3);
+	assert.equal(result.details.cacheUpdated, true);
+	assert.equal(result.details.needsSync, false);
+	const child = await readJson(join(projectRoot, "issues", "3-unsupported-child.json"));
+	assert.equal(child.title, "Unsupported Child");
+	assert.equal(child.parent_issue, undefined);
 });

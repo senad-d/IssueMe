@@ -54,7 +54,7 @@ Use these files for historical context and current cross-checks:
 - Start session-scoped resources from `session_start`, a command, or a tool; clean them up in `session_shutdown`.
 - Use `ctx.mode === "tui"` for TUI-only custom components.
 - Use `ctx.hasUI` before prompts/notifications that need UI support.
-- Use `pi.sendUserMessage()` for `/issueme start <skill-path>` workflow kickoff instead of trying to execute a skill internally.
+- Use `pi.sendUserMessage()` for `/issueme start [skill-path]` workflow kickoff instead of trying to execute a skill internally.
 - Avoid persisting branch-sensitive runtime state in memory. Store useful branch-sensitive state in tool result `details` when possible, and reconstruct from local issue files or the current branch on `session_start`.
 
 ## Tool Guidelines
@@ -92,10 +92,10 @@ Do not add webhook tools in the first implementation.
 - Parse subcommands from command args:
   - empty args: open configuration UI.
   - `info`: show help/status.
-  - `start <skill-path>`: start a skill-guided workflow using a user-supplied project-local skill file.
+  - `start [skill-path]`: start a skill-guided workflow using an explicit project-local skill file, or `defaultSkillPath` when omitted.
 - `/issueme` configuration must write only non-secret settings to `.pi/agent/issueme.json`.
 - `/issueme info` must include useful status without printing secrets.
-- `/issueme start <skill-path>` must accept project-relative or absolute skill paths and send a clear user message that instructs the agent to read/use the supplied skill and IssueMe tools.
+- `/issueme start [skill-path]` must accept project-relative or absolute skill paths, fall back to configured `defaultSkillPath` when omitted, and send a clear user message that instructs the agent to read/use the selected skill and IssueMe tools.
 - Avoid starting agent work when another agent turn is active unless the command explicitly uses a safe `deliverAs` mode.
 
 ## Package Metadata Rules
@@ -232,4 +232,4 @@ Execute these commands during implementation and release readiness:
 ## Notes
 
 - The initial preparation session intentionally did not implement commands/tools/events/UI/network behavior.
-- The skill referenced by `/issueme start <skill-path>` is user-supplied and must stay outside the bundled extension unless separately designed and approved.
+- The skill referenced by `/issueme start [skill-path]` is user-supplied or project-configured and must stay outside the bundled extension unless separately designed and approved.

@@ -4,6 +4,7 @@ import { Type } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
+import { assertMaxLength, assertNoNullBytes, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const MAX_MILESTONE_TITLE_CHARS = 256;
@@ -170,8 +171,7 @@ function normalizeAction(value: MilestoneManagementAction | undefined): Mileston
 }
 
 function normalizeMilestoneNumber(value: number | undefined): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone number must be a positive integer.", { field: "number" });
+	return normalizePositiveSafeInteger(value, "number", { message: "Milestone number must be a positive integer." });
 }
 
 function requireMilestoneNumber(value: number | undefined): number {
@@ -181,18 +181,8 @@ function requireMilestoneNumber(value: number | undefined): number {
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: true): string;
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: false): string | undefined;
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: boolean): string | undefined {
-	if (typeof value !== "string") {
-		if (!required) return undefined;
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} is required.`, { field });
-	}
-	const trimmed = value.trim();
-	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not be empty.`, { field });
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not contain null bytes.`, { field });
-	if (/\r|\n/.test(trimmed)) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must fit on one line.`, { field });
-	if (trimmed.length > MAX_MILESTONE_TITLE_CHARS) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must be ${MAX_MILESTONE_TITLE_CHARS} characters or fewer.`, { field, maxLength: MAX_MILESTONE_TITLE_CHARS });
-	}
-	return trimmed;
+	if (typeof value !== "string" && !required) return undefined;
+	return normalizeRequiredTrimmedText(value, field, { oneLine: true, maxLength: MAX_MILESTONE_TITLE_CHARS });
 }
 
 function requireNormalizedTitle(value: string | undefined, field: string): string {
@@ -201,17 +191,15 @@ function requireNormalizedTitle(value: string | undefined, field: string): strin
 
 function normalizeMilestoneDescription(value: string): string {
 	const trimmed = value.trim();
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "description must not contain null bytes.", { field: "description" });
-	if (trimmed.length > MAX_MILESTONE_DESCRIPTION_CHARS) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `description must be ${MAX_MILESTONE_DESCRIPTION_CHARS} characters or fewer.`, { field: "description", maxLength: MAX_MILESTONE_DESCRIPTION_CHARS });
-	}
+	assertNoNullBytes(trimmed, "description");
+	assertMaxLength(trimmed, "description", MAX_MILESTONE_DESCRIPTION_CHARS);
 	return trimmed;
 }
 
 function normalizeMilestoneDueOn(value: string): string {
 	const trimmed = value.trim();
 	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "dueOn must not be empty. Use clearDueOn to remove an existing due date.", { field: "dueOn" });
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "dueOn must not contain null bytes.", { field: "dueOn" });
+	assertNoNullBytes(trimmed, "dueOn");
 	const dateOnly = trimmed.match(ISO_DATE_ONLY_PATTERN);
 	if (dateOnly) {
 		const [, year, month, day] = dateOnly;

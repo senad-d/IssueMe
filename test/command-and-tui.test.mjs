@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { constants as fsConstants } from "node:fs";
-import { access, chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -107,7 +107,7 @@ test("parseIssueMeCommand handles aliases, exact start, quoted paths, and unknow
 	assert.deepEqual(parseIssueMeCommand(String.raw`start C:\tmp\SKILL.md`), { kind: "start", skillPath: String.raw`C:\tmp\SKILL.md` });
 	assert.equal(parseIssueMeCommand("starter path").kind, "info");
 	assert.match(parseIssueMeCommand("starter path").warning, /Unknown/);
-	assert.equal(parseIssueMeCommand("start").kind, "start-error");
+	assert.deepEqual(parseIssueMeCommand("start"), { kind: "start" });
 });
 
 test("renderIssueMeInfo is one combined help/status surface", () => {
@@ -118,6 +118,7 @@ test("renderIssueMeInfo is one combined help/status surface", () => {
 		tokenStatus: "missing",
 		configPath: ".pi/agent/issueme.json",
 		issueDirectory: "issues",
+		defaultSkillPath: null,
 		cachedIssues: 0,
 		invalidCacheFiles: 0,
 	});
@@ -125,13 +126,18 @@ test("renderIssueMeInfo is one combined help/status surface", () => {
 	assert.match(text, /\/issueme info \| help \| --help \| -h/);
 	assert.match(text, /issueme_sync_issues/);
 	assert.match(text, /Project trusted: no/);
+	assert.match(text, /Default skill path: not set/);
 	assert.match(text, /Troubleshooting/);
 });
 
-test("/issueme start validates exact readable project-local file and preserves delivery modes", async () => {
+test("/issueme start validates exact readable project-local files, configured defaults, and delivery modes", async () => {
 	const root = await tempProject();
+	await mkdir(join(root, ".pi", "agent"), { recursive: true });
 	await mkdir(join(root, "skills", "my skill"), { recursive: true });
+	await mkdir(join(root, "skills", "default"), { recursive: true });
 	await writeFile(join(root, "skills", "my skill", "SKILL.md"), "# Skill\n", "utf8");
+	await writeFile(join(root, "skills", "default", "SKILL.md"), "# Default Skill\n", "utf8");
+	await writeFile(join(root, ".pi", "agent", "issueme.json"), `${JSON.stringify(sampleConfig({ defaultSkillPath: "skills/default/SKILL.md" }), null, 2)}\n`, "utf8");
 
 	const busyPi = fakePi();
 	registerIssueMeCommand(busyPi);
@@ -139,13 +145,31 @@ test("/issueme start validates exact readable project-local file and preserves d
 	assert.equal(busyPi.userMessages.length, 1);
 	assert.equal(busyPi.userMessages[0].options.deliverAs, "followUp");
 	assert.match(busyPi.userMessages[0].content, /IssueMe workflow skill/);
+	assert.match(busyPi.userMessages[0].content, /@skills\/my skill\/SKILL\.md/);
+	assert.doesNotMatch(busyPi.userMessages[0].content, new RegExp(escapeRegExp(root)));
+
+	const defaultPi = fakePi();
+	registerIssueMeCommand(defaultPi);
+	await defaultPi.commands.get("issueme").handler("start", fakeCtx(root));
+	assert.equal(defaultPi.userMessages.length, 1);
+	assert.equal(defaultPi.userMessages[0].options, undefined);
+	assert.match(defaultPi.userMessages[0].content, /@skills\/default\/SKILL\.md/);
+	assert.doesNotMatch(defaultPi.userMessages[0].content, new RegExp(escapeRegExp(root)));
 
 	const idlePi = fakePi();
 	registerIssueMeCommand(idlePi);
 	await idlePi.commands.get("issueme").handler('start @"skills/my skill/SKILL.md"', fakeCtx(root));
 	assert.equal(idlePi.userMessages.length, 1);
 	assert.equal(idlePi.userMessages[0].options, undefined);
-	assert.match(idlePi.userMessages[0].content, /skills\/my skill\/SKILL\.md/);
+	assert.match(idlePi.userMessages[0].content, /@skills\/my skill\/SKILL\.md/);
+	assert.doesNotMatch(idlePi.userMessages[0].content, new RegExp(escapeRegExp(root)));
+
+	const absolutePi = fakePi();
+	registerIssueMeCommand(absolutePi);
+	await absolutePi.commands.get("issueme").handler(`start "${join(root, "skills", "my skill", "SKILL.md")}"`, fakeCtx(root));
+	assert.equal(absolutePi.userMessages.length, 1);
+	assert.match(absolutePi.userMessages[0].content, /@skills\/my skill\/SKILL\.md/);
+	assert.doesNotMatch(absolutePi.userMessages[0].content, new RegExp(escapeRegExp(root)));
 
 	try {
 		const linkedSkill = join(root, "skills", "linked-skill.md");
@@ -153,7 +177,8 @@ test("/issueme start validates exact readable project-local file and preserves d
 		const symlinkPi = fakePi();
 		registerIssueMeCommand(symlinkPi);
 		await symlinkPi.commands.get("issueme").handler("start skills/linked-skill.md", fakeCtx(root));
-		assert.match(symlinkPi.userMessages[0].content, new RegExp(escapeRegExp(`@${await realpath(linkedSkill)}`)));
+		assert.match(symlinkPi.userMessages[0].content, /@skills\/my skill\/SKILL\.md/);
+		assert.doesNotMatch(symlinkPi.userMessages[0].content, new RegExp(escapeRegExp(root)));
 	} catch (error) {
 		if (error?.code !== "EPERM" && error?.code !== "EACCES") throw error;
 	}
@@ -173,7 +198,16 @@ test("/issueme start rejects missing, directory, unreadable, and unsafe skill pa
 
 	await handler("start", fakeCtx(root));
 	assert.equal(pi.userMessages.length, 0);
-	assert.match(pi.messages.at(-1).message.content, /Usage: \/issueme start <skill-path>/);
+	assert.match(pi.messages.at(-1).message.content, /Usage: \/issueme start \[skill-path\]/);
+	assert.match(pi.messages.at(-1).message.content, /defaultSkillPath/);
+
+	await mkdir(join(root, ".pi", "agent"), { recursive: true });
+	await writeFile(join(root, ".pi", "agent", "issueme.json"), `${JSON.stringify(sampleConfig({ defaultSkillPath: "../outside/SKILL.md" }), null, 2)}\n`, "utf8");
+	await assert.rejects(
+		() => handler("start", fakeCtx(root)),
+		(error) => error?.code === "unsafe_skill_path" && /current project/.test(error.message),
+	);
+	await writeFile(join(root, ".pi", "agent", "issueme.json"), `${JSON.stringify(sampleConfig(), null, 2)}\n`, "utf8");
 
 	await assert.rejects(
 		() => handler("start skills/missing.md", fakeCtx(root)),
@@ -259,6 +293,21 @@ test("/issueme info honors project-local reads only when the project is trusted"
 	assert.match(trustedText, /Token: present \(project-env:GH_TOKEN\)/);
 	assert.match(trustedText, /Issue directory: custom-cache/);
 	assert.match(trustedText, /Cached open issue files: 1/);
+}));
+
+test("/issueme info exercises a safe non-TUI command path without project secrets", async () => withCleanGitHubEnv(async () => {
+	const root = await tempProject();
+	const pi = fakePi();
+	registerIssueMeCommand(pi);
+	await pi.commands.get("issueme").handler("info", fakeCtx(root, { mode: "json", hasUI: false }));
+	assert.equal(pi.messages.length, 1);
+	const text = pi.messages[0].message.content;
+	assert.match(text, /Project trusted: yes/);
+	assert.match(text, /Repository: owner\/repo/);
+	assert.match(text, /Token: missing/);
+	assert.match(text, /Default skill path: not set/);
+	assert.equal(pi.messages[0].message.details.tokenPresent, false);
+	assert.doesNotMatch(text, /project-secret|process-secret/);
 }));
 
 test("/issueme info reports unreadable trusted .env as token status error without throwing", async () => withCleanGitHubEnv(async () => {

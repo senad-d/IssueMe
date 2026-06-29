@@ -6,6 +6,7 @@ import { MAX_TOOL_MILESTONES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState } from "../github/client.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
+import { normalizeBoundedToolLimit } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_MILESTONE_LIST_LIMIT = Math.min(25, MAX_TOOL_MILESTONES);
@@ -98,9 +99,7 @@ function normalizeDirection(value: GitHubMilestoneListDirection | undefined): Gi
 }
 
 function normalizeLimit(value: number | undefined): number {
-	if (value === undefined) return DEFAULT_MILESTONE_LIST_LIMIT;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_MILESTONES) return value;
-	throw new IssueMeError("invalid_tool_input", `limit must be an integer between 1 and ${MAX_TOOL_MILESTONES}.`, { field: "limit" });
+	return normalizeBoundedToolLimit(value, { max: MAX_TOOL_MILESTONES, defaultValue: DEFAULT_MILESTONE_LIST_LIMIT });
 }
 
 function summarizeMilestones(milestones: GitHubMilestoneResponse[]): ToolMilestoneSummary[] {

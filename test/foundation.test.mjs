@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { promises as fs } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { loadIssueMeConfig, saveIssueMeConfig } from "../src/config/config.ts";
+import { getIssueMeConfigPath, loadIssueMeConfig, saveIssueMeConfig } from "../src/config/config.ts";
 import { parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
 import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
 import { isValidIsoDateOnly } from "../src/utils/date.ts";
 import { parseProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
 import { resolveFileMutationQueuePath } from "../src/utils/mutation-queue.ts";
 import { resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
-import { issueFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
+import { assertPathInside, issueFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
 
 async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-test-"));
@@ -183,6 +184,11 @@ test("slug, issue directory, and issue paths are safe and stable", async () => {
 	assert.equal(slugifyIssueTitle("你好 👋"), "issue");
 	assert.equal(issueFileName(42, "Fix cache bug"), "42-fix-cache-bug.json");
 	assert.match(resolveIssueDirectory(cwd, "issues/sub"), /issues[/\\]sub$/);
+	assert.match(resolveIssueDirectory(cwd, "..cache/issues"), /\.\.cache[/\\]issues$/);
+	assert.match(resolveIssueDirectory(cwd, ".../issues"), /\.\.\.[/\\]issues$/);
+	assert.doesNotThrow(() => assertPathInside(cwd, join(cwd, "..cache", "issue.json")));
+	assert.doesNotThrow(() => assertPathInside(cwd, join(cwd, "...", "issue.json")));
+	assert.throws(() => assertPathInside(cwd, join(cwd, "..", "outside.json")), /allowed directory/);
 	assert.match(resolveIssueFilePath(cwd, "issues", 42, "Fix cache bug"), /issues[/\\]42-fix-cache-bug\.json$/);
 	assert.throws(() => resolveIssueFilePath(cwd, "../outside", 1, "Oops"), /path traversal|inside the current project/);
 	assert.throws(() => resolveIssueDirectory(cwd, "."), /project root/);
@@ -382,6 +388,54 @@ test("config and issue store reject symlinked local state paths", async (t) => {
 			() => readIssueByLookup(nestedSymlinkProject, config, "issues/linked/13-linked-escape.json"),
 			/inside the configured issue directory|inside the current project/,
 		);
+	} catch (error) {
+		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
+			t.skip("symlinks are not permitted on this platform");
+			return;
+		}
+		throw error;
+	}
+});
+
+test("config and issue store atomic writes do not follow pre-rename symlink swaps", async (t) => {
+	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	const outside = await tempProject();
+	const swapTargets = new Map();
+	const swappedTargets = new Set();
+	const originalRename = fs.rename;
+	t.mock.method(fs, "rename", async (sourcePath, targetPath) => {
+		const target = String(targetPath);
+		const outsideTarget = swapTargets.get(target);
+		if (outsideTarget && !swappedTargets.has(target)) {
+			swappedTargets.add(target);
+			await symlink(outsideTarget, target);
+		}
+		return originalRename(sourcePath, targetPath);
+	});
+
+	try {
+		const configProject = await tempProject();
+		const configPath = getIssueMeConfigPath(configProject);
+		const outsideConfigTarget = join(outside, "outside-config.json");
+		await writeFile(outsideConfigTarget, "outside config\n", "utf8");
+		swapTargets.set(configPath, outsideConfigTarget);
+		await saveIssueMeConfig(configProject, { ...config, defaultLabels: ["safe"] });
+		assert.equal(swappedTargets.has(configPath), true);
+		assert.equal(await readFile(outsideConfigTarget, "utf8"), "outside config\n");
+		assert.equal((await lstat(configPath)).isSymbolicLink(), false);
+		assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")).defaultLabels, ["safe"]);
+
+		const issueProject = await tempProject();
+		const issuePath = resolveIssueFilePath(issueProject, config.issueDirectory, 12, "Fix Cache Bug");
+		const outsideIssueTarget = join(outside, "outside-issue.json");
+		await writeFile(outsideIssueTarget, "outside issue\n", "utf8");
+		swapTargets.set(issuePath, outsideIssueTarget);
+		const writeResult = await writeIssueRecord(issueProject, config, sampleIssue());
+		assert.equal(writeResult.action, "created");
+		assert.equal(swappedTargets.has(issuePath), true);
+		assert.equal(await readFile(outsideIssueTarget, "utf8"), "outside issue\n");
+		assert.equal((await lstat(issuePath)).isSymbolicLink(), false);
+		assert.equal((await readIssueFile(issuePath)).title, "Fix Cache Bug");
 	} catch (error) {
 		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
 			t.skip("symlinks are not permitted on this platform");

@@ -144,7 +144,7 @@ export class IssueMeConfigTui {
 			return;
 		}
 		if (this.state.searchActive && data === "\x7f") {
-			this.state.search = this.state.search.slice(0, -1);
+			this.state.search = dropLastGrapheme(this.state.search);
 			this.invalidateAndRender();
 			return;
 		}
@@ -381,7 +381,7 @@ export class IssueMeConfigTui {
 			this.commitEdit();
 			return;
 		}
-		if (data === "\x7f") this.state.editBuffer = this.state.editBuffer.slice(0, -1);
+		if (data === "\x7f") this.state.editBuffer = dropLastGrapheme(this.state.editBuffer);
 		else if (isPrintable(data)) this.state.editBuffer += data;
 		this.invalidateAndRender();
 	}
@@ -516,9 +516,18 @@ function fitLeft(value: string, width: number): string {
 }
 
 function tailFit(value: string, width: number): string {
+	if (width <= 0) return "";
 	if (visibleWidth(value) <= width) return value;
-	if (width <= 1) return "…".slice(0, width);
-	const tail = stripAnsi(value).slice(-(width - 1));
+	if (width <= visibleWidth("…")) return truncateAnsi("…", width);
+	const tailWidth = width - visibleWidth("…");
+	let tail = "";
+	let used = 0;
+	for (const segment of [...graphemes(stripAnsi(value))].reverse()) {
+		const segmentWidth = graphemeWidth(segment);
+		if (used + segmentWidth > tailWidth) break;
+		tail = segment + tail;
+		used += segmentWidth;
+	}
 	return `…${tail}`;
 }
 
@@ -527,30 +536,135 @@ function truncateAnsi(value: string, width: number): string {
 	let output = "";
 	let visible = 0;
 	let index = 0;
-	while (index < value.length && visible < width) {
-		const char = value[index];
-		if (char === "\u001b") {
-			const match = value.slice(index).match(/^\u001b\[[0-9;]*m/);
-			if (match) {
-				output += match[0];
-				index += match[0].length;
-				continue;
-			}
+	let ansiActive = false;
+	let truncated = false;
+	while (index < value.length) {
+		const ansi = readAnsiAt(value, index);
+		if (ansi) {
+			output += ansi;
+			ansiActive = updateAnsiActive(ansi, ansiActive);
+			index += ansi.length;
+			continue;
 		}
-		output += char;
-		visible += 1;
-		index += 1;
+		const { segment, nextIndex } = readGraphemeAt(value, index);
+		const segmentWidth = graphemeWidth(segment);
+		if (visible + segmentWidth > width) {
+			truncated = true;
+			break;
+		}
+		output += segment;
+		visible += segmentWidth;
+		index = nextIndex;
 	}
+	if (truncated && ansiActive) output += "\u001b[0m";
 	return output;
 }
 
 function visibleWidth(value: string): number {
-	return stripAnsi(value).length;
+	let width = 0;
+	for (const segment of graphemes(stripAnsi(value))) width += graphemeWidth(segment);
+	return width;
 }
 
 function stripAnsi(value: string): string {
-	return value.replace(/\u001b\[[0-9;]*m/g, "");
+	return value.replace(ANSI_PATTERN, "");
 }
+
+function readAnsiAt(value: string, index: number): string | undefined {
+	if (value[index] !== "\u001b") return undefined;
+	return value.slice(index).match(ANSI_AT_START_PATTERN)?.[0];
+}
+
+function updateAnsiActive(sequence: string, current: boolean): boolean {
+	if (!sequence.endsWith("m")) return current;
+	const body = sequence.slice(2, -1).trim();
+	if (!body) return false;
+	const codes = body.split(";").map((part) => Number.parseInt(part, 10));
+	let active = current;
+	for (const code of codes) {
+		if (Number.isNaN(code)) continue;
+		active = code === 0 ? false : true;
+	}
+	return active;
+}
+
+function readGraphemeAt(value: string, index: number): { segment: string; nextIndex: number } {
+	const escapeIndex = value.indexOf("\u001b", index);
+	const plainEnd = escapeIndex === -1 ? value.length : escapeIndex;
+	const plain = value.slice(index, plainEnd);
+	const segment = graphemes(plain)[0] ?? value[index] ?? "";
+	return { segment, nextIndex: index + segment.length };
+}
+
+function graphemes(value: string): string[] {
+	if (!value) return [];
+	if (GRAPHEME_SEGMENTER) return [...GRAPHEME_SEGMENTER.segment(value)].map((part) => part.segment);
+	return Array.from(value);
+}
+
+function dropLastGrapheme(value: string): string {
+	const segments = graphemes(value);
+	segments.pop();
+	return segments.join("");
+}
+
+function graphemeWidth(segment: string): number {
+	if (!segment) return 0;
+	if (isEmojiGrapheme(segment)) return 2;
+	let width = 0;
+	for (const char of Array.from(segment)) {
+		const codePoint = char.codePointAt(0) ?? 0;
+		if (isZeroWidthCodePoint(codePoint) || isControlCodePoint(codePoint)) continue;
+		width += isFullwidthCodePoint(codePoint) ? 2 : 1;
+	}
+	return width;
+}
+
+function isControlCodePoint(codePoint: number): boolean {
+	return codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F);
+}
+
+function isZeroWidthCodePoint(codePoint: number): boolean {
+	return codePoint === 0x200D
+		|| (codePoint >= 0x0300 && codePoint <= 0x036F)
+		|| (codePoint >= 0x1AB0 && codePoint <= 0x1AFF)
+		|| (codePoint >= 0x1DC0 && codePoint <= 0x1DFF)
+		|| (codePoint >= 0x20D0 && codePoint <= 0x20FF)
+		|| (codePoint >= 0xFE00 && codePoint <= 0xFE0F)
+		|| (codePoint >= 0xFE20 && codePoint <= 0xFE2F)
+		|| (codePoint >= 0xE0100 && codePoint <= 0xE01EF);
+}
+
+function isFullwidthCodePoint(codePoint: number): boolean {
+	return codePoint >= 0x1100 && (
+		codePoint <= 0x115F
+		|| codePoint === 0x2329
+		|| codePoint === 0x232A
+		|| (codePoint >= 0x2E80 && codePoint <= 0xA4CF && codePoint !== 0x303F)
+		|| (codePoint >= 0xAC00 && codePoint <= 0xD7A3)
+		|| (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+		|| (codePoint >= 0xFE10 && codePoint <= 0xFE19)
+		|| (codePoint >= 0xFE30 && codePoint <= 0xFE6F)
+		|| (codePoint >= 0xFF00 && codePoint <= 0xFF60)
+		|| (codePoint >= 0xFFE0 && codePoint <= 0xFFE6)
+		|| (codePoint >= 0x20000 && codePoint <= 0x3FFFD)
+	);
+}
+
+const ANSI_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+const ANSI_AT_START_PATTERN = /^\u001b\[[0-?]*[ -/]*[@-~]/;
+function isEmojiGrapheme(segment: string): boolean {
+	return EMOJI_PRESENTATION_PATTERN.test(segment)
+		|| (segment.includes("\uFE0F") && EXTENDED_PICTOGRAPHIC_PATTERN.test(segment))
+		|| (segment.includes("\u200D") && EXTENDED_PICTOGRAPHIC_PATTERN.test(segment));
+}
+
+const EMOJI_PRESENTATION_PATTERN = /\p{Emoji_Presentation}/u;
+const EXTENDED_PICTOGRAPHIC_PATTERN = /\p{Extended_Pictographic}/u;
+
+type GraphemeSegmenter = { segment(value: string): Iterable<{ segment: string }> };
+const SegmenterConstructor = (Intl as unknown as { Segmenter?: new (locales: string | string[] | undefined, options: { granularity: "grapheme" }) => GraphemeSegmenter }).Segmenter;
+const GRAPHEME_SEGMENTER = SegmenterConstructor ? new SegmenterConstructor(undefined, { granularity: "grapheme" }) : undefined;
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
@@ -565,5 +679,5 @@ function isDown(data: string): boolean {
 }
 
 function isPrintable(data: string): boolean {
-	return data.length === 1 && data >= " " && data !== "\x7f";
+	return data.length > 0 && !/[\u0000-\u001F\u007F]/.test(data);
 }

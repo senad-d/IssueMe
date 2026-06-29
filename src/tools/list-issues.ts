@@ -7,6 +7,7 @@ import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueListDirection, GitHubIssueListSort, GitHubIssueListState } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
+import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { createIssueMeRuntime, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_ISSUE_LIST_LIMIT = 25;
@@ -139,9 +140,7 @@ function normalizeDirection(value: GitHubIssueListDirection | undefined): GitHub
 }
 
 function normalizeLimit(value: number | undefined): number {
-	if (value === undefined) return DEFAULT_ISSUE_LIST_LIMIT;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_ISSUES) return value;
-	throw new IssueMeError("invalid_tool_input", `limit must be an integer between 1 and ${MAX_TOOL_ISSUES}.`, { field: "limit" });
+	return normalizeBoundedToolLimit(value, { max: MAX_TOOL_ISSUES, defaultValue: DEFAULT_ISSUE_LIST_LIMIT });
 }
 
 function normalizeCreator(creatorValue: string | undefined, authorValue: string | undefined): string | undefined {
@@ -167,11 +166,7 @@ function normalizeLoginLikeFilter(value: string | undefined, field: string): str
 }
 
 function normalizeOptionalFilter(value: string | undefined, field: string): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (!trimmed) return undefined;
-	assertSafeFilterValue(trimmed, field);
-	return trimmed;
+	return normalizeOptionalTextFilter(value, field);
 }
 
 function normalizeSince(value: string | undefined): string | undefined {
@@ -193,7 +188,7 @@ function normalizeQuery(value: string | undefined): string | undefined {
 }
 
 function assertSafeFilterValue(value: string, field: string): void {
-	if (value.includes("\0")) throw new IssueMeError("invalid_tool_input", `${field} must not contain null bytes.`, { field });
+	assertNoNullBytes(value, field);
 }
 
 function summarizeIssues(repository: string, parsedRepository: Parameters<typeof githubIssueToRecord>[0], issues: GitHubIssueResponse[]): ToolIssueSummary[] {

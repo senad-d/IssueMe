@@ -34,7 +34,7 @@ IssueMe is a Pi extension that gives LLM agents a safe, structured GitHub issue 
 - **Local issue files:** caches open issues as `issues/<issue-number>-<issue-title-slug>.json` by default.
 - **Closed issue safety:** closed issues are not mutated again except through explicit `issueme_reopen_issue`, and stale local files are removed.
 - **Pi-native TUI:** `/issueme` opens a non-secret configuration TUI when interactive, with safe status output elsewhere.
-- **Skill-guided workflows:** best used with a project `SKILL.md` that teaches the agent your GitHub issue process; `/issueme start <skill-path>` validates and starts that workflow.
+- **Skill-guided workflows:** best used with a project `SKILL.md` that teaches the agent your GitHub issue process; `/issueme start [skill-path]` validates and starts that workflow, using `defaultSkillPath` when omitted.
 
 > **Status:** `0.1.0` is unreleased. Source, tests, this README, [`SECURITY.md`](SECURITY.md), and [`docs/STRUCTURE.md`](docs/STRUCTURE.md) describe current implemented behavior.
 
@@ -95,6 +95,8 @@ Recommended workflow kickoff:
 ```text
 /issueme start .pi/skills/github-issues/SKILL.md
 ```
+
+If you saved `defaultSkillPath` in `/issueme`, you can run `/issueme start` without an argument.
 
 If the npm package is unavailable before a public release, use the source-checkout workflow below.
 
@@ -175,7 +177,7 @@ Start the workflow with:
 /issueme start .pi/skills/github-issues/SKILL.md
 ```
 
-`/issueme start` accepts project-relative paths or absolute paths that resolve inside the trusted project. It validates that the skill file is readable, then sends a prompt asking the agent to load that skill and use IssueMe tools.
+`/issueme start` accepts project-relative paths or absolute paths that resolve inside the trusted project. When no path is provided, it uses `defaultSkillPath` from `.pi/agent/issueme.json`; if neither exists, it shows guidance to pass a path or configure the default. It validates that the skill file is readable, then sends a prompt asking the agent to load that skill through a project-relative `@path` reference and use IssueMe tools, without exposing the local absolute checkout path.
 
 ---
 
@@ -190,7 +192,7 @@ IssueMe registers one slash command and twenty-eight LLM-callable tools:
 5. Write or refresh bounded local issue JSON files for open issues; a focused refresh of a closed issue removes matching stale local files while returning safe remote details.
 6. Return concise, secret-free tool output with structured `details` metadata.
 
-Mutating tools are registered with Pi `executionMode: "sequential"` so sibling update/comment/edit-comment/delete-comment/assign/label/reopen/close/sub-issue, bulk-update, project-item, and repository label/milestone management calls cannot race. `issueme_list_sub_issues` and `issueme_list_issue_development_links` are read-only against GitHub; `issueme_list_sub_issues` writes local files only when `refreshCache: true` is explicitly requested, while `issueme_list_issue_development_links` never writes local cache files. `issueme_reorder_sub_issues` mutates native sub-issue priority with GitHub's GraphQL `reprioritizeSubIssue` mutation and refreshes relationship cache metadata afterward. Before mutating an existing issue or issue-backed project item, IssueMe re-checks the issue state and refuses accidental closed-issue mutations. Comment edit/delete tools also verify the comment belongs to the requested open issue before changing it; `issueme_delete_comment` deletes only that issue comment, never an issue object. `issueme_manage_label` changes repository label taxonomy only; deletion requires `action: "delete"` plus `confirmDelete: true` and never deletes issue objects. `issueme_manage_milestone` changes repository milestone planning metadata only; deletion requires `action: "delete"` plus `confirmDelete: true` and GitHub removes that milestone association from existing issues. `issueme_add_issue_to_project` adds or confirms an open issue as a Projects v2 item, and `issueme_update_project_item` updates one discovered project-item field only after verifying the item belongs to the requested project, current repository, requested issue number, and an open issue. `issueme_bulk_update_issues` applies one limited action to explicitly listed issue numbers only; it never accepts a search query as the mutation target, executes per issue sequentially, defaults to stopping after the first failed/partial issue, and reports bounded per-issue results. `issueme_reopen_issue` is the only intentional closed-issue mutation path; it reopens closed issues and can add an optional reopen comment. `issueme_close_issue` never deletes remote issues; it closes open issues, can set GitHub close reason `completed` or `not_planned`, and removes matching local cache files. Omitting close reason preserves the existing/GitHub default close behavior.
+Tools that can mutate GitHub or local issue-cache files are registered with Pi `executionMode: "sequential"` so sibling update/comment/edit-comment/delete-comment/assign/label/reopen/close/sub-issue, bulk-update, project-item, repository label/milestone management, `issueme_get_issue` refresh, and `issueme_list_sub_issues` refresh calls cannot race. `issueme_list_sub_issues` and `issueme_list_issue_development_links` are read-only against GitHub by default; `issueme_list_sub_issues` writes local files only when `refreshCache: true` is explicitly requested, while `issueme_list_issue_development_links` never writes local cache files. `issueme_reorder_sub_issues` mutates native sub-issue priority with GitHub's GraphQL `reprioritizeSubIssue` mutation and refreshes relationship cache metadata afterward. Before mutating an existing issue or issue-backed project item, IssueMe re-checks the issue state and refuses accidental closed-issue mutations. Comment edit/delete tools also verify the comment belongs to the requested open issue before changing it; `issueme_delete_comment` deletes only that issue comment, never an issue object. `issueme_manage_label` changes repository label taxonomy only; deletion requires `action: "delete"` plus `confirmDelete: true` and never deletes issue objects. `issueme_manage_milestone` changes repository milestone planning metadata only; deletion requires `action: "delete"` plus `confirmDelete: true` and GitHub removes that milestone association from existing issues. `issueme_add_issue_to_project` adds or confirms an open issue as a Projects v2 item, and `issueme_update_project_item` updates one discovered project-item field only after verifying the item belongs to the requested project, current repository, requested issue number, and an open issue. `issueme_bulk_update_issues` applies one limited action to explicitly listed issue numbers only; it never accepts a search query as the mutation target, executes per issue sequentially, defaults to stopping after the first failed/partial issue, and reports bounded per-issue results. `issueme_reopen_issue` is the only intentional closed-issue mutation path; it reopens closed issues and can add an optional reopen comment. `issueme_close_issue` never deletes remote issues; it closes open issues, can set GitHub close reason `completed` or `not_planned`, and removes matching local cache files. Omitting close reason preserves the existing/GitHub default close behavior.
 
 Tool results are bounded and include machine-readable truncation metadata when needed. Full issue bodies and cached comments live in local issue JSON files instead of oversized tool responses.
 
@@ -223,7 +225,7 @@ IssueMe validates config before saving:
 - deduplicates and trims labels/assignees;
 - rejects null bytes and multiline entries in default labels/assignees;
 - requires default assignees to be valid GitHub usernames;
-- keeps default skill paths project-local.
+- keeps default skill paths project-local and usable by `/issueme start` when no explicit path is provided.
 
 GitHub tokens are read, never written, from this precedence order:
 
@@ -240,7 +242,7 @@ Project-local `.env`, Git config, `.pi/agent/issueme.json`, skills, and issue ca
 
 - All `issueme_*` tools require project trust before using project-local IssueMe state.
 - `/issueme info` in an untrusted project ignores local config, `.env`, Git config, and cache files; it can still report process-token status and `GITHUB_REPOSITORY` when present.
-- `/issueme` and `/issueme start <skill-path>` refuse project-local config or skill handling until the project is trusted.
+- `/issueme` and `/issueme start [skill-path]` refuse project-local config or skill handling until the project is trusted.
 
 Tokens are never persisted to config files, issue files, logs, tool output, or tool `details`.
 
@@ -253,9 +255,9 @@ Tokens are never persisted to config files, issue files, logs, tool output, or t
 | `/issueme` | Open the non-secret configuration TUI for `.pi/agent/issueme.json` in TUI mode. Non-TUI modes show the config path and current config instead. |
 | `/issueme info` | Show the combined help/status view without secrets. |
 | `/issueme help`, `/issueme --help`, `/issueme -h` | Aliases for `/issueme info`. |
-| `/issueme start <skill-path>` | Ask the agent to read/use a readable project-local skill file and IssueMe tools. |
+| `/issueme start [skill-path]` | Ask the agent to read/use an explicit readable project-local skill file, or the configured `defaultSkillPath` when omitted, and IssueMe tools. |
 
-The help/status view includes usage, tool names, project trust status, repository status, token presence/error status, config path, issue directory, cache count, invalid cache-file count, and troubleshooting hints.
+The help/status view includes usage, tool names, project trust status, repository status, token presence/error status, config path, issue directory, default skill path, cache count, invalid cache-file count, and troubleshooting hints.
 
 ---
 
@@ -356,9 +358,9 @@ Use issueme_list_issues with query "rate limit", state "all", author "octocat", 
 Use issueme_list_issue_development_links with issueNumber 123 and limit 20 before starting implementation to check for linked pull requests, branches, commits, or closing references.
 ```
 
-`issueme_list_labels`, `issueme_list_milestones`, `issueme_list_assignees`, `issueme_list_projects`, `issueme_get_project_fields`, `issueme_list_issues`, `issueme_list_sub_issues`, and `issueme_list_issue_development_links` are read-only against GitHub; the list/discovery tools do not refresh or write local cache files unless `issueme_list_sub_issues` is called with `refreshCache: true`. `issueme_list_issue_development_links` uses GraphQL issue timeline events and may not show standalone branches or private/cross-repository references that GitHub does not expose to the token. `issueme_reorder_sub_issues` mutates only native sub-issue ordering and refreshes the parent/child relationship cache. `issueme_add_issue_to_project` and `issueme_update_project_item` mutate GitHub Projects v2 board state only and do not write local issue cache files. `issueme_bulk_update_issues` is a guarded bulk mutation wrapper for explicit issue-number lists only; supported actions reuse the same open-issue, closed-issue, project, close, and cache-refresh safeguards as the corresponding single-issue tools. `issueme_manage_label` mutates repository label definitions only, and `issueme_manage_milestone` mutates repository milestone definitions only; issue label assignment remains in `issueme_label_issue`, and issue milestone assignment remains in `issueme_update_issue`. Run `issueme_sync_issues` afterward when you need full local bodies/comments for selected open issues.
+`issueme_list_labels`, `issueme_list_milestones`, `issueme_list_assignees`, `issueme_list_projects`, `issueme_get_project_fields`, `issueme_list_issues`, `issueme_list_sub_issues`, and `issueme_list_issue_development_links` are read-only against GitHub; the list/discovery tools do not refresh or write local cache files unless `issueme_list_sub_issues` is called with `refreshCache: true` (the tool is still registered sequentially because that mode can write). `issueme_list_issue_development_links` uses GraphQL issue timeline events and may not show standalone branches or private/cross-repository references that GitHub does not expose to the token. `issueme_reorder_sub_issues` mutates only native sub-issue ordering and refreshes the parent/child relationship cache. `issueme_add_issue_to_project` and `issueme_update_project_item` mutate GitHub Projects v2 board state only and do not write local issue cache files. `issueme_bulk_update_issues` is a guarded bulk mutation wrapper for explicit issue-number lists only; supported actions reuse the same open-issue, closed-issue, project, close, and cache-refresh safeguards as the corresponding single-issue tools. `issueme_manage_label` mutates repository label definitions only, and `issueme_manage_milestone` mutates repository milestone definitions only; issue label assignment remains in `issueme_label_issue`, and issue milestone assignment remains in `issueme_update_issue`. Run `issueme_sync_issues` afterward when you need full local bodies/comments for selected open issues.
 
-To reconcile one known stale issue without syncing the whole backlog, use `issueme_get_issue` with `number: 123` and `refresh: true`; it refreshes open issues into the local cache and removes stale local files when GitHub says the issue is closed.
+To reconcile one known stale issue without syncing the whole backlog, use `issueme_get_issue` with `number: 123` and `refresh: true`; it refreshes open issues into the local cache and removes stale local files when GitHub says the issue is closed. The tool is registered sequentially because this refresh mode can write or remove cache files.
 
 Example comment correction prompts:
 
@@ -445,6 +447,7 @@ IssueMe avoids local cache footguns by:
 - refusing ambiguous local lookups;
 - preserving `synced_at` when remote content is unchanged;
 - reporting corrupt/invalid local JSON files without deleting them;
+- checking cancellation before long-running refresh flows enter local write/remove phases;
 - rejecting symlinked config, issue directories/files, symlink-escaped cache lookup paths, and unsafe paths;
 - reporting missing explicit cache-file lookups as normal not-found results instead of raw filesystem errors.
 
@@ -478,7 +481,7 @@ IssueMe intentionally does not use GitHub CLI, shell-based GitHub operations, bo
 | Repository label is missing or wrong | Use `issueme_manage_label` to create/update it; delete labels only with explicit user confirmation because GitHub removes them from existing issue associations. |
 | Label removal partially succeeded | Run `issueme_sync_issues` before retrying so the agent sees current remote state. |
 | Bulk update stopped or partially succeeded | Inspect `details.bulkResults` for per-issue success/failure/skipped entries, run `issueme_sync_issues` when cache state is uncertain, and retry only the issue numbers that still need the action. |
-| `/issueme start` rejects a skill path | Use a readable file inside the trusted project, such as `.pi/skills/github-issues/SKILL.md`. |
+| `/issueme start` rejects a skill path | Use a readable file inside the trusted project, such as `.pi/skills/github-issues/SKILL.md`, or fix the configured `defaultSkillPath`. |
 
 ---
 
@@ -505,10 +508,11 @@ npm run typecheck
 npm run format:check
 npm run test
 npm run smoke:discover
+npm run smoke:packaged
 npm run check:pack
 ```
 
-`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. It does not invoke handlers, call GitHub, or mutate issues.
+`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. `smoke:packaged` packs to a temporary directory, installs the tarball in a temporary production-style project with IssueMe devDependencies omitted and documented Pi peer dependencies satisfied, then verifies the packed package registers `/issueme` and the tools. Neither smoke check invokes handlers, calls GitHub, publishes, updates dependencies, or mutates issues.
 
 For manual isolated startup checks:
 
@@ -545,6 +549,7 @@ npm run typecheck
 npm run format:check
 npm run test
 npm run smoke:discover
+npm run smoke:packaged
 npm run check:pack
 npm run validate
 ```
@@ -560,6 +565,7 @@ Additional checks:
 ```bash
 npm run test:tui-artifacts
 npm run smoke:discover
+npm run smoke:packaged
 ```
 
 Implementation references:

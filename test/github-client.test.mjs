@@ -88,6 +88,22 @@ test("GitHub client maps network and abort errors safely", async () => {
 
 	const controller = new AbortController();
 	controller.abort();
+	let alreadyAbortedCalls = 0;
+	const alreadyAbortedClient = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async () => {
+			alreadyAbortedCalls += 1;
+			return jsonResponse(issue());
+		},
+	});
+	await assert.rejects(() => alreadyAbortedClient.getIssue(1, controller.signal), (error) => {
+		assert.ok(error instanceof GitHubApiError);
+		assert.equal(error.code, "github_request_aborted");
+		return true;
+	});
+	assert.equal(alreadyAbortedCalls, 0);
+
 	const abortClient = new GitHubClient({
 		repository,
 		token,
@@ -95,7 +111,7 @@ test("GitHub client maps network and abort errors safely", async () => {
 			throw new DOMException("aborted", "AbortError");
 		},
 	});
-	await assert.rejects(() => abortClient.getIssue(1, controller.signal), /aborted/);
+	await assert.rejects(() => abortClient.getIssue(1, AbortSignal.timeout(1000)), /aborted/);
 });
 
 test("GitHub client paginates open issues and filters pull requests", async () => {

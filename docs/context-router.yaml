@@ -63,6 +63,7 @@ canonical_paths:
   format_check_script: scripts/check-format.mjs
   tui_artifact_script: scripts/generate-tui-artifacts.mjs
   smoke_observability_script: scripts/smoke-observability.mjs
+  smoke_packaged_script: scripts/smoke-packaged-install.mjs
   next_task_skill: .pi/skills/next-task/SKILL.md
 runtime_path_patterns:
   project_config: .pi/agent/issueme.json
@@ -78,6 +79,7 @@ canonical_commands:
   test: npm run test
   tui_artifacts: npm run test:tui-artifacts
   smoke_discover: npm run smoke:discover
+  smoke_packaged: npm run smoke:packaged
   package_check: npm run check
   package_dry_run: npm run pack:dry-run
   package_contents_check: npm run check:pack
@@ -252,6 +254,7 @@ routes:
       - scripts/check-format.mjs
       - scripts/check-package-contents.mjs
       - scripts/smoke-observability.mjs
+      - scripts/smoke-packaged-install.mjs
       - test
   packaging_ci:
     match: [package, publish, npm, files, check:pack, ci, workflow, package-lock]
@@ -263,6 +266,7 @@ routes:
       - package.json
       - package-lock.json
       - scripts/check-package-contents.mjs
+      - scripts/smoke-packaged-install.mjs
       - scripts/publish-npm.mjs
       - .github/workflows/ci.yml
   docs_release:

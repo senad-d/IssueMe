@@ -5,39 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import issueMeExtension from "../src/extension.ts";
+import { ISSUEME_TOOL_NAMES } from "../src/tools/inventory.ts";
 
 const rootPath = fileURLToPath(new URL("../", import.meta.url));
 const expectedCommands = ["issueme"];
-const expectedTools = [
-  "issueme_sync_issues",
-  "issueme_list_issues",
-  "issueme_list_labels",
-  "issueme_list_milestones",
-  "issueme_list_assignees",
-  "issueme_list_projects",
-  "issueme_get_project_fields",
-  "issueme_add_issue_to_project",
-  "issueme_update_project_item",
-  "issueme_manage_label",
-  "issueme_manage_milestone",
-  "issueme_create_issue",
-  "issueme_create_sub_issue",
-  "issueme_add_sub_issue",
-  "issueme_remove_sub_issue",
-  "issueme_reorder_sub_issues",
-  "issueme_list_sub_issues",
-  "issueme_list_issue_development_links",
-  "issueme_get_issue",
-  "issueme_update_issue",
-  "issueme_comment_issue",
-  "issueme_update_comment",
-  "issueme_delete_comment",
-  "issueme_assign_issue",
-  "issueme_label_issue",
-  "issueme_reopen_issue",
-  "issueme_close_issue",
-  "issueme_bulk_update_issues",
-];
+const expectedTools = [...ISSUEME_TOOL_NAMES];
 
 const jsonOutput = process.argv.includes("--json");
 

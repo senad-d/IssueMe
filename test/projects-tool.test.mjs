@@ -23,7 +23,7 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-projects-tool-"));
 }
 
-async function executeProjectTool(toolName, fetchFn, params) {
+async function executeProjectTool(toolName, fetchFn, params, signal) {
 	const pi = fakePi();
 	registerProjectTools(pi, {
 		runtime: {
@@ -33,7 +33,7 @@ async function executeProjectTool(toolName, fetchFn, params) {
 			fetchFn,
 		},
 	});
-	return pi.tools.get(toolName).execute("call", params, undefined, undefined, {
+	return pi.tools.get(toolName).execute("call", params, signal, undefined, {
 		cwd: await tempProject(),
 		isProjectTrusted: () => true,
 	});
@@ -61,8 +61,8 @@ function jsonResponse(body, init = {}) {
 	});
 }
 
-function graphQLDataForScope(scope, projects) {
-	const connection = { projectsV2: { nodes: projects, pageInfo: { hasNextPage: false } } };
+function graphQLDataForScope(scope, projects, pageInfo = { hasNextPage: false }) {
+	const connection = { projectsV2: { nodes: projects, pageInfo } };
 	if (scope === "organization") return { data: { organization: connection } };
 	if (scope === "user") return { data: { user: connection } };
 	return { data: { repository: connection } };
@@ -85,6 +85,7 @@ test("issueme_list_projects discovers repository Projects v2 boards read-only", 
 	assert.equal(result.details.cacheUpdated, false);
 	assert.equal(result.details.needsSync, false);
 	assert.deepEqual(result.details.projects.map((item) => item.title), ["Roadmap"]);
+	assert.equal(result.details.truncated, false);
 	assert.equal(result.details.projects[0].id, "PVT_1");
 	assert.equal(result.details.projects[0].owner, "owner");
 	assert.equal(result.details.projects[0].ownerType, "user");
@@ -94,10 +95,72 @@ test("issueme_list_projects discovers repository Projects v2 boards read-only", 
 	assert.equal(calls[0].method, "POST");
 	assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
 	assert.match(calls[0].body.query, /repository\(owner: \$owner, name: \$repo\)/);
-	assert.match(calls[0].body.query, /projectsV2\(first: \$first, query: \$query\) \{\s*nodes \{ \.\.\.IssueMeProjectV2Summary \}\s*pageInfo \{ hasNextPage \}/s);
+	assert.match(calls[0].body.query, /projectsV2\(first: \$first, after: \$after, query: \$query\) \{\s*nodes \{ \.\.\.IssueMeProjectV2Summary \}\s*pageInfo \{ hasNextPage endCursor \}/s);
 	assert.doesNotMatch(calls[0].body.query, /\.\.\. on Repository/);
 	assert.deepEqual(calls[0].body.variables, { owner: "owner", repo: "repo", first: 5, query: "Roadmap" });
 	assertNoToken(result);
+});
+
+test("issueme_list_projects paginates after filtering closed Projects v2 boards", async () => {
+	const calls = [];
+	const result = await executeProjectTool("issueme_list_projects", async (_url, init) => {
+		const body = JSON.parse(init.body);
+		calls.push(body.variables);
+		if (calls.length === 1) {
+			return jsonResponse(graphQLDataForScope("repository", [project(1, "Closed One", { closed: true }), project(2, "Closed Two", { closed: true })], { hasNextPage: true, endCursor: "cursor-1" }));
+		}
+		return jsonResponse(graphQLDataForScope("repository", [project(3, "Open One"), project(4, "Open Two")], { hasNextPage: false, endCursor: null }));
+	}, { limit: 2 });
+
+	assert.deepEqual(result.details.projects.map((item) => item.title), ["Open One", "Open Two"]);
+	assert.equal(result.details.truncated, false);
+	assert.equal(result.details.truncation, undefined);
+	assert.deepEqual(calls, [
+		{ owner: "owner", repo: "repo", first: 2 },
+		{ owner: "owner", repo: "repo", first: 2, after: "cursor-1" },
+	]);
+	assertNoToken(result);
+});
+
+test("issueme_list_projects stops paginated GraphQL reads when the abort signal is cancelled", async () => {
+	const controller = new AbortController();
+	const calls = [];
+	await assert.rejects(
+		() => executeProjectTool("issueme_list_projects", async (_url, init) => {
+			calls.push(init.signal);
+			assert.equal(init.signal, controller.signal);
+			controller.abort();
+			return jsonResponse(graphQLDataForScope("repository", [project(1, "Closed", { closed: true })], { hasNextPage: true, endCursor: "cursor-1" }));
+		}, { limit: 2 }, controller.signal),
+		(error) => {
+			assert.ok(error instanceof GitHubApiError);
+			assert.equal(error.code, "github_request_aborted");
+			return true;
+		},
+	);
+	assert.equal(calls.length, 1);
+});
+
+test("Projects v2 owner conflicts fail before runtime resolution", async () => {
+	const pi = fakePi();
+	let runtimeCalls = 0;
+	registerProjectTools(pi, {
+		runtime: () => {
+			runtimeCalls += 1;
+			throw new Error("runtime should not be resolved for invalid project owner scope");
+		},
+	});
+	const ctx = { cwd: await tempProject(), isProjectTrusted: () => true };
+
+	await assert.rejects(
+		() => pi.tools.get("issueme_list_projects").execute("call", { owner: "octocat" }, undefined, undefined, ctx),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "owner" && /organization or user/.test(error.message),
+	);
+	await assert.rejects(
+		() => pi.tools.get("issueme_get_project_fields").execute("call", { owner: "octocat", projectNumber: 1 }, undefined, undefined, ctx),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "owner" && /organization or user/.test(error.message),
+	);
+	assert.equal(runtimeCalls, 0);
 });
 
 test("issueme_list_projects supports organization and user owner scopes", async () => {

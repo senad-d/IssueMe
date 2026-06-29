@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-const ciWorkflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+const rootUrl = new URL("../", import.meta.url);
+const rootPath = fileURLToPath(rootUrl);
+const packageJson = JSON.parse(await readFile(new URL("package.json", rootUrl), "utf8"));
+const ciWorkflow = await readFile(new URL(".github/workflows/ci.yml", rootUrl), "utf8");
+const gitignore = await readFile(new URL(".gitignore", rootUrl), "utf8");
 
 function splitChainedScript(name) {
   const script = packageJson.scripts?.[name];
@@ -11,10 +16,25 @@ function splitChainedScript(name) {
   return script.split(/\s*&&\s*/);
 }
 
+function isIgnoredByGit(path) {
+  const result = spawnSync("git", ["check-ignore", "--no-index", "--quiet", "--", path], {
+    cwd: rootPath,
+    stdio: "ignore",
+  });
+  if (result.error) throw result.error;
+  assert.ok(
+    result.status === 0 || result.status === 1,
+    `git check-ignore exited with status ${String(result.status)} for ${path}`,
+  );
+  return result.status === 0;
+}
+
 test("local validation script covers CI-required checks", () => {
   assert.deepEqual(splitChainedScript("lint"), ["npm run typecheck", "npm run format:check", "npm run check"]);
-  assert.deepEqual(splitChainedScript("validate"), ["npm run lint", "npm run test", "npm run check:pack"]);
+  assert.deepEqual(splitChainedScript("check"), ["node --check scripts/check-package-contents.mjs", "node --check scripts/smoke-observability.mjs", "node --check scripts/smoke-packaged-install.mjs"]);
+  assert.deepEqual(splitChainedScript("validate"), ["npm run lint", "npm run test", "npm run check:pack", "npm run smoke:packaged"]);
   assert.equal(packageJson.scripts["smoke:discover"], "node scripts/smoke-observability.mjs");
+  assert.equal(packageJson.scripts["smoke:packaged"], "node scripts/smoke-packaged-install.mjs");
   assert.equal(packageJson.scripts["pack:dry-run"], "npm pack --dry-run --json");
   assert.equal(packageJson.scripts["check:pack"], "node scripts/check-package-contents.mjs");
 });
@@ -24,6 +44,19 @@ test("package source publication is glob-based and local-state-free", () => {
   assert.ok(!packageJson.files.some((entry) => entry.startsWith("specs/")), "specs must not be published");
   assert.ok(!packageJson.files.some((entry) => entry.startsWith(".pi")), "local Pi state must not be published");
   assert.ok(!packageJson.files.some((entry) => entry.startsWith("issues")), "local issue cache must not be published");
+});
+
+test("gitignore keeps secret-bearing environment variants ignored by default", () => {
+  assert.doesNotMatch(gitignore, /^!\.env\.\*$/m, "env variants must not be broadly unignored");
+  assert.match(gitignore, /^\.env$/m);
+  assert.match(gitignore, /^\.env\.\*$/m);
+  assert.match(gitignore, /^!\.env\.example$/m);
+  assert.match(gitignore, /^!\.env\.template$/m);
+
+  assert.equal(isIgnoredByGit(".env.local"), true);
+  assert.equal(isIgnoredByGit(".env.production"), true);
+  assert.equal(isIgnoredByGit(".env.example"), false);
+  assert.equal(isIgnoredByGit(".env.template"), false);
 });
 
 test("CI uses lockfile installs and the local validation contract", () => {

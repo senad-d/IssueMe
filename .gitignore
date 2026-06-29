@@ -14,8 +14,11 @@ coverage/
 *.log
 
 # Environment, secrets, and local pi runtime state
+# Keep secret-bearing env variants ignored by default; only reviewed templates are tracked.
 .env
-!.env.*
+.env.*
+!.env.example
+!.env.template
 .pi/
 
 # Local caches and generated reports

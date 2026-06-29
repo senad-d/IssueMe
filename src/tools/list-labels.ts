@@ -2,8 +2,8 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
-import { IssueMeError } from "../errors.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
+import { normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_LABEL_LIST_LIMIT = Math.min(25, MAX_TOOL_LABELS);
@@ -64,27 +64,13 @@ export function registerListLabelsTool(pi: ExtensionAPI, options: IssueMeToolReg
 }
 
 function normalizeListLabelsParams(params: ListLabelsToolParams): NormalizedListLabelsParams {
-	const name = normalizeOptionalFilter(params.name, "name");
-	const query = normalizeOptionalFilter(params.query, "query");
+	const name = normalizeOptionalTextFilter(params.name, "name");
+	const query = normalizeOptionalTextFilter(params.query, "query");
 	return {
 		...(name ? { name } : {}),
 		...(query ? { query } : {}),
-		limit: normalizeLimit(params.limit),
+		limit: normalizeBoundedToolLimit(params.limit, { max: MAX_TOOL_LABELS, defaultValue: DEFAULT_LABEL_LIST_LIMIT }),
 	};
-}
-
-function normalizeLimit(value: number | undefined): number {
-	if (value === undefined) return DEFAULT_LABEL_LIST_LIMIT;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_LABELS) return value;
-	throw new IssueMeError("invalid_tool_input", `limit must be an integer between 1 and ${MAX_TOOL_LABELS}.`, { field: "limit" });
-}
-
-function normalizeOptionalFilter(value: string | undefined, field: string): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (!trimmed) return undefined;
-	if (trimmed.includes("\0")) throw new IssueMeError("invalid_tool_input", `${field} must not contain null bytes.`, { field });
-	return trimmed;
 }
 
 function summarizeLabels(labels: GitHubLabelResponse[]): ToolLabelSummary[] {

@@ -1,8 +1,9 @@
-import { GITHUB_API_BASE_URL, GITHUB_API_VERSION, MAX_TOOL_DEVELOPMENT_LINKS, MAX_TOOL_ISSUES } from "../constants.ts";
+import { GITHUB_API_BASE_URL, GITHUB_API_VERSION, MAX_TOOL_DEVELOPMENT_LINKS, MAX_TOOL_ISSUES, MAX_TOOL_PROJECTS } from "../constants.ts";
 import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, IssueRelationshipSummary, ProjectV2OwnerType, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
 import { isValidIsoDateOnly } from "../utils/date.ts";
 import { redactSecrets } from "../utils/env.ts";
+import { normalizeBoundedInteger, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -280,6 +281,9 @@ interface ProjectV2FieldLimits {
 	iterationLimit: number;
 }
 
+// Bound Projects v2 discovery work while still allowing closed-board filtering to scan later pages.
+const PROJECTS_V2_LIST_PAGE_CAP = 10;
+
 export class GitHubClient {
 	readonly repository: GitHubRepository;
 	private readonly token: string;
@@ -352,31 +356,56 @@ export class GitHubClient {
 	async listProjectsV2(filters: GitHubProjectV2ListFilters = {}, signal?: AbortSignal): Promise<GitHubProjectV2ListResult> {
 		const scope = normalizeProjectV2Scope(filters.scope);
 		const owner = normalizeProjectV2Owner(scope, filters.owner, this.repository);
-		const limit = normalizePaginationLimit(filters.limit);
+		const limit = normalizeProjectV2ListLimit(filters.limit);
 		const query = normalizeProjectV2Query(filters.query);
-		const first = limit ?? 25;
-		const listVariables = scope === "repository"
-			? compactObject({ owner, repo: this.repository.repo, first, query })
-			: compactObject({ owner, first, query });
-		const data = await this.graphqlRequest<ProjectV2ConnectionData>(
-			"IssueMeListProjectsV2",
-			buildProjectsV2ListQuery(scope),
-			listVariables,
-			signal,
-		);
-		const connection = extractProjectV2Connection(data, scope);
-		const rawProjects = extractConnectionNodes(connection);
 		const includeClosed = filters.includeClosed === true;
-		const projects = rawProjects
-			.map(normalizeProjectV2Summary)
-			.filter((project): project is ToolProjectSummary => project !== undefined)
-			.filter((project) => includeClosed || project.closed !== true)
-			.slice(0, first);
+		const projects: ToolProjectSummary[] = [];
+		let after: string | undefined;
+		let truncated = false;
+		let pagesRead = 0;
+
+		while (projects.length < limit) {
+			const listVariables = scope === "repository"
+				? compactObject({ owner, repo: this.repository.repo, first: limit, after, query })
+				: compactObject({ owner, first: limit, after, query });
+			const data = await this.graphqlRequest<ProjectV2ConnectionData>(
+				"IssueMeListProjectsV2",
+				buildProjectsV2ListQuery(scope),
+				listVariables,
+				signal,
+			);
+			pagesRead += 1;
+			const connection = extractProjectV2Connection(data, scope);
+			const rawProjects = extractConnectionNodes(connection);
+			const visibleProjects = rawProjects
+				.map(normalizeProjectV2Summary)
+				.filter((project): project is ToolProjectSummary => project !== undefined)
+				.filter((project) => includeClosed || project.closed !== true);
+			const availableSlots = limit - projects.length;
+			projects.push(...visibleProjects.slice(0, availableSlots));
+			const hasNextPage = connectionHasNextPage(connection);
+			const endCursor = connectionEndCursor(connection);
+			if (visibleProjects.length > availableSlots) {
+				truncated = true;
+				break;
+			}
+			if (projects.length >= limit) {
+				truncated = hasNextPage;
+				break;
+			}
+			if (!hasNextPage) break;
+			if (pagesRead >= PROJECTS_V2_LIST_PAGE_CAP || !endCursor) {
+				truncated = true;
+				break;
+			}
+			after = endCursor;
+		}
+
 		return {
 			scope,
 			owner: scope === "repository" ? this.repository.fullName : owner,
 			projects,
-			truncated: connectionHasNextPage(connection) || rawProjects.length > projects.length,
+			truncated,
 		};
 	}
 
@@ -956,6 +985,9 @@ export class GitHubClient {
 		};
 		if (url.pathname === "/graphql") headers["GraphQL-Features"] = "sub_issues";
 		if (options.body !== undefined) headers["Content-Type"] = "application/json";
+		if (options.signal?.aborted) {
+			throw new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
+		}
 
 		let response: Response;
 		try {
@@ -1163,11 +1195,11 @@ function buildIssueDevelopmentLinksQuery(): string {
 }
 
 function buildProjectsV2ListQuery(scope: GitHubProjectV2Scope): string {
-	const ownerSelection = projectV2ScopeSelectionForScope(scope, `projectsV2(first: $first, query: $query) {
+	const ownerSelection = projectV2ScopeSelectionForScope(scope, `projectsV2(first: $first, after: $after, query: $query) {
 		nodes { ...IssueMeProjectV2Summary }
-		pageInfo { hasNextPage }
+		pageInfo { hasNextPage endCursor }
 	}`);
-	const variables = scope === "repository" ? "$owner: String!, $repo: String!, $first: Int!, $query: String" : "$owner: String!, $first: Int!, $query: String";
+	const variables = scope === "repository" ? "$owner: String!, $repo: String!, $first: Int!, $after: String, $query: String" : "$owner: String!, $first: Int!, $after: String, $query: String";
 	return `query IssueMeListProjectsV2(${variables}) {
 		${ownerSelection}
 	}
@@ -1341,6 +1373,13 @@ function connectionHasNextPage(connection: unknown): boolean {
 	if (!isObject(connection)) return false;
 	const pageInfo = connection.pageInfo;
 	return isObject(pageInfo) && pageInfo.hasNextPage === true;
+}
+
+function connectionEndCursor(connection: unknown): string | undefined {
+	if (!isObject(connection)) return undefined;
+	const pageInfo = connection.pageInfo;
+	if (!isObject(pageInfo)) return undefined;
+	return typeof pageInfo.endCursor === "string" && pageInfo.endCursor.trim() ? pageInfo.endCursor : undefined;
 }
 
 function normalizeConnectionTotalCount(connection: unknown): number | undefined {
@@ -1561,11 +1600,11 @@ function normalizeProjectV2Iteration(value: unknown): ToolProjectIterationSummar
 }
 
 function normalizeProjectV2Query(value: string | undefined): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const query = value.trim();
-	if (!query) return undefined;
-	if (query.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "project query must not contain null bytes.", { field: "query" });
-	return query;
+	return normalizeOptionalTrimmedText(value, "query", { nullByteMessage: "project query must not contain null bytes." });
+}
+
+function normalizeProjectV2ListLimit(value: number | undefined): number {
+	return Math.min(normalizePaginationLimit(value) ?? MAX_TOOL_PROJECTS, MAX_TOOL_PROJECTS);
 }
 
 function normalizeProjectV2Scope(value: GitHubProjectV2Scope | undefined): GitHubProjectV2Scope {
@@ -1589,21 +1628,11 @@ function normalizeProjectV2Owner(scope: GitHubProjectV2Scope, value: string | un
 }
 
 function normalizeProjectV2Id(value: string | undefined): string | undefined {
-	if (value === undefined) return undefined;
-	const id = value.trim();
-	if (!id) return undefined;
-	if (id.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "projectId must not contain null bytes.", { field: "projectId" });
-	return id;
+	return normalizeOptionalTrimmedText(value, "projectId");
 }
 
 function normalizeProjectV2IdRequired(value: string | undefined, field: string): string {
-	if (typeof value !== "string") {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} is required.`, { field });
-	}
-	const id = value.trim();
-	if (!id) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not be empty.`, { field });
-	if (id.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not contain null bytes.`, { field });
-	return id;
+	return normalizeRequiredTrimmedText(value, field);
 }
 
 function normalizeProjectV2FieldValueInput(value: GitHubProjectV2FieldValueInput): GitHubProjectV2FieldValueInput {
@@ -1645,38 +1674,27 @@ function normalizeProjectV2NumberValue(value: unknown): number {
 }
 
 function normalizeProjectV2ProjectNumber(value: number | undefined): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "projectNumber must be a positive integer when projectId is not provided.", { field: "projectNumber" });
+	return normalizePositiveSafeInteger(value, "projectNumber", { message: "projectNumber must be a positive integer when projectId is not provided." });
 }
 
 function normalizeProjectV2FieldLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= 50) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "fieldLimit must be an integer between 1 and 50.", { field: "fieldLimit" });
+	return normalizeBoundedInteger(value, "fieldLimit", { max: 50, defaultValue: 25 });
 }
 
 function normalizeProjectV2OptionLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= 25) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "optionLimit must be an integer between 1 and 25.", { field: "optionLimit" });
+	return normalizeBoundedInteger(value, "optionLimit", { max: 25, defaultValue: 25 });
 }
 
 function normalizeProjectV2IterationLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= 25) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "iterationLimit must be an integer between 1 and 25.", { field: "iterationLimit" });
+	return normalizeBoundedInteger(value, "iterationLimit", { max: 25, defaultValue: 25 });
 }
 
 function normalizeSubIssueRelationshipLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= 100) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "sub-issue relationship limit must be an integer between 1 and 100.", { field: "limit" });
+	return normalizeBoundedInteger(value, "limit", { max: 100, defaultValue: 25, message: "sub-issue relationship limit must be an integer between 1 and 100." });
 }
 
 function normalizeIssueDevelopmentLinkLimit(value: number | undefined): number {
-	if (value === undefined) return 25;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_DEVELOPMENT_LINKS) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `development link limit must be an integer between 1 and ${MAX_TOOL_DEVELOPMENT_LINKS}.`, { field: "limit" });
+	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_DEVELOPMENT_LINKS, defaultValue: 25, message: `development link limit must be an integer between 1 and ${MAX_TOOL_DEVELOPMENT_LINKS}.` });
 }
 
 function buildIssueListQuery(filters: GitHubIssueListFilters, limit: number | undefined): Record<string, string> {
@@ -1757,17 +1775,12 @@ function assigneeMatchesFilters(assignee: GitHubUserResponse, loginFilter: strin
 }
 
 function normalizeOptionalTextFilter(value: string | undefined, field: string): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (!trimmed) return undefined;
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not contain null bytes.`, { field });
-	return trimmed.toLowerCase();
+	return normalizeOptionalLowercaseTextFilter(value, field);
 }
 
 function normalizePaginationLimit(limit: number | undefined): number | undefined {
 	if (limit === undefined) return undefined;
-	if (Number.isSafeInteger(limit) && limit > 0) return limit;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Issue list limit must be a positive integer.", { field: "limit" });
+	return normalizePositiveSafeInteger(limit, "limit", { message: "Issue list limit must be a positive integer." });
 }
 
 function normalizeIssueListState(state: GitHubIssueListState | undefined): GitHubIssueListState {
@@ -1807,11 +1820,7 @@ function normalizeMilestoneListDirection(direction: GitHubMilestoneListDirection
 }
 
 function normalizeOptionalQueryValue(value: string | undefined): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	if (!trimmed) return undefined;
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Issue list filter values must not contain null bytes.");
-	return trimmed;
+	return normalizeOptionalTrimmedText(value, "filter", { nullByteMessage: "Issue list filter values must not contain null bytes." });
 }
 
 function normalizeStringList(values: string[] | undefined): string[] {
@@ -2397,8 +2406,7 @@ function parsePositiveIssueNumber(value: string | undefined): number | undefined
 }
 
 function normalizePositiveIssueNumber(value: number | undefined, field: string): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must be a positive integer.`, { field });
+	return normalizePositiveSafeInteger(value, field);
 }
 
 function issueResponseToSafeSummary(repository: string, issue: GitHubIssueResponse, fallbackNumber: number): ToolIssueSummary | undefined {

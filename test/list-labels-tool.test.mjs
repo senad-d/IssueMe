@@ -23,7 +23,7 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-list-labels-tool-"));
 }
 
-async function executeListLabelsTool(fetchFn, params) {
+async function executeListLabelsTool(fetchFn, params, signal) {
 	const pi = fakePi();
 	registerListLabelsTool(pi, {
 		runtime: {
@@ -33,7 +33,7 @@ async function executeListLabelsTool(fetchFn, params) {
 			fetchFn,
 		},
 	});
-	return pi.tools.get("issueme_list_labels").execute("call", params, undefined, undefined, {
+	return pi.tools.get("issueme_list_labels").execute("call", params, signal, undefined, {
 		cwd: await tempProject(),
 		isProjectTrusted: () => true,
 	});
@@ -107,6 +107,27 @@ test("issueme_list_labels paginates, filters, and reports truncation", async () 
 	assertNoToken(result);
 });
 
+test("issueme_list_labels stops paginated reads when the abort signal is cancelled", async () => {
+	const controller = new AbortController();
+	const calls = [];
+	await assert.rejects(
+		() => executeListLabelsTool(async (url, init) => {
+			calls.push({ url: new URL(url.toString()), signal: init.signal });
+			assert.equal(init.signal, controller.signal);
+			controller.abort();
+			return jsonResponse([label("bug")], {
+				headers: { link: '<https://api.github.com/repos/owner/repo/labels?page=2>; rel="next"' },
+			});
+		}, { query: "bug", limit: 5 }, controller.signal),
+		(error) => {
+			assert.ok(error instanceof GitHubApiError);
+			assert.equal(error.code, "github_request_aborted");
+			return true;
+		},
+	);
+	assert.equal(calls.length, 1);
+});
+
 test("issueme_list_labels supports name filtering and empty repository label sets", async () => {
 	const filtered = await executeListLabelsTool(async () => jsonResponse([label("bug"), label("help wanted")]), { name: "help", limit: 5 });
 	assert.deepEqual(filtered.details.labels.map((item) => item.name), ["help wanted"]);
@@ -117,6 +138,25 @@ test("issueme_list_labels supports name filtering and empty repository label set
 	assert.match(empty.content[0].text, /No repository labels matched/);
 	assert.equal(empty.details.truncated, false);
 	assertNoToken(empty);
+});
+
+test("issueme_list_labels validates shared filter and limit inputs before fetching", async () => {
+	let calls = 0;
+	await assert.rejects(
+		() => executeListLabelsTool(async () => {
+			calls += 1;
+			return jsonResponse([]);
+		}, { query: "bug\0secret" }),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "query" && /null bytes/.test(error.message),
+	);
+	await assert.rejects(
+		() => executeListLabelsTool(async () => {
+			calls += 1;
+			return jsonResponse([]);
+		}, { limit: 0 }),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "limit" && /between 1/.test(error.message),
+	);
+	assert.equal(calls, 0);
 });
 
 test("issueme_list_labels surfaces API failures safely", async () => {

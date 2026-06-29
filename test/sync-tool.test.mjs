@@ -55,8 +55,8 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-sync-tool-test-"));
 }
 
-async function executeSync(tool, cwd) {
-	return tool.execute("sync-call", {}, undefined, undefined, {
+async function executeSync(tool, cwd, signal) {
+	return tool.execute("sync-call", {}, signal, undefined, {
 		cwd,
 		isProjectTrusted: () => true,
 	});
@@ -185,6 +185,44 @@ test("issueme_sync_issues reports invalid cache files safely and leaves them unt
 		assert.equal(await readFile(invalidPath, "utf8"), invalidText);
 		assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), ["1-stable-title.json", "98-corrupt.json", "99-invalid.json"]);
 	});
+});
+
+test("issueme_sync_issues aborts before cache writes after remote reads", async () => {
+	const projectRoot = await tempProject();
+	const pi = fakePi();
+	registerSyncIssuesTool(pi);
+	const originalFetch = globalThis.fetch;
+	const originalGhToken = process.env.GH_TOKEN;
+	const originalGithubToken = process.env.GITHUB_TOKEN;
+	const originalGithubRepository = process.env.GITHUB_REPOSITORY;
+	const controller = new AbortController();
+	const calls = [];
+	globalThis.fetch = async (input) => {
+		const url = new URL(input.toString());
+		calls.push(url.pathname);
+		if (url.pathname === "/repos/owner/repo/issues") return jsonResponse([githubIssue({ number: 4, title: "Abort Before Sync Write", html_url: "https://github.com/owner/repo/issues/4" })]);
+		if (url.pathname === "/repos/owner/repo/issues/4/comments") {
+			controller.abort();
+			return jsonResponse([]);
+		}
+		throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
+	};
+	process.env.GH_TOKEN = "ghp_test_token";
+	delete process.env.GITHUB_TOKEN;
+	process.env.GITHUB_REPOSITORY = "owner/repo";
+	try {
+		await assert.rejects(
+			() => executeSync(pi.syncTool, projectRoot, controller.signal),
+			(error) => error?.code === "github_request_aborted",
+		);
+		assert.deepEqual(calls, ["/repos/owner/repo/issues", "/repos/owner/repo/issues/4/comments"]);
+		await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+	} finally {
+		globalThis.fetch = originalFetch;
+		restoreEnv("GH_TOKEN", originalGhToken);
+		restoreEnv("GITHUB_TOKEN", originalGithubToken);
+		restoreEnv("GITHUB_REPOSITORY", originalGithubRepository);
+	}
 });
 
 test("issueme_sync_issues bounds cached comments and records truncation metadata", async () => {

@@ -4,6 +4,7 @@ import { Type } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
+import { assertMaxLength, assertNoNullBytes, assertOneLine, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const MAX_LABEL_NAME_CHARS = 50;
@@ -138,15 +139,7 @@ function normalizeAction(value: LabelManagementAction | undefined): LabelManagem
 }
 
 function normalizeLabelName(value: string | undefined, field: string): string {
-	if (typeof value !== "string") throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} is required.`, { field });
-	const trimmed = value.trim();
-	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not be empty.`, { field });
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must not contain null bytes.`, { field });
-	if (/\r|\n/.test(trimmed)) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must fit on one line.`, { field });
-	if (trimmed.length > MAX_LABEL_NAME_CHARS) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `${field} must be ${MAX_LABEL_NAME_CHARS} characters or fewer.`, { field, maxLength: MAX_LABEL_NAME_CHARS });
-	}
-	return trimmed;
+	return normalizeRequiredTrimmedText(value, field, { oneLine: true, maxLength: MAX_LABEL_NAME_CHARS });
 }
 
 function normalizeLabelColor(value: string | undefined, required: boolean): string | undefined {
@@ -168,11 +161,9 @@ function requireNormalizedColor(value: string | undefined): string {
 
 function normalizeLabelDescription(value: string): string {
 	const trimmed = value.trim();
-	if (trimmed.includes("\0")) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "description must not contain null bytes.", { field: "description" });
-	if (/\r|\n/.test(trimmed)) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "description must fit on one line.", { field: "description" });
-	if (trimmed.length > MAX_LABEL_DESCRIPTION_CHARS) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `description must be ${MAX_LABEL_DESCRIPTION_CHARS} characters or fewer.`, { field: "description", maxLength: MAX_LABEL_DESCRIPTION_CHARS });
-	}
+	assertNoNullBytes(trimmed, "description");
+	assertOneLine(trimmed, "description");
+	assertMaxLength(trimmed, "description", MAX_LABEL_DESCRIPTION_CHARS);
 	return trimmed;
 }
 

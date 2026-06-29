@@ -2,9 +2,9 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { MAX_TOOL_DEVELOPMENT_LINKS } from "../constants.ts";
-import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueDevelopmentLinksResult, NativeSubIssueSummary } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolIssueDevelopmentLinkSummary, ToolIssueSummary } from "../types.ts";
+import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_DEVELOPMENT_LINK_LIMIT = 25;
@@ -58,14 +58,11 @@ function normalizeListIssueDevelopmentLinksParams(params: ListIssueDevelopmentLi
 }
 
 function normalizePositiveInteger(value: number | undefined, field: string): number {
-	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw new IssueMeError("invalid_tool_input", `${field} must be a positive integer.`, { field });
+	return normalizePositiveSafeInteger(value, field);
 }
 
 function normalizeLimit(value: number | undefined): number {
-	if (value === undefined) return DEFAULT_DEVELOPMENT_LINK_LIMIT;
-	if (Number.isSafeInteger(value) && value >= 1 && value <= MAX_TOOL_DEVELOPMENT_LINKS) return value;
-	throw new IssueMeError("invalid_tool_input", `limit must be an integer between 1 and ${MAX_TOOL_DEVELOPMENT_LINKS}.`, { field: "limit" });
+	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_DEVELOPMENT_LINKS, defaultValue: DEFAULT_DEVELOPMENT_LINK_LIMIT });
 }
 
 function buildDevelopmentLinksDetails(

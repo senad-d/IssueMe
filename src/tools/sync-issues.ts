@@ -9,7 +9,7 @@ import { issueRecordToToolSummary, isPullRequestIssue } from "../issues/format.t
 import { issueFileDiagnosticReason, listIssueFileEntries, relativeIssuePath, removeClosedIssueFiles, writeIssueRecord } from "../issues/store.ts";
 import type { InvalidIssueFileDiagnostic, IssueMeToolDetails, IssueWriteResult } from "../types.ts";
 import { resolveIssueFilePath } from "../utils/slug.ts";
-import { createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertNotAborted, createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const SyncIssuesParams = Type.Object({}, { additionalProperties: false });
 
@@ -40,10 +40,12 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const summaries = [];
 
 				for (const issue of issues) {
+					assertNotAborted(signal);
 					const record = await fetchIssueRecord(runtime, issue, signal);
 					openNumbers.add(record.number);
 					let result: IssueWriteResult;
 					try {
+						assertNotAborted(signal);
 						result = await writeIssueRecord(runtime.projectRoot, runtime.config, record);
 					} catch (error) {
 						if (!isInvalidIssueFileError(error)) throw error;
@@ -72,6 +74,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 					});
 				}
 
+				assertNotAborted(signal);
 				const removed = await removeClosedIssueFiles(runtime.projectRoot, runtime.config, openNumbers, runtime.repository);
 				counts.removed += removed.length;
 				const staleRemovedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);

@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
 import type {
@@ -20,6 +20,7 @@ import {
 	toProjectRelativePath,
 } from "../utils/slug.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
+import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 
 export async function writeIssueRecord(projectRoot: string, config: IssueMeConfig, record: IssueRecord): Promise<IssueWriteResult> {
 	if (record.state !== "open") {
@@ -56,7 +57,11 @@ export async function writeIssueRecord(projectRoot: string, config: IssueMeConfi
 
 		if (currentText === nextText) return { action: "unchanged" as const, path: targetPath, removedPaths: [] };
 		await ensureTargetFileSafe(targetPath, safeDirectory, projectRoot);
-		await writeFile(targetPath, nextText, "utf8");
+		await writeFileAtomicSafe(targetPath, nextText, {
+			validateBeforeCreate: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
+			validateBeforeRename: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
+			validateAfterRename: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
+		});
 		const action = currentText === undefined ? "created" as const : "updated" as const;
 		return { action, path: targetPath, removedPaths: [] };
 	});
@@ -266,6 +271,11 @@ async function removeIssueFiles(projectRoot: string, config: IssueMeConfig, file
 		removed.push(file.path);
 	}
 	return removed;
+}
+
+async function assertIssueWriteTargetSafe(projectRoot: string, config: IssueMeConfig, targetPath: string): Promise<void> {
+	const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
+	await ensureTargetFileSafe(targetPath, directory, projectRoot);
 }
 
 async function ensureIssueDirectorySafe(projectRoot: string, config: IssueMeConfig, forWrite: boolean): Promise<string> {

@@ -9,48 +9,17 @@ import { DEFAULT_ISSUEME_CONFIG, getIssueMeConfigPath, loadIssueMeConfig, saveIs
 import { ISSUEME_ERROR_CODES, IssueMeError, isNodeError } from "../errors.ts";
 import { resolveCurrentRepository } from "../github/repository.ts";
 import { listIssueFileEntries } from "../issues/store.ts";
+import { ISSUEME_TOOL_NAMES } from "../tools/inventory.ts";
 import { getGitHubTokenStatus } from "../utils/env.ts";
 import { resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 import { assertPathInside, toProjectRelativePath } from "../utils/slug.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { IssueMeConfigTui, type ConfigTuiTheme } from "./config-tui.ts";
 
-const TOOL_NAMES = [
-	"issueme_sync_issues",
-	"issueme_list_issues",
-	"issueme_list_labels",
-	"issueme_list_milestones",
-	"issueme_list_assignees",
-	"issueme_list_projects",
-	"issueme_get_project_fields",
-	"issueme_add_issue_to_project",
-	"issueme_update_project_item",
-	"issueme_manage_label",
-	"issueme_manage_milestone",
-	"issueme_create_issue",
-	"issueme_create_sub_issue",
-	"issueme_add_sub_issue",
-	"issueme_remove_sub_issue",
-	"issueme_reorder_sub_issues",
-	"issueme_list_sub_issues",
-	"issueme_list_issue_development_links",
-	"issueme_get_issue",
-	"issueme_update_issue",
-	"issueme_comment_issue",
-	"issueme_update_comment",
-	"issueme_delete_comment",
-	"issueme_assign_issue",
-	"issueme_label_issue",
-	"issueme_reopen_issue",
-	"issueme_close_issue",
-	"issueme_bulk_update_issues",
-] as const;
-
 export type IssueMeCommand =
 	| { kind: "config" }
 	| { kind: "info"; warning?: string }
-	| { kind: "start"; skillPath: string }
-	| { kind: "start-error"; message: string };
+	| { kind: "start"; skillPath?: string };
 
 export function registerIssueMeCommand(pi: ExtensionAPI) {
 	pi.registerCommand(EXTENSION_COMMAND_NAME, {
@@ -59,7 +28,6 @@ export function registerIssueMeCommand(pi: ExtensionAPI) {
 			const command = parseIssueMeCommand(args);
 			if (command.kind === "config") return openConfig(pi, ctx);
 			if (command.kind === "info") return showInfo(pi, ctx, command.warning);
-			if (command.kind === "start-error") return showInfo(pi, ctx, command.message);
 			return startWorkflow(pi, ctx, command.skillPath);
 		},
 	});
@@ -73,7 +41,7 @@ export function parseIssueMeCommand(args: string): IssueMeCommand {
 		return { kind: "info" };
 	}
 	if (subcommand === "start") {
-		if (rest.length === 0) return { kind: "start-error", message: "Usage: /issueme start <skill-path>" };
+		if (rest.length === 0) return { kind: "start" };
 		return { kind: "start", skillPath: rest.join(" ") };
 	}
 	return { kind: "info", warning: `Unknown /issueme subcommand: ${subcommand}` };
@@ -155,6 +123,7 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 		tokenStatus: tokenStatus.present ? `present (${tokenStatus.source})` : tokenStatus.error ? `error (${tokenStatus.message})` : "missing",
 		configPath: DEFAULT_CONFIG_PATH,
 		issueDirectory: config.issueDirectory,
+		defaultSkillPath: config.defaultSkillPath,
 		cachedIssues: cacheResult.files.length,
 		invalidCacheFiles: cacheResult.invalidFiles.length,
 	});
@@ -169,9 +138,10 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 			tokenPresent: tokenStatus.present,
 			configPath: DEFAULT_CONFIG_PATH,
 			issueDirectory: config.issueDirectory,
+			defaultSkillPath: config.defaultSkillPath,
 			cachedIssues: cacheResult.files.length,
 			invalidCacheFiles: cacheResult.invalidFiles.length,
-			tools: [...TOOL_NAMES],
+			tools: [...ISSUEME_TOOL_NAMES],
 		},
 	});
 }
@@ -183,6 +153,7 @@ export function renderIssueMeInfo(input: {
 	tokenStatus: string;
 	configPath: string;
 	issueDirectory: string;
+	defaultSkillPath: string | null;
 	cachedIssues: number;
 	invalidCacheFiles: number;
 }): string {
@@ -193,18 +164,19 @@ export function renderIssueMeInfo(input: {
 		"Usage:",
 		"/issueme - open the non-secret configuration TUI",
 		"/issueme info | help | --help | -h - show this help/status view",
-		"/issueme start <skill-path> - ask the agent to use a skill with IssueMe tools",
+		"/issueme start [skill-path] - use an explicit skill path, or configured defaultSkillPath when omitted",
 		"",
 		`Project trusted: ${input.trusted ? "yes" : "no (project-local .env/config/cache ignored)"}`,
 		`Repository: ${input.repositoryStatus}`,
 		`Token: ${input.tokenStatus}`,
 		`Config path: ${input.configPath}`,
 		`Issue directory: ${input.issueDirectory}`,
+		`Default skill path: ${input.defaultSkillPath ?? "not set"}`,
 		`Cached open issue files: ${input.cachedIssues}`,
 		`Invalid cache files: ${input.invalidCacheFiles}`,
 		"",
 		"Tools:",
-		...TOOL_NAMES.map((tool) => `- ${tool}`),
+		...ISSUEME_TOOL_NAMES.map((tool) => `- ${tool}`),
 		"",
 		"Troubleshooting:",
 		"- Run issueme_sync_issues before relying on local issue files.",
@@ -213,12 +185,18 @@ export function renderIssueMeInfo(input: {
 	].filter((line): line is string => line !== undefined).join("\n");
 }
 
-async function startWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, skillPathArgument: string): Promise<void> {
+async function startWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, skillPathArgument?: string): Promise<void> {
 	if (!ctx.isProjectTrusted()) {
 		throw new IssueMeError("project_untrusted", `IssueMe start requires project trust before validating a project-local skill path. ${PROJECT_TRUST_REQUIREMENT}`);
 	}
 	const projectRoot = (await resolveIssueMeProjectRoot(ctx.cwd)).root;
-	const skillPath = resolveSkillPath(projectRoot, skillPathArgument);
+	const explicitSkillPath = skillPathArgument?.trim();
+	const configuredSkillPath = explicitSkillPath ? undefined : (await loadIssueMeConfig(projectRoot)).defaultSkillPath;
+	const rawSkillPath = explicitSkillPath || configuredSkillPath;
+	if (!rawSkillPath) {
+		return showInfo(pi, ctx, `Usage: /issueme start [skill-path]. Pass a skill path or set defaultSkillPath in ${DEFAULT_CONFIG_PATH}.`);
+	}
+	const skillPath = resolveSkillPath(projectRoot, rawSkillPath);
 	const readableSkillPath = await assertReadableProjectSkillPath(projectRoot, skillPath);
 	const prompt = [
 		`Read and use the IssueMe workflow skill at @${readableSkillPath}.`,
@@ -247,11 +225,11 @@ async function assertReadableProjectSkillPath(projectRoot: string, skillPath: st
 		throw new IssueMeError("skill_path_not_file", `Skill path must be a readable file, not a directory or special file: ${relativePath}`);
 	}
 
+	let realProjectRoot: string;
 	let realSkillPath: string;
 	try {
-		const [realProjectRoot, resolvedSkillPath] = await Promise.all([realpath(projectRoot), realpath(skillPath)]);
-		assertSkillPathInsideProject(realProjectRoot, resolvedSkillPath);
-		realSkillPath = resolvedSkillPath;
+		[realProjectRoot, realSkillPath] = await Promise.all([realpath(projectRoot), realpath(skillPath)]);
+		assertSkillPathInsideProject(realProjectRoot, realSkillPath);
 	} catch (error) {
 		if (error instanceof IssueMeError) throw error;
 		throw new IssueMeError("skill_path_unreadable", `Skill path could not be resolved safely: ${relativePath}`);
@@ -262,7 +240,7 @@ async function assertReadableProjectSkillPath(projectRoot: string, skillPath: st
 	} catch {
 		throw new IssueMeError("skill_path_unreadable", `Skill path is not readable: ${relativePath}`);
 	}
-	return realSkillPath;
+	return toProjectRelativePath(realProjectRoot, realSkillPath);
 }
 
 function resolveSkillPath(projectRoot: string, rawPath: string): string {

@@ -48,7 +48,7 @@ Use these files for historical context and current cross-checks:
 
 The implementation created these runtime files:
 
-- `src/commands/issueme-command.ts` - Registers `/issueme`, `/issueme info`, and `/issueme start <skill-path>`.
+- `src/commands/issueme-command.ts` - Registers `/issueme`, `/issueme info`, and `/issueme start [skill-path]` with `defaultSkillPath` fallback.
 - `src/commands/config-tui.ts` - Implements the configuration TUI renderer/component and snapshot helper.
 - `src/tools/issueme-tools.ts` - Aggregates IssueMe tool registration.
 - `src/tools/create-issue.ts` - Registers `issueme_create_issue`.
@@ -76,7 +76,7 @@ The implementation created these runtime files:
 | --- | --- | --- | --- |
 | Command | `/issueme` | Open configuration UI | Writes non-secret settings to `.pi/agent/issueme.json` only after user action. |
 | Command | `/issueme info` | Show command/tool/auth/cache status | Should avoid printing secrets. |
-| Command | `/issueme start <skill-path>` | Start a skill-guided issue workflow | Sends a user message that asks the agent to use the supplied project-local skill path with IssueMe tools. |
+| Command | `/issueme start [skill-path]` | Start a skill-guided issue workflow | Sends a user message that asks the agent to use the explicit project-local skill path, or configured `defaultSkillPath` when omitted, with IssueMe tools. |
 | Tool | `issueme_create_issue` | Create a GitHub issue and cache it locally | REST API; supports labels and assignees. |
 | Tool | `issueme_create_sub_issue` | Create a GitHub issue and attach it under a parent | REST create plus GraphQL `addSubIssue`; no body-only fallback. |
 | Tool | `issueme_add_sub_issue` | Attach an existing issue as a sub-issue | GraphQL `addSubIssue`; no body-only fallback. |
@@ -196,7 +196,7 @@ Large comment lists or bodies should be truncated in tool output, but local file
 
 ### Phase 3: Integration & Polish
 
-- Implement `/issueme`, `/issueme info`, and `/issueme start <skill-path>`.
+- Implement `/issueme`, `/issueme info`, and `/issueme start [skill-path]`.
 - Add concise custom rendering only if it improves usability.
 - Update README, SECURITY, CHANGELOG, and tests with each behavior change.
 - Run isolated smoke testing with `pi --no-extensions -e .`.
@@ -226,7 +226,7 @@ IMPORTANT: These steps record the original implementation workflow; current reme
 
 - Implement `/issueme` config UI with no secret persistence.
 - Implement `/issueme info` status/help output.
-- Implement `/issueme start <skill-path>` as a workflow kickoff that sends a user message asking the agent to use the supplied skill path and IssueMe tools.
+- Implement `/issueme start [skill-path]` as a workflow kickoff that sends a user message asking the agent to use the explicit or configured default skill path and IssueMe tools.
 
 ### 5. Validate integration
 

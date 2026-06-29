@@ -23,7 +23,59 @@ function stripAnsi(value) {
 }
 
 function visibleWidth(value) {
-	return stripAnsi(value).length;
+	let width = 0;
+	for (const segment of graphemes(stripAnsi(value))) width += graphemeWidth(segment);
+	return width;
+}
+
+function graphemes(value) {
+	if (!value) return [];
+	if (Intl.Segmenter) return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].map((part) => part.segment);
+	return Array.from(value);
+}
+
+function graphemeWidth(segment) {
+	if (isEmojiGrapheme(segment)) return 2;
+	let width = 0;
+	for (const char of Array.from(segment)) {
+		const codePoint = char.codePointAt(0) ?? 0;
+		if (isZeroWidthCodePoint(codePoint) || codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F)) continue;
+		width += isFullwidthCodePoint(codePoint) ? 2 : 1;
+	}
+	return width;
+}
+
+function isEmojiGrapheme(segment) {
+	return /\p{Emoji_Presentation}/u.test(segment)
+		|| (segment.includes("\uFE0F") && /\p{Extended_Pictographic}/u.test(segment))
+		|| (segment.includes("\u200D") && /\p{Extended_Pictographic}/u.test(segment));
+}
+
+function isZeroWidthCodePoint(codePoint) {
+	return codePoint === 0x200D
+		|| (codePoint >= 0x0300 && codePoint <= 0x036F)
+		|| (codePoint >= 0x1AB0 && codePoint <= 0x1AFF)
+		|| (codePoint >= 0x1DC0 && codePoint <= 0x1DFF)
+		|| (codePoint >= 0x20D0 && codePoint <= 0x20FF)
+		|| (codePoint >= 0xFE00 && codePoint <= 0xFE0F)
+		|| (codePoint >= 0xFE20 && codePoint <= 0xFE2F)
+		|| (codePoint >= 0xE0100 && codePoint <= 0xE01EF);
+}
+
+function isFullwidthCodePoint(codePoint) {
+	return codePoint >= 0x1100 && (
+		codePoint <= 0x115F
+		|| codePoint === 0x2329
+		|| codePoint === 0x232A
+		|| (codePoint >= 0x2E80 && codePoint <= 0xA4CF && codePoint !== 0x303F)
+		|| (codePoint >= 0xAC00 && codePoint <= 0xD7A3)
+		|| (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+		|| (codePoint >= 0xFE10 && codePoint <= 0xFE19)
+		|| (codePoint >= 0xFE30 && codePoint <= 0xFE6F)
+		|| (codePoint >= 0xFF00 && codePoint <= 0xFF60)
+		|| (codePoint >= 0xFFE0 && codePoint <= 0xFFE6)
+		|| (codePoint >= 0x20000 && codePoint <= 0x3FFFD)
+	);
 }
 
 function assertVisibleLineBounds(lines, width) {
@@ -119,6 +171,28 @@ test("configuration TUI renderer clips and pads ANSI-styled lines by visible wid
 	assert.ok(roles.includes("accent"));
 	assert.ok(roles.includes("dim"));
 	assert.ok(roles.includes("bold"));
+});
+
+test("configuration TUI renderer keeps Unicode input within terminal display width", () => {
+	const config = sampleConfig({
+		issueDirectory: "issues/漢字/📦/cafe\u0301-cache",
+		defaultLabels: ["bug🐛", "優先度高", "cafe\u0301"],
+		defaultAssignees: ["octocat", "hubot\u0301"],
+		defaultSkillPath: "skills/📦/ワークフロー/SKILL.md",
+	});
+	const states = [
+		{ focus: "settings", selectedCategory: 0 },
+		{ focus: "settings", selectedCategory: 1 },
+		{ focus: "settings", selectedCategory: 2 },
+		{ focus: "settings", searchActive: true, search: "ワーク" },
+		{ focus: "settings", editing: true, editBuffer: "📦漢字cafe\u0301" },
+	];
+	for (const width of [24, 32, 48, 80]) {
+		for (const state of states) {
+			const lines = renderConfigTuiSnapshot("/tmp/issueme-project", config, width, state);
+			assertVisibleLineBounds(lines, width);
+		}
+	}
 });
 
 test("configuration TUI renderer uses warning role for empty search results", () => {

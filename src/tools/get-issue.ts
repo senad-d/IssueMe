@@ -28,6 +28,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 			promptGuidelines: [
 				"Use issueme_get_issue for cached details; set refresh true only for current remote state or focused closed/open reconciliation.",
 			],
+			executionMode: "sequential",
 			parameters: GetIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const lookup = typeof params.lookup === "string" ? params.lookup.trim() : undefined;
@@ -51,7 +52,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 					}
 					if (issueNumber === undefined) throw new IssueMeError("invalid_tool_input", "Refreshing from GitHub requires an issue number or a local lookup that resolves to one.");
 					const record = await refreshIssueRecord(runtime, issueNumber, signal);
-					const { summary, path, removedPaths, action } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path, removedPaths, action } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 					const allRemovedPaths = uniquePaths([
 						...removedPaths,
 						...(previousPath && previousPath !== path ? [previousPath] : []),

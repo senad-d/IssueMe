@@ -1,10 +1,11 @@
-import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR } from "../constants.ts";
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
+import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 import { assertPathInside, assertSafeIssueDirectoryValue, normalizeIssueDirectoryValue, resolveIssueDirectory } from "../utils/slug.ts";
 
 const SECRET_KEY_PATTERN = /(token|secret|password|credential|api[_-]?key)/i;
@@ -45,7 +46,11 @@ export async function saveIssueMeConfig(projectRoot: string, input: unknown): Pr
 		await assertConfigPathSafe(projectRoot);
 		await mkdir(dirname(configPath), { recursive: true });
 		await assertConfigPathSafe(projectRoot);
-		await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+		await writeFileAtomicSafe(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+			validateBeforeCreate: () => assertConfigPathSafe(projectRoot),
+			validateBeforeRename: () => assertConfigPathSafe(projectRoot),
+			validateAfterRename: () => assertConfigPathSafe(projectRoot),
+		});
 		return config;
 	});
 }
@@ -143,9 +148,17 @@ function validateDefaultSkillPath(projectRoot: string, defaultSkillPath: string 
 	if (defaultSkillPath.includes("\0")) {
 		throw new IssueMeError("unsafe_skill_path", "Default skill path contains an invalid null byte.");
 	}
-	const absolute = isAbsolute(defaultSkillPath) ? resolve(defaultSkillPath) : resolve(projectRoot, defaultSkillPath);
-	assertPathInside(projectRoot, absolute, "Default skill path must stay inside the current project.");
-	if (!isAbsolute(defaultSkillPath)) {
+	const stripped = defaultSkillPath.trim().replace(/^@/, "");
+	const absolute = isAbsolute(stripped) ? resolve(stripped) : resolve(projectRoot, stripped);
+	try {
+		assertPathInside(projectRoot, absolute, "Default skill path must stay inside the current project.");
+	} catch (error) {
+		if (error instanceof IssueMeError && error.code === "unsafe_path") {
+			throw new IssueMeError("unsafe_skill_path", "Default skill path must stay inside the current project.");
+		}
+		throw error;
+	}
+	if (!isAbsolute(stripped)) {
 		const rel = relative(projectRoot, absolute);
 		if (rel === ".." || rel.startsWith(`..${"/"}`) || rel.startsWith("..\\")) {
 			throw new IssueMeError("unsafe_skill_path", "Default skill path cannot use path traversal.");

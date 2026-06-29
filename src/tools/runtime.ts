@@ -155,7 +155,9 @@ export async function writeAndSummarizeIssue(
 	_ctx: ExtensionContext,
 	runtime: IssueMeRuntime,
 	record: IssueRecord,
+	signal?: AbortSignal,
 ): Promise<{ summary: ToolIssueSummary; path?: string; removedPaths: string[]; action: IssueWriteResult["action"] }> {
+	assertNotAborted(signal);
 	const writeResult = await writeIssueRecord(runtime.projectRoot, runtime.config, record);
 	const path = relativeIssuePath(runtime.projectRoot, writeResult.path);
 	return {
@@ -164,6 +166,15 @@ export async function writeAndSummarizeIssue(
 		removedPaths: writeResult.removedPaths.map((removedPath) => relativeIssuePath(runtime.projectRoot, removedPath) ?? removedPath),
 		action: writeResult.action,
 	};
+}
+
+export function assertNotAborted(signal?: AbortSignal): void {
+	if (!signal?.aborted) return;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, "IssueMe operation aborted before local cache mutation.");
+}
+
+export function isAbortError(error: unknown): boolean {
+	return error instanceof IssueMeError && error.code === ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED;
 }
 
 export function toolText(text: string, details: IssueMeToolDetails = {}) {

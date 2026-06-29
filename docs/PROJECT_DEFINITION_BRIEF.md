@@ -32,12 +32,12 @@
   - Apply guarded bulk updates to explicit issue-number lists.
   - Inspect, create, attach, remove, and reorder native GitHub sub-issue relationships.
   - Avoid body-only dependency/blocker fallbacks; native dependency/blocker links remain unsupported until GitHub exposes a stable API.
-  - Start issue workflows with `/issueme start <skill-path>` using a user-supplied project-local skill file.
+  - Start issue workflows with `/issueme start [skill-path]` using an explicit or configured project-local skill file.
 - Non-goals:
   - No GitHub CLI.
   - No webhook listener in the first version.
   - No edits, comment additions/edits/deletions, label changes, assignment changes, or remote close mutations for already closed/resolved issues.
-  - No bundled IssueMe skill; `/issueme start` validates a readable skill file inside the trusted project.
+  - No bundled IssueMe skill; `/issueme start` validates a readable skill file inside the trusted project and prompts with a project-relative `@path` reference.
 
 ## 4. Pi integration surface
 
@@ -45,7 +45,7 @@
 | --- | --- | --- | --- |
 | Command | `/issueme` | Open configuration UI | Implemented with a non-secret configuration TUI in TUI mode and safe non-TUI fallback. |
 | Command | `/issueme info`/`help`/`--help`/`-h` | Show combined help/status | Implemented; includes repo/auth/cache/trust status without secrets. |
-| Command | `/issueme start <skill-path>` | Start skill-guided workflow | Implemented; validates a readable project-local skill file and sends an agent prompt to load/use it. |
+| Command | `/issueme start [skill-path]` | Start skill-guided workflow | Implemented; validates an explicit readable project-local skill file or configured `defaultSkillPath`, then sends an agent prompt with a project-relative `@path` skill reference. |
 | Tool | `issueme_sync_issues` | Fetch open issues and update local files | Implemented; removes local files for closed issues. |
 | Tool | `issueme_list_issues` | List/search issues in the resolved repository | Implemented with REST list mode and bounded repository-scoped Search API mode. |
 | Tool | `issueme_list_labels` | Discover repository labels | Implemented read-only with bounded metadata and filters. |
@@ -77,7 +77,7 @@
 | Unsupported | Native issue dependency/blocker tools | Manage native depends-on/blocked-by links | Not registered: no stable native GitHub REST/GraphQL API with documented list/add/remove semantics is available; no body-only fallback. |
 | Event | Lifecycle only if needed | Status/cleanup | No background listeners, timers, sockets, or webhooks. |
 | UI | Config TUI | Configure non-secret settings | Implemented for TUI mode with safe non-TUI fallback. |
-| Resource | Project-local skill path | User-supplied workflow guide | No bundled skill; validated path must remain inside the trusted project. |
+| Resource | Project-local skill path | User-supplied workflow guide | No bundled skill; validated path must remain inside the trusted project; prompts use relative `@path` references rather than absolute local paths. |
 
 ## 5. Architecture
 
@@ -140,8 +140,9 @@
 - Typecheck: `npm run typecheck`
 - Tests: helper, command, TUI renderer, GitHub client, extension registration, and package-content tests run without live GitHub calls.
 - Package dry-run: `npm run check:pack`
+- Packed package smoke: `npm run smoke:packaged`
 - Full validation: `npm run validate`
-- Isolated Pi smoke test: `pi --no-extensions -e .`, plus command/tool discovery verification before release.
+- Isolated Pi smoke test: `pi --no-extensions -e .`, plus checkout and packed-package command/tool discovery verification before release.
 
 ## 10. Open questions and assumptions
 
@@ -152,7 +153,7 @@
   - `.env` is project-root only and honored only in trusted projects.
   - Closed GitHub issues are read-only to IssueMe except through explicit `issueme_reopen_issue`.
   - Local `issues/` contains open issues only.
-  - `/issueme start <skill-path>` accepts project-relative paths or absolute paths only when they resolve inside the trusted project.
+  - `/issueme start [skill-path]` accepts project-relative paths or absolute paths only when they resolve inside the trusted project, uses configured `defaultSkillPath` when the argument is omitted, and sends project-relative skill references to the agent.
 - Decisions:
   - REST and GraphQL APIs are used directly; native sub-issues use GitHub GraphQL inspection/mutations.
   - Native dependency/blocker links are documented as unsupported until GitHub exposes a stable API; no body-only fallback is provided.
