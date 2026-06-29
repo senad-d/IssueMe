@@ -10,6 +10,7 @@ import { registerIssueMeTools } from "../src/tools/issueme-tools.ts";
 const TOKEN = "ghp_sub_issue_test_token";
 const REPOSITORY = "owner/repo";
 const config = { issueDirectory: "issues", defaultLabels: ["default-label"], defaultAssignees: ["octocat"], defaultSkillPath: null };
+const restrictedConfig = { ...config, allowedIssueCreator: "hubot" };
 
 function fakePi() {
 	const tools = new Map();
@@ -78,6 +79,7 @@ function graphQLIssue(issue) {
 		title: issue.title,
 		state: issue.state.toUpperCase(),
 		url: issue.html_url,
+		...(issue.user?.login ? { author: { login: issue.user.login } } : {}),
 	};
 }
 
@@ -106,12 +108,17 @@ function makeSubIssueFetch(options = {}) {
 		const body = init.body === undefined ? undefined : JSON.parse(init.body);
 		calls.push({ method, path: url.pathname, body, headers: init.headers });
 
+		if (url.pathname === "/user" && method === "GET") {
+			return jsonResponse({ login: options.authenticatedUser ?? "hubot" });
+		}
+
 		if (url.pathname === "/repos/owner/repo/issues" && method === "POST") {
 			const number = nextIssueNumber++;
 			const issue = githubIssue(number, body.title, {
 				body: body.body,
 				labels: body.labels ?? [],
 				assignees: body.assignees ?? [],
+				user: { login: options.createdIssueCreator ?? options.authenticatedUser ?? "hubot" },
 			});
 			issues.set(number, issue);
 			return jsonResponse(issue);
@@ -224,11 +231,11 @@ function makeSubIssueFetch(options = {}) {
 	return { calls, fetchFn, issues, parentByChild, childrenByParent };
 }
 
-function registerInjectedTools(fetchFn) {
+function registerInjectedTools(fetchFn, runtimeConfig = config) {
 	const pi = fakePi();
 	registerIssueMeTools(pi, {
 		runtime: {
-			config,
+			config: runtimeConfig,
 			repository: REPOSITORY,
 			token: TOKEN,
 			fetchFn,
@@ -270,6 +277,49 @@ test("issueme_create_sub_issue creates an issue, links it natively, and caches r
 	assert.equal(graphQlCall.headers["GraphQL-Features"], "sub_issues");
 });
 
+test("restricted issueme_create_sub_issue verifies parent creator and authenticated user before remote create", async () => {
+	const projectRoot = await tempProject();
+	const allowedParent = githubIssue(1, "Parent", { user: { login: "Hubot" } });
+	const allowedExistingChild = githubIssue(2, "Existing Child", { user: { login: "hubot" } });
+	const mock = makeSubIssueFetch({ issues: [allowedParent, allowedExistingChild], authenticatedUser: "hubot" });
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	const result = await execute(tools.get("issueme_create_sub_issue"), projectRoot, {
+		parentNumber: 1,
+		title: "Allowed Native Child",
+		body: "Child body",
+	});
+
+	const sequence = mock.calls.map((call) => `${call.method} ${call.path}`);
+	assert.equal(sequence.indexOf("GET /repos/owner/repo/issues/1"), 0);
+	assert.ok(sequence.indexOf("GET /user") > sequence.indexOf("GET /repos/owner/repo/issues/1"));
+	assert.ok(sequence.indexOf("POST /repos/owner/repo/issues") > sequence.indexOf("GET /user"));
+	assert.equal(result.details.result, "success");
+	assert.equal(result.details.creatorScope, "hubot");
+	assert.equal(result.details.issue.creator, "hubot");
+	const child = await readJson(join(projectRoot, "issues", "3-allowed-native-child.json"));
+	assert.equal(child.creator, "hubot");
+});
+
+test("restricted issueme_create_sub_issue refuses token-user mismatch before creating a remote issue", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({
+		issues: [githubIssue(1, "Parent", { user: { login: "hubot" } }), githubIssue(2, "Existing Child", { user: { login: "hubot" } })],
+		authenticatedUser: "intruder",
+	});
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	await assert.rejects(
+		() => execute(tools.get("issueme_create_sub_issue"), projectRoot, { parentNumber: 1, title: "Blocked Child", body: "Child body" }),
+		(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.authenticatedUser === "intruder",
+	);
+	assert.deepEqual(mock.calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /user",
+	]);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+});
+
 test("issueme_add_sub_issue attaches an existing issue and refreshes stale local cache files", async () => {
 	const projectRoot = await tempProject();
 	await writeIssueRecord(projectRoot, config, issueRecord(1, "Old Parent"));
@@ -289,6 +339,28 @@ test("issueme_add_sub_issue attaches an existing issue and refreshes stale local
 	assert.equal(child.title, "Existing Child");
 	assert.equal(child.parent_issue.number, 1);
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /addSubIssue/.test(call.body.query)), true);
+});
+
+test("restricted issueme_add_sub_issue refuses disallowed child before native GraphQL mutation", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({
+		issues: [
+			githubIssue(1, "Parent", { user: { login: "hubot" } }),
+			githubIssue(2, "Intruder Child", { user: { login: "intruder" } }),
+		],
+	});
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	await assert.rejects(
+		() => execute(tools.get("issueme_add_sub_issue"), projectRoot, { parentNumber: 1, childNumber: 2 }),
+		(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.issueNumber === 2,
+	);
+	assert.deepEqual(mock.calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/2",
+	]);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql"), false);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
 
 test("issueme_remove_sub_issue preserves remaining parent children in local cache", async () => {
@@ -315,6 +387,24 @@ test("issueme_remove_sub_issue preserves remaining parent children in local cach
 	assert.equal(parent.sub_issues_count, 1);
 	assert.equal(removedChild.parent_issue, null);
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /removeSubIssue/.test(call.body.query)), true);
+});
+
+test("restricted issueme_remove_sub_issue refuses disallowed parent before native GraphQL mutation", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({
+		issues: [
+			githubIssue(1, "Intruder Parent", { user: { login: "intruder" } }),
+			githubIssue(2, "Allowed Child", { user: { login: "hubot" } }),
+		],
+	});
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	await assert.rejects(
+		() => execute(tools.get("issueme_remove_sub_issue"), projectRoot, { parentNumber: 1, childNumber: 2 }),
+		(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.issueNumber === 1,
+	);
+	assert.deepEqual(mock.calls.map((call) => `${call.method} ${call.path}`), ["GET /repos/owner/repo/issues/1"]);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql"), false);
 });
 
 test("issueme_reorder_sub_issues reorders native children and refreshes relationship metadata", async () => {
@@ -352,6 +442,29 @@ test("issueme_reorder_sub_issues reorders native children and refreshes relation
 	assert.deepEqual(reorderCall.body.variables, { issueId: "I_1", subIssueId: "I_4", beforeId: "I_2" });
 	assert.equal(mock.calls.filter((call) => call.path === "/graphql" && call.body.operationName === "IssueMeListSubIssues").length, 2);
 	assert.equal(reorderCall.headers["GraphQL-Features"], "sub_issues");
+});
+
+test("restricted issueme_reorder_sub_issues refuses disallowed visible children before reprioritize", async () => {
+	const projectRoot = await tempProject();
+	const children = [
+		githubIssue(2, "Allowed Child", { user: { login: "hubot" } }),
+		githubIssue(3, "Intruder Child", { user: { login: "intruder" } }),
+	];
+	const mock = makeSubIssueFetch({
+		issues: [githubIssue(1, "Parent", { user: { login: "hubot" } }), ...children],
+		childrenByParent: [[1, [2, 3]]],
+		parentByChild: children.map((issue) => [issue.number, 1]),
+	});
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	const result = await execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [3, 2] });
+
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.creatorScope, "hubot");
+	assert.equal(result.details.error.code, "issue_creator_not_allowed");
+	assert.equal(result.details.error.details.issueNumber, 3);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body.operationName === "IssueMeReprioritizeSubIssue"), false);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
 
 test("issueme_reorder_sub_issues rejects incomplete or invalid child lists before mutation", async () => {
@@ -399,6 +512,24 @@ test("issueme_reorder_sub_issues reports permission and cache-refresh failures s
 	assert.equal(partialResult.details.needsSync, true);
 	assert.equal(partialResult.details.error.details.partialSuccessStatus, "sub_issue_cache_refresh_failed");
 	assert.match(partialResult.content[0].text, /order changed on GitHub, but local cache refresh failed/i);
+});
+
+test("restricted issueme_list_sub_issues refuses disallowed child details before returning output", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({
+		issues: [
+			githubIssue(1, "Parent", { user: { login: "hubot" } }),
+			githubIssue(2, "Intruder Child", { user: { login: "intruder" } }),
+		],
+	});
+	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
+
+	await assert.rejects(
+		() => execute(tools.get("issueme_list_sub_issues"), projectRoot, { issueNumber: 1 }),
+		(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.issueNumber === 2,
+	);
+	assert.deepEqual(mock.calls.map((call) => `${call.method} ${call.path}`), ["POST /graphql"]);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
 
 test("issueme_list_sub_issues inspects parent and child relationship shapes without refreshing cache", async () => {

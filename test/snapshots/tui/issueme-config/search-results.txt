@@ -3,7 +3,7 @@
 │↑↓ move  Enter edit  Esc clear  q quit                                        │
 ├─────────────────────┬────────────────────────────────────────────────────────┤
 │▶ Cache              │SEARCH LABELS                                        1/1│
-│  Defaults           │▶ Default labels (Defaults)       bug, agent-ready      │
+│  Defaults           │▶ Default labels (Defaults)             bug, agent-ready│
 │  Workflow           │                                                        │
 │                     │                                                        │
 │                     │                                                        │

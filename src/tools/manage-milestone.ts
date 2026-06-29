@@ -1,6 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
@@ -25,18 +25,19 @@ const ManageMilestoneParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-type MilestoneManagementAction = "create" | "update" | "close" | "reopen" | "delete";
+type ManageMilestoneToolParams = Static<typeof ManageMilestoneParams>;
+type MilestoneManagementAction = ManageMilestoneToolParams["action"];
 type MilestoneState = "open" | "closed";
+type MilestoneActionSpecificField = Exclude<keyof ManageMilestoneToolParams, "action"> & string;
 
-interface ManageMilestoneToolParams {
-	action?: MilestoneManagementAction;
-	number?: number;
-	title?: string;
-	description?: string;
-	dueOn?: string;
-	clearDueOn?: boolean;
-	confirmDelete?: boolean;
-}
+export const MANAGE_MILESTONE_COMMON_FIELDS = ["action"] as const satisfies readonly (keyof ManageMilestoneToolParams & string)[];
+export const MANAGE_MILESTONE_ACTION_FIELDS = {
+	create: ["title", "description", "dueOn"],
+	update: ["number", "title", "description", "dueOn", "clearDueOn"],
+	close: ["number"],
+	reopen: ["number"],
+	delete: ["number", "confirmDelete"],
+} as const satisfies Record<MilestoneManagementAction, readonly MilestoneActionSpecificField[]>;
 
 interface NormalizedManageMilestoneParams {
 	action: MilestoneManagementAction;
@@ -62,7 +63,7 @@ export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeTo
 			executionMode: "sequential",
 			parameters: ManageMilestoneParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeManageMilestoneParams(params as ManageMilestoneToolParams);
+				const normalized = normalizeManageMilestoneParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				try {
 					if (normalized.action === "create") {
@@ -108,6 +109,7 @@ export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeTo
 
 function normalizeManageMilestoneParams(params: ManageMilestoneToolParams): NormalizedManageMilestoneParams {
 	const action = normalizeAction(params.action);
+	assertManageMilestoneActionFields(params, action);
 	if (action === "create") {
 		if (params.number !== undefined || params.clearDueOn !== undefined || params.confirmDelete !== undefined) {
 			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone create accepts only action, title, description, and dueOn.", { action, fields: ["action", "title", "description", "dueOn"] });
@@ -168,6 +170,19 @@ function normalizeManageMilestoneParams(params: ManageMilestoneToolParams): Norm
 function normalizeAction(value: MilestoneManagementAction | undefined): MilestoneManagementAction {
 	if (value === "create" || value === "update" || value === "close" || value === "reopen" || value === "delete") return value;
 	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone action must be create, update, close, reopen, or delete.", { field: "action" });
+}
+
+function assertManageMilestoneActionFields(params: ManageMilestoneToolParams, action: MilestoneManagementAction): void {
+	const allowed = new Set([...MANAGE_MILESTONE_COMMON_FIELDS, ...MANAGE_MILESTONE_ACTION_FIELDS[action]]);
+	const actionFields = Object.values(MANAGE_MILESTONE_ACTION_FIELDS).flatMap((fields) => fields);
+	const unexpected = actionFields.filter((field) => !allowed.has(field) && params[field] !== undefined);
+	if (unexpected.length > 0) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`Fields ${unexpected.join(", ")} do not apply to milestone action ${action}.`,
+			{ fields: unexpected, action },
+		);
+	}
 }
 
 function normalizeMilestoneNumber(value: number | undefined): number {

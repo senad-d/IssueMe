@@ -1,14 +1,14 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ISSUES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueListDirection, GitHubIssueListSort, GitHubIssueListState } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
-import type { GitHubIssueResponse, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
+import type { GitHubIssueResponse, IssueMeConfig, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalIsoDateOrTimestamp, normalizeOptionalTextFilter } from "../utils/validation.ts";
-import { createIssueMeRuntime, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { createIssueMeRuntime, issueCreatorMatchesConfig, issueCreatorScopeLabel, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_ISSUE_LIST_LIMIT = 25;
 
@@ -30,20 +30,7 @@ const ListIssuesParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListIssuesToolParams {
-	state?: GitHubIssueListState;
-	labels?: string[];
-	assignee?: string;
-	creator?: string;
-	author?: string;
-	mentioned?: string;
-	milestone?: string;
-	since?: string;
-	sort?: GitHubIssueListSort;
-	direction?: GitHubIssueListDirection;
-	limit?: number;
-	query?: string;
-}
+type ListIssuesToolParams = Static<typeof ListIssuesParams>;
 
 interface NormalizedListIssuesParams {
 	state: GitHubIssueListState;
@@ -71,14 +58,17 @@ export function registerListIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 			],
 			parameters: ListIssuesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListIssuesParams(params as ListIssuesToolParams);
+				const normalized = normalizeListIssuesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
-				const result = normalized.query
-					? await runtime.client.searchIssues({ ...normalized, query: normalized.query }, signal)
-					: await runtime.client.listIssues(normalized, signal);
-				const summaries = summarizeIssues(runtime.repository, runtime.client.repository, result.issues);
+				const scoped = applyCreatorScope(normalized, runtime.config);
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
+				const result = scoped.query
+					? await runtime.client.searchIssues({ ...scoped, query: scoped.query }, signal)
+					: await runtime.client.listIssues(scoped, signal);
+				const summaries = summarizeIssues(runtime.repository, runtime.client.repository, result.issues, runtime.config);
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
+					creatorScope,
 					status: result.mode,
 					issues: summaries,
 					counts: {
@@ -91,7 +81,7 @@ export function registerListIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { issues: { shown: summaries.length, max: normalized.limit, ...(result.totalCount !== undefined ? { total: result.totalCount } : {}) } } } : {}),
 				};
-				return toolText(formatListIssuesText(runtime.repository, normalized, result.mode, summaries, result.truncated), details);
+				return toolText(formatListIssuesText(runtime.repository, scoped, result.mode, summaries, result.truncated, creatorScope), details);
 			},
 		}),
 	);
@@ -188,8 +178,47 @@ function assertSafeFilterValue(value: string, field: string): void {
 	assertNoNullBytes(value, field);
 }
 
-function summarizeIssues(repository: string, parsedRepository: Parameters<typeof githubIssueToRecord>[0], issues: GitHubIssueResponse[]): ToolIssueSummary[] {
-	return issues.map((issue) => issueRecordToToolSummary(githubIssueToRecord(parsedRepository, issue, []))).filter((summary) => summary.repository === repository);
+function applyCreatorScope(params: NormalizedListIssuesParams, config: IssueMeConfig): NormalizedListIssuesParams {
+	const creatorScope = issueCreatorScopeLabel(config);
+	if (creatorScope === "all") return params;
+	assertSearchQueryCreatorScope(params.query, creatorScope);
+	if (params.creator && params.creator.toLowerCase() !== creatorScope.toLowerCase()) {
+		throw new IssueMeError(
+			"invalid_tool_input",
+			`Configured allowedIssueCreator is ${creatorScope}; creator/author filter ${params.creator} would be out of scope.`,
+			{ field: "creator", allowedIssueCreator: creatorScope, requestedCreator: params.creator },
+		);
+	}
+	return { ...params, creator: params.creator ?? creatorScope };
+}
+
+function assertSearchQueryCreatorScope(query: string | undefined, creatorScope: string): void {
+	if (!query) return;
+	for (const requestedCreator of extractSearchCreatorQualifiers(query)) {
+		if (requestedCreator.toLowerCase() === creatorScope.toLowerCase()) continue;
+		throw new IssueMeError(
+			"invalid_tool_input",
+			`Configured allowedIssueCreator is ${creatorScope}; search query author/creator filter ${requestedCreator} would be out of scope.`,
+			{ field: "query", allowedIssueCreator: creatorScope, requestedCreator },
+		);
+	}
+}
+
+function extractSearchCreatorQualifiers(query: string): string[] {
+	const values: string[] = [];
+	const pattern = /\b(?:author|creator):(?:"([^"]+)"|(\S+))/gi;
+	let match: RegExpExecArray | null;
+	while ((match = pattern.exec(query)) !== null) {
+		const value = (match[1] ?? match[2] ?? "").trim();
+		if (value) values.push(value);
+	}
+	return values;
+}
+
+function summarizeIssues(repository: string, parsedRepository: Parameters<typeof githubIssueToRecord>[0], issues: GitHubIssueResponse[], config: IssueMeConfig): ToolIssueSummary[] {
+	return issues
+		.map((issue) => issueRecordToToolSummary(githubIssueToRecord(parsedRepository, issue, [])))
+		.filter((summary) => summary.repository === repository && issueCreatorMatchesConfig(config, summary.creator));
 }
 
 function formatListIssuesText(
@@ -198,10 +227,11 @@ function formatListIssuesText(
 	mode: "list" | "search",
 	summaries: ToolIssueSummary[],
 	truncated: boolean,
+	creatorScope: string,
 ): string {
 	const lines = [
 		`${mode === "search" ? "Searched" : "Listed"} ${summaries.length} issue(s) for ${repository}.`,
-		`Mode: ${mode}; state: ${params.state}; limit: ${params.limit}.`,
+		`Mode: ${mode}; state: ${params.state}; limit: ${params.limit}; creator scope: ${creatorScope}.`,
 		params.query ? `Query: ${params.query}` : undefined,
 		"This tool is read-only; local issue cache files were not refreshed or written.",
 		"",
@@ -214,5 +244,6 @@ function formatListIssuesText(
 function formatIssueLine(issue: ToolIssueSummary): string {
 	const labels = issue.labels.length ? issue.labels.join(", ") : "no labels";
 	const assignees = issue.assignees.length ? issue.assignees.join(", ") : "unassigned";
-	return `- #${issue.number} [${issue.state}] ${issue.title} — ${labels}; ${assignees}; ${issue.html_url}`;
+	const creator = issue.creator ? `; by ${issue.creator}` : "";
+	return `- #${issue.number} [${issue.state}] ${issue.title} — ${labels}; ${assignees}${creator}; ${issue.html_url}`;
 }

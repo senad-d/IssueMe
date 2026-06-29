@@ -9,7 +9,7 @@ import { GitHubClient } from "../src/github/client.ts";
 import { writeIssueRecord } from "../src/issues/store.ts";
 import { registerGetIssueTool } from "../src/tools/get-issue.ts";
 
-const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+const config = { issueDirectory: "issues", allowedIssueCreator: "all", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
 
 function issue(number, title, overrides = {}) {
 	return {
@@ -18,6 +18,7 @@ function issue(number, title, overrides = {}) {
 		number,
 		title,
 		state: "open",
+		creator: "octocat",
 		body: `Body for ${title}`,
 		labels: ["bug"],
 		assignees: ["octocat"],
@@ -37,6 +38,7 @@ function githubIssue(number, title, overrides = {}) {
 		number,
 		title,
 		state: "open",
+		user: { login: "octocat" },
 		body: `Remote body for ${title}`,
 		labels: [{ name: "refreshed" }],
 		assignees: [{ login: "octocat" }],
@@ -239,6 +241,64 @@ test("issueme_get_issue filters local lookups to the resolved current repository
 		() => executeGet(getTool, projectRoot, { lookup: "Other Repo Secret" }),
 		(error) => error?.code === "issue_not_found" && /current repository/.test(error.message),
 	);
+});
+
+test("restricted issueme_get_issue refuses out-of-scope and legacy local cache records", async () => {
+	const projectRoot = await tempProject();
+	await initGitHubOrigin(projectRoot);
+	const restrictedConfig = { ...config, allowedIssueCreator: "hubot" };
+	const getTool = await registerGetTool({ runtime: { config: restrictedConfig, repository: "owner/repo" } });
+	await writeIssueRecord(projectRoot, config, issue(12, "Allowed Local", { creator: "Hubot" }));
+	await writeIssueRecord(projectRoot, config, issue(13, "Intruder Local", { creator: "intruder", body: "PRIVATE INTRUDER BODY" }));
+	await writeIssueRecord(projectRoot, config, issue(14, "Legacy Local", { creator: undefined, body: "PRIVATE LEGACY BODY" }));
+
+	const allowed = await executeGet(getTool, projectRoot, { number: 12 });
+	assert.equal(allowed.details.issue.creator, "Hubot");
+	assert.match(allowed.content[0].text, /Creator: Hubot/);
+	for (const number of [13, 14]) {
+		await assert.rejects(
+			() => executeGet(getTool, projectRoot, { number }),
+			(error) => {
+				assert.equal(error?.code, "issue_creator_not_allowed");
+				assert.equal(error.safeDetails?.allowedIssueCreator, "hubot");
+				assert.doesNotMatch(error.message, /PRIVATE/);
+				assert.doesNotMatch(JSON.stringify(error.safeDetails), /PRIVATE/);
+				return true;
+			},
+		);
+	}
+});
+
+test("restricted issueme_get_issue refresh refuses out-of-scope remote issues before comments or cache writes", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const getTool = await registerGetTool({
+		runtime: {
+			config: { ...config, allowedIssueCreator: "hubot" },
+			repository: "owner/repo",
+			token: "ghp_test_token",
+			fetchFn: async (input) => {
+				const url = new URL(input.toString());
+				calls.push(url.pathname);
+				if (url.pathname === "/repos/owner/repo/issues/15") {
+					return jsonResponse(githubIssue(15, "Intruder Remote", { user: { login: "intruder" }, body: "PRIVATE REMOTE BODY" }));
+				}
+				throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
+			},
+		},
+	});
+
+	await assert.rejects(
+		() => executeGet(getTool, projectRoot, { number: 15, refresh: true }),
+		(error) => {
+			assert.equal(error?.code, "issue_creator_not_allowed");
+			assert.equal(error.safeDetails?.creator, "intruder");
+			assert.doesNotMatch(error.message, /PRIVATE REMOTE BODY/);
+			return true;
+		},
+	);
+	assert.deepEqual(calls, ["/repos/owner/repo/issues/15"]);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
 
 test("issueme_get_issue refuses local lookup paths that escape through symlinked cache subdirectories", async (t) => {

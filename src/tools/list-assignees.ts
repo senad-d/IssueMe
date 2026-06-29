@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES } from "../constants.ts";
 import type { GitHubUserResponse, IssueMeToolDetails, ToolAssigneeSummary } from "../types.ts";
@@ -17,11 +17,7 @@ const ListAssigneesParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListAssigneesToolParams {
-	login?: string;
-	query?: string;
-	limit?: number;
-}
+type ListAssigneesToolParams = Static<typeof ListAssigneesParams>;
 
 interface NormalizedListAssigneesParams {
 	login?: string;
@@ -41,7 +37,7 @@ export function registerListAssigneesTool(pi: ExtensionAPI, options: IssueMeTool
 			],
 			parameters: ListAssigneesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListAssigneesParams(params as ListAssigneesToolParams);
+				const normalized = normalizeListAssigneesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const result = await runtime.client.listAssignees(normalized, signal);
 				const assignees = summarizeAssignees(result.assignees);

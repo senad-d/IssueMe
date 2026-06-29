@@ -1,6 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ISSUES } from "../constants.ts";
 import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
@@ -10,8 +10,10 @@ import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueMeToolResult, SafeToolError, ToolBulkIssueResultSummary, ToolIssueSummary } from "../types.ts";
 import { normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 import {
+	assertIssueCreatorAllowed,
 	assertNotAborted,
 	createIssueMeRuntime,
+	issueCreatorScopeLabel,
 	partialSuccessToolError,
 	refreshAndCacheIssue,
 	requireNonEmptyGitHubLogins,
@@ -47,20 +49,18 @@ const BulkIssueParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-type BulkIssueActionName = "add_labels" | "assign" | "set_milestone" | "add_to_project" | "close";
+type BulkIssueToolParams = Static<typeof BulkIssueParams>;
+type BulkIssueActionName = BulkIssueToolParams["action"];
+type ActionSpecificField = Exclude<keyof BulkIssueToolParams, "issueNumbers" | "action" | "continueOnError"> & string;
 
-type ActionSpecificField = "labels" | "assignees" | "milestoneNumber" | "projectId" | "reason";
-
-interface BulkIssueToolParams {
-	issueNumbers?: number[];
-	action?: BulkIssueActionName;
-	labels?: string[];
-	assignees?: string[];
-	milestoneNumber?: number;
-	projectId?: string;
-	reason?: GitHubIssueCloseReason;
-	continueOnError?: boolean;
-}
+export const BULK_ISSUE_COMMON_FIELDS = ["issueNumbers", "action", "continueOnError"] as const satisfies readonly (keyof BulkIssueToolParams & string)[];
+export const BULK_ISSUE_ACTION_FIELDS = {
+	add_labels: ["labels"],
+	assign: ["assignees"],
+	set_milestone: ["milestoneNumber"],
+	add_to_project: ["projectId"],
+	close: ["reason"],
+} as const satisfies Record<BulkIssueActionName, readonly ActionSpecificField[]>;
 
 interface NormalizedBulkIssueParams {
 	issueNumbers: number[];
@@ -96,10 +96,11 @@ export function registerBulkIssueOperationsTool(pi: ExtensionAPI, options: Issue
 			executionMode: "sequential",
 			parameters: BulkIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeBulkIssueParams(params as BulkIssueToolParams);
+				const normalized = normalizeBulkIssueParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
 				const run = await runBulkIssueOperation(ctx, runtime, normalized, signal);
-				return toolText(formatBulkIssueText(runtime.repository, normalized, run.results, run.counts), buildBulkIssueDetails(runtime.repository, normalized, run));
+				return toolText(formatBulkIssueText(runtime.repository, normalized, run.results, run.counts, creatorScope), buildBulkIssueDetails(runtime.repository, normalized, run, creatorScope));
 			},
 		}),
 	);
@@ -188,6 +189,9 @@ async function applyBulkAction(
 	issueNumber: number,
 	signal?: AbortSignal,
 ): Promise<ToolBulkIssueResultSummary> {
+	if (params.action === "close") return closeIssueForBulk(runtime, params, issueNumber, signal);
+
+	await assertBulkIssueAllowedForOpenMutation(runtime, issueNumber, params.action, signal);
 	if (params.action === "add_labels") {
 		await runtime.client.addLabels(issueNumber, params.labels ?? [], signal);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
@@ -200,11 +204,19 @@ async function applyBulkAction(
 		const issue = await runtime.client.updateIssue(issueNumber, { milestone: params.milestoneNumber }, signal);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, issue, signal);
 	}
-	if (params.action === "add_to_project") {
-		const result = await runtime.client.addIssueToProjectV2({ issueNumber, projectId: params.projectId ?? "" }, signal);
-		return projectItemBulkResult(issueNumber, params, result);
-	}
-	return closeIssueForBulk(runtime, params, issueNumber, signal);
+	const result = await runtime.client.addIssueToProjectV2({ issueNumber, projectId: params.projectId ?? "" }, signal);
+	return projectItemBulkResult(issueNumber, params, result);
+}
+
+async function assertBulkIssueAllowedForOpenMutation(
+	runtime: IssueMeRuntime,
+	issueNumber: number,
+	action: BulkIssueActionName,
+	signal?: AbortSignal,
+): Promise<GitHubIssueResponse> {
+	const currentIssue = await runtime.client.ensureIssueOpen(issueNumber, signal);
+	assertIssueCreatorAllowed(runtime.config, currentIssue, { repository: runtime.repository, operation: `bulk_${action}`, issueNumber });
+	return currentIssue;
 }
 
 async function refreshIssueAfterRemoteSuccess(
@@ -271,6 +283,7 @@ async function closeIssueForBulk(
 	signal?: AbortSignal,
 ): Promise<ToolBulkIssueResultSummary> {
 	const current = await runtime.client.getIssue(issueNumber, signal);
+	assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "bulk_close", issueNumber });
 	const alreadyClosed = current.state === "closed";
 	const issue = alreadyClosed ? current : await runtime.client.closeIssue(issueNumber, { reason: params.reason }, signal);
 	const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
@@ -309,6 +322,7 @@ function buildBulkIssueDetails(
 	repository: string,
 	params: NormalizedBulkIssueParams,
 	run: { results: ToolBulkIssueResultSummary[]; counts: BulkRunCounts; firstError?: SafeToolError },
+	creatorScope: string,
 ): IssueMeToolDetails {
 	const successfulResults = run.results.filter((result) => result.status === "success");
 	const issueSummaries = successfulResults.map((result) => result.issue).filter((issue): issue is ToolIssueSummary => issue !== undefined);
@@ -318,6 +332,7 @@ function buildBulkIssueDetails(
 	return {
 		result,
 		repository,
+		creatorScope,
 		status: result === "success" ? "bulk_success" : result === "partial_success" ? "bulk_partial_success" : "bulk_failed",
 		bulkResults: run.results,
 		issues: issueSummaries,
@@ -348,10 +363,11 @@ function formatBulkIssueText(
 	params: NormalizedBulkIssueParams,
 	results: ToolBulkIssueResultSummary[],
 	counts: BulkRunCounts,
+	creatorScope: string,
 ): string {
 	const lines = [
 		`Bulk IssueMe action ${params.action} for ${counts.requested} explicit issue number(s) in ${repository}.`,
-		`Safety: explicit issueNumbers only; executed sequentially; continueOnError=${params.continueOnError}.`,
+		`Safety: explicit issueNumbers only; executed sequentially; continueOnError=${params.continueOnError}; creator scope=${creatorScope}.`,
 		`Results: ${counts.succeeded} succeeded, ${counts.partial} partial, ${counts.failed} failed, ${counts.skipped} skipped.`,
 		"",
 		...results.map(formatBulkResultLine),
@@ -379,24 +395,24 @@ function normalizeBulkIssueParams(params: BulkIssueToolParams): NormalizedBulkIs
 	const issueNumbers = normalizeIssueNumbers(params.issueNumbers);
 	const continueOnError = params.continueOnError === true;
 	if (action === "add_labels") {
-		assertNoUnexpectedActionFields(params, ["labels"]);
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.add_labels);
 		const labels = requireNonEmptyStrings(params.labels, "labels");
 		return { issueNumbers, action, labels, continueOnError, changedFields: ["labels"] };
 	}
 	if (action === "assign") {
-		assertNoUnexpectedActionFields(params, ["assignees"]);
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.assign);
 		const assignees = requireNonEmptyGitHubLogins(params.assignees, "assignees");
 		return { issueNumbers, action, assignees, continueOnError, changedFields: ["assignees"] };
 	}
 	if (action === "set_milestone") {
-		assertNoUnexpectedActionFields(params, ["milestoneNumber"]);
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.set_milestone);
 		return { issueNumbers, action, milestoneNumber: normalizePositiveInteger(params.milestoneNumber, "milestoneNumber"), continueOnError, changedFields: ["milestone"] };
 	}
 	if (action === "add_to_project") {
-		assertNoUnexpectedActionFields(params, ["projectId"]);
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.add_to_project);
 		return { issueNumbers, action, projectId: normalizeRequiredProjectId(params.projectId, "projectId"), continueOnError, changedFields: ["project_item"] };
 	}
-	assertNoUnexpectedActionFields(params, ["reason"]);
+	assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.close);
 	return { issueNumbers, action, ...(params.reason !== undefined ? { reason: normalizeCloseReason(params.reason) } : {}), continueOnError, changedFields: params.reason ? ["state", "state_reason"] : ["state"] };
 }
 
@@ -420,8 +436,8 @@ function normalizeIssueNumbers(values: number[] | undefined): number[] {
 	return normalized;
 }
 
-function assertNoUnexpectedActionFields(params: BulkIssueToolParams, allowed: ActionSpecificField[]): void {
-	const actionFields: ActionSpecificField[] = ["labels", "assignees", "milestoneNumber", "projectId", "reason"];
+function assertNoUnexpectedActionFields(params: BulkIssueToolParams, allowed: readonly ActionSpecificField[]): void {
+	const actionFields = Object.values(BULK_ISSUE_ACTION_FIELDS).flatMap((fields) => fields);
 	const unexpected = actionFields.filter((field) => !allowed.includes(field) && params[field] !== undefined);
 	if (unexpected.length > 0) {
 		throw new IssueMeError(

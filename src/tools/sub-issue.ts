@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ISSUES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
@@ -8,9 +8,12 @@ import { applyIssueRelationshipMetadata, githubIssueToRecord, issueRecordToToolS
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, SafeToolError, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
 import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import {
+	assertAuthenticatedUserAllowedForCreate,
+	assertIssueCreatorAllowed,
 	assertNotAborted,
 	createIssueMeRuntime,
 	isAbortError,
+	issueCreatorScopeLabel,
 	normalizeIssueBody,
 	partialSuccessToolError,
 	partialSuccessToolText,
@@ -72,21 +75,14 @@ const ListSubIssuesParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ReorderSubIssuesToolParams {
-	parentNumber?: number;
-	orderedChildNumbers?: number[];
-}
+type ReorderSubIssuesToolParams = Static<typeof ReorderSubIssuesParams>;
 
 interface NormalizedReorderSubIssuesParams {
 	parentNumber: number;
 	orderedChildNumbers: number[];
 }
 
-interface ListSubIssuesToolParams {
-	issueNumber?: number;
-	limit?: number;
-	refreshCache?: boolean;
-}
+type ListSubIssuesToolParams = Static<typeof ListSubIssuesParams>;
 
 interface NormalizedListSubIssuesParams {
 	issueNumber: number;
@@ -120,7 +116,8 @@ export function registerCreateSubIssueTool(pi: ExtensionAPI, options: IssueMeToo
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const labels = params.labels === undefined ? sanitizeStringList(runtime.config.defaultLabels, "labels") : sanitizeStringList(params.labels, "labels");
 				const assignees = params.assignees === undefined ? sanitizeGitHubLoginList(runtime.config.defaultAssignees, "assignees") : sanitizeGitHubLoginList(params.assignees, "assignees");
-				const parentIssue = await runtime.client.ensureIssueOpen(params.parentNumber, signal);
+				const parentIssue = await fetchAllowedOpenIssue(runtime, params.parentNumber, "create_sub_issue_parent", signal);
+				await assertAuthenticatedUserAllowedForCreate(runtime, signal);
 				const childIssue = await runtime.client.createIssue({ title, body, labels, assignees }, signal);
 
 				let relationship: NativeSubIssueMutationResult;
@@ -151,9 +148,11 @@ export function registerAddSubIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				requireDistinctIssueNumbers(params.parentNumber, params.childNumber);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const parentIssue = await fetchAllowedOpenIssue(runtime, params.parentNumber, "add_sub_issue_parent", signal);
+				const childIssue = await fetchAllowedOpenIssue(runtime, params.childNumber, "add_sub_issue_child", signal);
 				let relationship: NativeSubIssueMutationResult;
 				try {
-					relationship = await runtime.client.addSubIssue(params.parentNumber, params.childNumber, signal);
+					relationship = await runtime.client.addSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
 					if (isClosedIssueMutationRefusal(error)) throw error;
 					return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "attach", error);
@@ -179,9 +178,11 @@ export function registerRemoveSubIssueTool(pi: ExtensionAPI, options: IssueMeToo
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				requireDistinctIssueNumbers(params.parentNumber, params.childNumber);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const parentIssue = await fetchAllowedOpenIssue(runtime, params.parentNumber, "remove_sub_issue_parent", signal);
+				const childIssue = await fetchAllowedOpenIssue(runtime, params.childNumber, "remove_sub_issue_child", signal);
 				let relationship: NativeSubIssueMutationResult;
 				try {
-					relationship = await runtime.client.removeSubIssue(params.parentNumber, params.childNumber, signal);
+					relationship = await runtime.client.removeSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
 					if (isClosedIssueMutationRefusal(error)) throw error;
 					return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "remove", error);
@@ -205,23 +206,28 @@ export function registerReorderSubIssuesTool(pi: ExtensionAPI, options: IssueMeT
 			executionMode: "sequential",
 			parameters: ReorderSubIssuesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeReorderSubIssuesParams(params as ReorderSubIssuesToolParams);
+				const normalized = normalizeReorderSubIssuesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				let reorder: NativeSubIssueReorderResult;
 				try {
-					reorder = await runtime.client.reorderSubIssues(normalized.parentNumber, normalized.orderedChildNumbers, signal);
+					const parentIssue = await fetchAllowedOpenIssue(runtime, normalized.parentNumber, "reorder_sub_issues_parent", signal);
+					const relationship = await runtime.client.listSubIssueRelationships(normalized.parentNumber, { limit: MAX_TOOL_ISSUES }, signal);
+					assertRelationshipCreatorScopeAllowed(runtime, relationship, "reorder_sub_issues_relationship");
+					reorder = await runtime.client.reorderSubIssuesByIssueResponseAndRelationship(parentIssue, relationship, normalized.orderedChildNumbers, signal);
+					assertRelationshipCreatorScopeAllowed(runtime, reorder.relationship, "reorder_sub_issues_result");
 				} catch (error) {
 					if (isClosedIssueMutationRefusal(error)) throw error;
 					return subIssueReorderFailure(runtime, normalized.parentNumber, error);
 				}
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
 				try {
 					const cache = await refreshRelationshipCache(ctx, runtime, reorder.relationship, MAX_TOOL_ISSUES, signal);
-					return toolText(formatReorderSubIssuesText(runtime.repository, reorder, cache), buildReorderSubIssuesDetails(runtime.repository, reorder, normalized, cache));
+					return toolText(formatReorderSubIssuesText(runtime.repository, reorder, cache), buildReorderSubIssuesDetails(runtime.repository, reorder, normalized, creatorScope, cache));
 				} catch (error) {
 					return partialSuccessToolText(
 						`${formatReorderSubIssuesText(runtime.repository, reorder, undefined)}\nNative sub-issue order changed on GitHub, but local cache refresh failed; run issueme_sync_issues before relying on local cache state.`,
 						error,
-						buildReorderSubIssuesDetails(runtime.repository, reorder, normalized),
+						buildReorderSubIssuesDetails(runtime.repository, reorder, normalized, creatorScope),
 						"sub_issue_cache_refresh_failed",
 						"partial_success",
 					);
@@ -244,21 +250,23 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 			executionMode: "sequential",
 			parameters: ListSubIssuesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListSubIssuesParams(params as ListSubIssuesToolParams);
+				const normalized = normalizeListSubIssuesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
 				const result = await runtime.client.listSubIssueRelationships(normalized.issueNumber, { limit: normalized.limit }, signal);
+				assertRelationshipCreatorScopeAllowed(runtime, result, "list_sub_issues");
 				if (!normalized.refreshCache) {
-					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, undefined), buildListSubIssuesDetails(runtime.repository, result, normalized));
+					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, undefined), buildListSubIssuesDetails(runtime.repository, result, normalized, creatorScope));
 				}
 				try {
 					const cache = await refreshRelationshipCache(ctx, runtime, result, normalized.limit, signal);
-					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, cache), buildListSubIssuesDetails(runtime.repository, result, normalized, cache));
+					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, cache), buildListSubIssuesDetails(runtime.repository, result, normalized, creatorScope, cache));
 				} catch (error) {
 					if (isAbortError(error)) throw error;
 					return partialSuccessToolText(
 						`${formatListSubIssuesText(runtime.repository, result, normalized, undefined)}\nLocal relationship inspection succeeded, but cache refresh failed; run issueme_sync_issues before relying on local cache metadata.`,
 						error,
-						buildListSubIssuesDetails(runtime.repository, result, normalized),
+						buildListSubIssuesDetails(runtime.repository, result, normalized, creatorScope),
 						"sub_issue_cache_refresh_failed",
 						"partial_success",
 					);
@@ -308,15 +316,46 @@ function normalizeSubIssueLimit(value: number | undefined): number {
 	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_ISSUES, defaultValue: 25 });
 }
 
+async function fetchAllowedOpenIssue(
+	runtime: IssueMeRuntime,
+	issueNumber: number,
+	operation: string,
+	signal?: AbortSignal,
+): Promise<GitHubIssueResponse> {
+	const issue = await runtime.client.ensureIssueOpen(issueNumber, signal);
+	assertIssueCreatorAllowed(runtime.config, issue, { repository: runtime.repository, operation, issueNumber });
+	return issue;
+}
+
+function assertRelationshipCreatorScopeAllowed(
+	runtime: IssueMeRuntime,
+	result: NativeSubIssueRelationshipResult,
+	operation: string,
+): void {
+	assertNativeSubIssueSummaryCreatorAllowed(runtime, result.issue, operation);
+	if (result.parentIssue) assertNativeSubIssueSummaryCreatorAllowed(runtime, result.parentIssue, `${operation}_parent`);
+	for (const child of result.subIssues) assertNativeSubIssueSummaryCreatorAllowed(runtime, child, `${operation}_child`);
+}
+
+function assertNativeSubIssueSummaryCreatorAllowed(
+	runtime: IssueMeRuntime,
+	issue: NativeSubIssueSummary,
+	operation: string,
+): void {
+	assertIssueCreatorAllowed(runtime.config, issue, { repository: runtime.repository, operation, issueNumber: issue.number });
+}
+
 function buildListSubIssuesDetails(
 	repository: string,
 	result: NativeSubIssueRelationshipResult,
 	params: NormalizedListSubIssuesParams,
+	creatorScope: string,
 	cache?: RelationshipCacheRefreshResult,
 ): IssueMeToolDetails {
 	const issue = relationshipResultToToolSummary(repository, result);
 	return {
 		repository,
+		creatorScope,
 		status: params.refreshCache ? "list_sub_issues_cache_refreshed" : "list_sub_issues",
 		issue,
 		issues: relationshipResultToRelatedSummaries(repository, result),
@@ -367,10 +406,12 @@ async function refreshRelationshipCache(
 	limit: number,
 	signal?: AbortSignal,
 ): Promise<RelationshipCacheRefreshResult> {
+	assertRelationshipCreatorScopeAllowed(runtime, result, "relationship_cache_refresh");
 	const targets = new Map<number, IssueRelationshipMetadata>();
 	targets.set(result.issue.number, relationshipMetadataFromResult(result));
 	if (result.parentIssue && result.parentIssue.number !== result.issue.number) {
 		const parentResult = await runtime.client.listSubIssueRelationships(result.parentIssue.number, { limit }, signal);
+		assertRelationshipCreatorScopeAllowed(runtime, parentResult, "relationship_cache_refresh_parent");
 		targets.set(parentResult.issue.number, relationshipMetadataFromResult(parentResult));
 	}
 	for (const child of result.subIssues) {
@@ -409,11 +450,13 @@ function buildReorderSubIssuesDetails(
 	repository: string,
 	result: NativeSubIssueReorderResult,
 	params: NormalizedReorderSubIssuesParams,
+	creatorScope: string,
 	cache?: RelationshipCacheRefreshResult,
 ): IssueMeToolDetails {
 	const relationship = result.relationship;
 	return {
 		repository,
+		creatorScope,
 		status: result.mutations.length > 0 ? "reorder_sub_issues" : "reorder_sub_issues_noop",
 		issue: relationshipResultToToolSummary(repository, relationship),
 		issues: relationshipResultToRelatedSummaries(repository, relationship),
@@ -488,8 +531,10 @@ async function cacheRelationshipAfterSuccess(
 	signal: AbortSignal | undefined,
 	text: string,
 ) {
+	const creatorScope = issueCreatorScopeLabel(runtime.config);
 	try {
 		const parentRelationship = await runtime.client.listSubIssueRelationships(relationship.parent.number, { limit: MAX_TOOL_ISSUES }, signal);
+		assertRelationshipCreatorScopeAllowed(runtime, parentRelationship, `sub_issue_${action}_cache_refresh`);
 		const parentRecord = await refreshIssueRecordWithRelationship(runtime, relationship.parent.number, relationshipMetadataFromResult(parentRelationship), signal);
 		const childRecord = await refreshIssueRecordWithRelationship(runtime, relationship.child.number, childRelationshipMetadata(relationship, action), signal);
 		const parentCached = await writeAndSummarizeIssue(ctx, runtime, parentRecord, signal);
@@ -498,6 +543,7 @@ async function cacheRelationshipAfterSuccess(
 		const issues = [parentCached.summary, childCached.summary];
 		return toolText(`${text}\nLocal files: ${paths.length ? paths.join(", ") : "none"}`, {
 			repository: runtime.repository,
+			creatorScope,
 			issue: childCached.summary,
 			issues,
 			paths,
@@ -513,6 +559,7 @@ async function cacheRelationshipAfterSuccess(
 			error,
 			{
 				repository: runtime.repository,
+				creatorScope,
 				issue: nativeIssueToToolSummary(runtime.repository, relationship.child),
 				issues: [nativeIssueToToolSummary(runtime.repository, relationship.parent), nativeIssueToToolSummary(runtime.repository, relationship.child)],
 				changedFields: ["sub_issues"],
@@ -532,6 +579,7 @@ async function cacheCreatedIssueAfterAttachFailure(
 	signal?: AbortSignal,
 ) {
 	const record = githubIssueToRecord(runtime.client.repository, childIssue, []);
+	const creatorScope = issueCreatorScopeLabel(runtime.config);
 	const safeAttachError = subIssueAttachPartialSuccessError(attachError, record, parentNumber);
 	const guidance = subIssueAttachPartialSuccessGuidance(parentNumber, record.number);
 	try {
@@ -540,6 +588,7 @@ async function cacheCreatedIssueAfterAttachFailure(
 			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.\nURL: ${record.html_url}\nLocal file: ${path}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
+				creatorScope,
 				result: "partial_success",
 				issue: summary,
 				issues: [summary],
@@ -557,6 +606,7 @@ async function cacheCreatedIssueAfterAttachFailure(
 			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references. Local cache update also failed; run issueme_sync_issues before relying on local cache state.\nURL: ${record.html_url}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
+				creatorScope,
 				result: "partial_success",
 				issue: issueRecordToToolSummary(record),
 				issues: [issueRecordToToolSummary(record)],
@@ -606,6 +656,7 @@ function subIssueMutationFailure(runtime: IssueMeRuntime, parentNumber: number, 
 	const verb = action === "attach" ? "attach issue as a native sub-issue" : "remove native sub-issue relationship";
 	return toolText(`Failed to ${verb} (#${childNumber} under #${parentNumber}). IssueMe did not fall back to body-only references.\nError: ${safeError.message}`, {
 		repository: runtime.repository,
+		creatorScope: issueCreatorScopeLabel(runtime.config),
 		cacheUpdated: false,
 		needsSync: false,
 		status: `sub_issue_${action}_failed`,
@@ -618,6 +669,7 @@ function subIssueReorderFailure(runtime: IssueMeRuntime, parentNumber: number, e
 	const safeError = safeToolError(error);
 	return toolText(`Failed to reorder native sub-issues under #${parentNumber}. IssueMe did not fall back to body-only ordering.\nError: ${safeError.message}`, {
 		repository: runtime.repository,
+		creatorScope: issueCreatorScopeLabel(runtime.config),
 		cacheUpdated: false,
 		needsSync: false,
 		status: "sub_issue_reorder_failed",
@@ -645,6 +697,7 @@ function nativeIssueToRelationshipSummary(issue: NativeSubIssueSummary): IssueRe
 		number: issue.number,
 		title: issue.title,
 		state: issue.state,
+		...(issue.creator ? { creator: issue.creator } : {}),
 		html_url: issue.html_url,
 	};
 }
@@ -655,6 +708,7 @@ function nativeIssueToToolSummary(repository: string, issue: NativeSubIssueSumma
 		number: issue.number,
 		title: issue.title,
 		state: issue.state,
+		...(issue.creator ? { creator: issue.creator } : {}),
 		labels: [],
 		assignees: [],
 		html_url: issue.html_url,

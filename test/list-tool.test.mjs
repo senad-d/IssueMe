@@ -8,7 +8,7 @@ import { registerListIssuesTool } from "../src/tools/list-issues.ts";
 
 const TOKEN = "ghp_list_tool_secret";
 const REPOSITORY = "owner/repo";
-const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+const config = { issueDirectory: "issues", allowedIssueCreator: "all", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
 
 function fakePi() {
 	const tools = new Map();
@@ -22,11 +22,11 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-list-tool-"));
 }
 
-async function executeListTool(fetchFn, params) {
+async function executeListTool(fetchFn, params, runtimeConfig = config) {
 	const pi = fakePi();
 	registerListIssuesTool(pi, {
 		runtime: {
-			config,
+			config: runtimeConfig,
 			repository: REPOSITORY,
 			token: TOKEN,
 			fetchFn,
@@ -44,6 +44,7 @@ function issue(number, overrides = {}) {
 		title: `Issue ${number}`,
 		state: "open",
 		body: `Private body ${TOKEN}`,
+		user: { login: "octocat" },
 		labels: [{ name: "bug" }],
 		assignees: [{ login: "octocat" }],
 		milestone: null,
@@ -110,6 +111,70 @@ test("issueme_list_issues uses safe GitHub search mode and reports truncation", 
 	assert.match(q, /crash/);
 	assert.match(q, /author:octocat/);
 	assertNoPrivateBodyOrToken(result);
+});
+
+test("restricted issueme_list_issues applies creator scope to list and search", async () => {
+	const restricted = { ...config, allowedIssueCreator: "hubot" };
+	const listCalls = [];
+	const listResult = await executeListTool(async (url, init) => {
+		listCalls.push({ url: new URL(url.toString()), init });
+		return jsonResponse([
+			issue(10, { title: "Allowed", user: { login: "Hubot" } }),
+			issue(11, { title: "Disallowed", user: { login: "intruder" } }),
+		]);
+	}, { state: "open", limit: 10 }, restricted);
+
+	assert.equal(listCalls[0].url.searchParams.get("creator"), "hubot");
+	assert.deepEqual(listResult.details.issues.map((item) => item.number), [10]);
+	assert.equal(listResult.details.creatorScope, "hubot");
+	assert.match(listResult.content[0].text, /creator scope: hubot/);
+	assert.match(listResult.content[0].text, /by Hubot/);
+	assert.doesNotMatch(listResult.content[0].text, /Disallowed|intruder/);
+
+	const searchCalls = [];
+	await executeListTool(async (url, init) => {
+		searchCalls.push({ url: new URL(url.toString()), init });
+		return jsonResponse({ total_count: 1, incomplete_results: false, items: [issue(12, { user: { login: "hubot" } })] });
+	}, { query: "crash", state: "open", limit: 5 }, restricted);
+	const q = searchCalls[0].url.searchParams.get("q");
+	assert.match(q, /author:hubot/);
+});
+
+test("restricted issueme_list_issues rejects conflicting creator filters", async () => {
+	const restricted = { ...config, allowedIssueCreator: "hubot" };
+	let calls = 0;
+	await assert.rejects(
+		() => executeListTool(async () => {
+			calls += 1;
+			return jsonResponse([]);
+		}, { creator: "intruder" }, restricted),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.allowedIssueCreator === "hubot",
+	);
+	await assert.rejects(
+		() => executeListTool(async () => {
+			calls += 1;
+			return jsonResponse({ total_count: 0, incomplete_results: false, items: [] });
+		}, { query: "author:intruder crash" }, restricted),
+		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "query",
+	);
+	assert.equal(calls, 0);
+});
+
+test("invalid configured allowedIssueCreator fails closed before list fetch", async () => {
+	let calls = 0;
+	await assert.rejects(
+		() => executeListTool(async () => {
+			calls += 1;
+			return jsonResponse([issue(99, { user: { login: "intruder" } })]);
+		}, { state: "open" }, { ...config, allowedIssueCreator: "bad login" }),
+		(error) => {
+			assert.equal(error?.code, "config_tui_invalid_setting");
+			assert.equal(error.safeDetails?.field, "allowedIssueCreator");
+			assert.match(error.message, /Allowed issue creator/);
+			return true;
+		},
+	);
+	assert.equal(calls, 0);
 });
 
 test("issueme_list_issues validates updated-since as an explicit ISO date or timestamp", async () => {

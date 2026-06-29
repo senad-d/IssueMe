@@ -61,6 +61,7 @@ export const ISSUEME_ERROR_CODES = {
 	GITHUB_DEVELOPMENT_LINKS_UNSUPPORTED: "github_development_links_unsupported",
 	COMMENT_ISSUE_MISMATCH: "comment_issue_mismatch",
 	CLOSED_ISSUE_MUTATION_REFUSED: "closed_issue_mutation_refused",
+	ISSUE_CREATOR_NOT_ALLOWED: "issue_creator_not_allowed",
 	ISSUE_FILE_PARSE_FAILED: "issue_file_parse_failed",
 	ISSUE_FILE_INVALID: "issue_file_invalid",
 	ISSUE_CACHE_REPOSITORY_COLLISION: "issue_cache_repository_collision",
@@ -242,6 +243,10 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 	[ISSUEME_ERROR_CODES.CLOSED_ISSUE_MUTATION_REFUSED]: {
 		category: "closed_issue",
 		recoveryHint: DEFAULT_RECOVERY_HINTS.closed_issue,
+	},
+	[ISSUEME_ERROR_CODES.ISSUE_CREATOR_NOT_ALLOWED]: {
+		category: "validation",
+		recoveryHint: "Change /issueme Cache > Allowed issue creator to all or the intended GitHub username, then rerun the operation.",
 	},
 	[ISSUEME_ERROR_CODES.ISSUE_FILE_PARSE_FAILED]: {
 		category: "local_cache",

@@ -1,6 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_MILESTONES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
@@ -21,12 +21,7 @@ const ListMilestonesParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListMilestonesToolParams {
-	state?: GitHubMilestoneListState;
-	sort?: GitHubMilestoneListSort;
-	direction?: GitHubMilestoneListDirection;
-	limit?: number;
-}
+type ListMilestonesToolParams = Static<typeof ListMilestonesParams>;
 
 interface NormalizedListMilestonesParams {
 	state: GitHubMilestoneListState;
@@ -47,7 +42,7 @@ export function registerListMilestonesTool(pi: ExtensionAPI, options: IssueMeToo
 			],
 			parameters: ListMilestonesParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListMilestonesParams(params as ListMilestonesToolParams);
+				const normalized = normalizeListMilestonesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const result = await runtime.client.listMilestones(normalized, signal);
 				const milestones = summarizeMilestones(result.milestones);

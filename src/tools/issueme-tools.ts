@@ -1,4 +1,5 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "typebox";
 
 import { registerAssignIssueTool } from "./assign-issue.ts";
 import { registerBulkIssueOperationsTool } from "./bulk-issues.ts";
@@ -19,28 +20,54 @@ import { registerReopenIssueTool } from "./reopen-issue.ts";
 import { registerSubIssueTools } from "./sub-issue.ts";
 import { registerSyncIssuesTool } from "./sync-issues.ts";
 import { registerUpdateIssueTool } from "./update-issue.ts";
-import type { IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { issueMeResultPolicyPromptGuideline, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 export function registerIssueMeTools(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
-	registerSyncIssuesTool(pi, options);
-	registerListIssuesTool(pi, options);
-	registerListLabelsTool(pi, options);
-	registerListMilestonesTool(pi, options);
-	registerListAssigneesTool(pi, options);
-	registerProjectTools(pi, options);
-	registerManageLabelTool(pi, options);
-	registerManageMilestoneTool(pi, options);
-	registerCreateIssueTool(pi, options);
-	registerSubIssueTools(pi, options);
-	registerListIssueDevelopmentLinksTool(pi, options);
-	registerGetIssueTool(pi, options);
-	registerUpdateIssueTool(pi, options);
-	registerCommentIssueTool(pi, options);
-	registerUpdateCommentTool(pi, options);
-	registerDeleteCommentTool(pi, options);
-	registerAssignIssueTool(pi, options);
-	registerLabelIssueTool(pi, options);
-	registerReopenIssueTool(pi, options);
-	registerCloseIssueTool(pi, options);
-	registerBulkIssueOperationsTool(pi, options);
+	const piWithResultPolicy = withIssueMeResultPolicyPrompt(pi);
+	registerSyncIssuesTool(piWithResultPolicy, options);
+	registerListIssuesTool(piWithResultPolicy, options);
+	registerListLabelsTool(piWithResultPolicy, options);
+	registerListMilestonesTool(piWithResultPolicy, options);
+	registerListAssigneesTool(piWithResultPolicy, options);
+	registerProjectTools(piWithResultPolicy, options);
+	registerManageLabelTool(piWithResultPolicy, options);
+	registerManageMilestoneTool(piWithResultPolicy, options);
+	registerCreateIssueTool(piWithResultPolicy, options);
+	registerSubIssueTools(piWithResultPolicy, options);
+	registerListIssueDevelopmentLinksTool(piWithResultPolicy, options);
+	registerGetIssueTool(piWithResultPolicy, options);
+	registerUpdateIssueTool(piWithResultPolicy, options);
+	registerCommentIssueTool(piWithResultPolicy, options);
+	registerUpdateCommentTool(piWithResultPolicy, options);
+	registerDeleteCommentTool(piWithResultPolicy, options);
+	registerAssignIssueTool(piWithResultPolicy, options);
+	registerLabelIssueTool(piWithResultPolicy, options);
+	registerReopenIssueTool(piWithResultPolicy, options);
+	registerCloseIssueTool(piWithResultPolicy, options);
+	registerBulkIssueOperationsTool(piWithResultPolicy, options);
+}
+
+function withIssueMeResultPolicyPrompt(pi: ExtensionAPI): ExtensionAPI {
+	function registerToolWithResultPolicy<TParams extends TSchema, TDetails = unknown, TState = any>(tool: ToolDefinition<TParams, TDetails, TState>) {
+		pi.registerTool<TParams, TDetails, TState>(withResultPolicyGuideline(tool));
+	}
+
+	return new Proxy(pi, {
+		get(target, property, receiver) {
+			if (property === "registerTool") return registerToolWithResultPolicy;
+			return Reflect.get(target, property, receiver);
+		},
+	});
+}
+
+function withResultPolicyGuideline<TParams extends TSchema, TDetails, TState>(
+	tool: ToolDefinition<TParams, TDetails, TState>,
+): ToolDefinition<TParams, TDetails, TState> {
+	return {
+		...tool,
+		promptGuidelines: [
+			...(tool.promptGuidelines ?? []),
+			issueMeResultPolicyPromptGuideline(tool.name),
+		],
+	};
 }

@@ -2,7 +2,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { githubIssueToRecord } from "../issues/format.ts";
-import { createIssueMeRuntime, normalizeIssueBody, partialSuccessToolText, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { assertAuthenticatedUserAllowedForCreate, createIssueMeRuntime, issueCreatorScopeLabel, normalizeIssueBody, partialSuccessToolText, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const CreateIssueParams = Type.Object(
 	{
@@ -32,12 +32,14 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const labels = params.labels === undefined ? sanitizeStringList(runtime.config.defaultLabels, "labels") : sanitizeStringList(params.labels, "labels");
 				const assignees = params.assignees === undefined ? sanitizeGitHubLoginList(runtime.config.defaultAssignees, "assignees") : sanitizeGitHubLoginList(params.assignees, "assignees");
+				await assertAuthenticatedUserAllowedForCreate(runtime, signal);
 				const issue = await runtime.client.createIssue({ title, body, labels, assignees }, signal);
 				const record = githubIssueToRecord(runtime.client.repository, issue, []);
 				try {
 					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 					return toolText(`Created issue #${record.number}: ${record.title}\nURL: ${record.html_url}\nLocal file: ${path}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						paths: path ? [path] : [],
 						cacheUpdated: true,
@@ -48,7 +50,8 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						error,
 						{
 							repository: runtime.repository,
-							issue: { repository: runtime.repository, number: record.number, title: record.title, state: record.state, labels: record.labels, assignees: record.assignees, html_url: record.html_url },
+							creatorScope: issueCreatorScopeLabel(runtime.config),
+							issue: { repository: runtime.repository, number: record.number, title: record.title, state: record.state, ...(record.creator ? { creator: record.creator } : {}), labels: record.labels, assignees: record.assignees, html_url: record.html_url },
 						},
 					);
 				}

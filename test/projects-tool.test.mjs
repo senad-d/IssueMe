@@ -96,7 +96,7 @@ test("issueme_list_projects discovers repository Projects v2 boards read-only", 
 	assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
 	assert.match(calls[0].body.query, /repository\(owner: \$owner, name: \$repo\)/);
 	assert.match(calls[0].body.query, /projectsV2\(first: \$first, after: \$after, query: \$query\) \{\s*nodes \{ \.\.\.IssueMeProjectV2Summary \}\s*pageInfo \{ hasNextPage endCursor \}/s);
-	assert.doesNotMatch(calls[0].body.query, /\.\.\. on Repository/);
+	assert.match(calls[0].body.query, /\.\.\. on Repository \{ nameWithOwner \}/);
 	assert.deepEqual(calls[0].body.variables, { owner: "owner", repo: "repo", first: 5, query: "Roadmap" });
 	assertNoToken(result);
 });
@@ -294,13 +294,17 @@ test("issueme_add_issue_to_project adds or confirms an issue project item idempo
 		const path = new URL(url.toString()).pathname;
 		calls.push({ path, method: init.method, body });
 		if (path === "/repos/owner/repo/issues/7") return jsonResponse(openIssue());
-		if (path === "/graphql") {
-			assert.equal(body.operationName, "IssueMeAddIssueToProjectV2");
+		if (path === "/graphql" && body.operationName === "IssueMeValidateProjectV2ForAdd") {
+			assert.match(body.query, /node\(id: \$projectId\)/);
+			assert.deepEqual(body.variables, { projectId: "PVT_1" });
+			return jsonResponse({ data: { node: project(1, "Roadmap") } });
+		}
+		if (path === "/graphql" && body.operationName === "IssueMeAddIssueToProjectV2") {
 			assert.match(body.query, /addProjectV2ItemById/);
 			assert.deepEqual(body.variables, { projectId: "PVT_1", contentId: "I_7" });
 			return jsonResponse({ data: { addProjectV2ItemById: { item: projectItem() } } });
 		}
-		throw new Error(`Unexpected request ${init.method} ${path}`);
+		throw new Error(`Unexpected request ${init.method} ${path} ${body?.operationName ?? ""}`);
 	}, { issueNumber: 7, projectId: "PVT_1" });
 
 	assert.equal(result.details.status, "add_issue_to_project");
@@ -309,8 +313,102 @@ test("issueme_add_issue_to_project adds or confirms an issue project item idempo
 	assert.equal(result.details.project.title, "Roadmap");
 	assert.equal(result.details.cacheUpdated, false);
 	assert.match(result.content[0].text, /already on the project/);
-	assert.deepEqual(calls.map((call) => [call.method, call.path]), [["GET", "/repos/owner/repo/issues/7"], ["POST", "/graphql"]]);
+	assert.deepEqual(calls.map((call) => call.body?.operationName ?? call.path), ["/repos/owner/repo/issues/7", "IssueMeValidateProjectV2ForAdd", "IssueMeAddIssueToProjectV2"]);
 	assertNoToken(result);
+});
+
+test("issueme_add_issue_to_project preflights repository, organization, and user project identity", async () => {
+	const scenarios = [
+		{
+			name: "repository",
+			params: { issueNumber: 7, projectId: "PVT_repo", scope: "repository" },
+			board: project(11, "Repo Roadmap", { id: "PVT_repo", owner: { __typename: "Repository", nameWithOwner: REPOSITORY }, url: "https://github.com/owner/repo/projects/11" }),
+			expectedOwner: "repository:owner/repo",
+		},
+		{
+			name: "organization",
+			params: { issueNumber: 7, projectId: "PVT_org", scope: "organization", owner: "acme" },
+			board: project(12, "Org Roadmap", { id: "PVT_org", owner: { __typename: "Organization", login: "acme" }, url: "https://github.com/orgs/acme/projects/12" }),
+			expectedOwner: "organization:acme",
+		},
+		{
+			name: "user",
+			params: { issueNumber: 7, projectId: "PVT_user", scope: "user", owner: "octocat" },
+			board: project(13, "User Roadmap", { id: "PVT_user", owner: { __typename: "User", login: "octocat" }, url: "https://github.com/users/octocat/projects/13" }),
+			expectedOwner: "user:octocat",
+		},
+	];
+
+	for (const scenario of scenarios) {
+		const calls = [];
+		const result = await executeProjectTool("issueme_add_issue_to_project", async (url, init) => {
+			const body = init.body === undefined ? undefined : JSON.parse(init.body);
+			const path = new URL(url.toString()).pathname;
+			calls.push({ path, operationName: body?.operationName });
+			if (path === "/repos/owner/repo/issues/7") return jsonResponse(openIssue());
+			if (path === "/graphql" && body.operationName === "IssueMeValidateProjectV2ForAdd") {
+				assert.deepEqual(body.variables, { projectId: scenario.params.projectId });
+				return jsonResponse({ data: { node: scenario.board } });
+			}
+			if (path === "/graphql" && body.operationName === "IssueMeAddIssueToProjectV2") {
+				assert.deepEqual(body.variables, { projectId: scenario.params.projectId, contentId: "I_7" });
+				return jsonResponse({ data: { addProjectV2ItemById: { item: projectItem({ project: scenario.board }) } } });
+			}
+			throw new Error(`Unexpected ${scenario.name} request ${init.method} ${path} ${body?.operationName ?? ""}`);
+		}, scenario.params);
+
+		assert.equal(`${result.details.project.ownerType}:${result.details.project.owner}`, scenario.expectedOwner);
+		assert.deepEqual(calls.map((call) => call.operationName ?? call.path), ["/repos/owner/repo/issues/7", "IssueMeValidateProjectV2ForAdd", "IssueMeAddIssueToProjectV2"]);
+		assertNoToken(result);
+	}
+});
+
+test("issueme_add_issue_to_project refuses inaccessible, wrong-owner, and closed projects before mutation", async () => {
+	const scenarios = [
+		{
+			name: "inaccessible",
+			params: { issueNumber: 7, projectId: "PVT_missing" },
+			node: null,
+			message: /accessible GitHub Projects v2 board/,
+		},
+		{
+			name: "default wrong owner",
+			params: { issueNumber: 7, projectId: "PVT_intruder" },
+			node: project(20, "Intruder Roadmap", { id: "PVT_intruder", owner: { __typename: "User", login: "intruder" } }),
+			message: /current repository or the current repository owner/,
+		},
+		{
+			name: "explicit wrong owner",
+			params: { issueNumber: 7, projectId: "PVT_wrong_org", scope: "organization", owner: "acme" },
+			node: project(21, "Other Org Roadmap", { id: "PVT_wrong_org", owner: { __typename: "Organization", login: "evil" } }),
+			message: /owner\/scope/,
+		},
+		{
+			name: "closed",
+			params: { issueNumber: 7, projectId: "PVT_closed" },
+			node: project(22, "Closed Roadmap", { id: "PVT_closed", closed: true }),
+			message: /closed GitHub Projects v2 board/,
+		},
+	];
+
+	for (const scenario of scenarios) {
+		const calls = [];
+		await assert.rejects(
+			() => executeProjectTool("issueme_add_issue_to_project", async (url, init) => {
+				const path = new URL(url.toString()).pathname;
+				const body = init.body === undefined ? undefined : JSON.parse(init.body);
+				calls.push({ path, operationName: body?.operationName });
+				if (path === "/repos/owner/repo/issues/7") return jsonResponse(openIssue());
+				if (path === "/graphql" && body.operationName === "IssueMeValidateProjectV2ForAdd") {
+					return jsonResponse({ data: { node: scenario.node } });
+				}
+				throw new Error(`Unexpected ${scenario.name} request ${init.method} ${path} ${body?.operationName ?? ""}`);
+			}, scenario.params),
+			(error) => error?.code === "invalid_tool_input" && scenario.message.test(error.message),
+		);
+		assert.deepEqual(calls.map((call) => call.operationName ?? call.path), ["/repos/owner/repo/issues/7", "IssueMeValidateProjectV2ForAdd"], scenario.name);
+		assert.equal(calls.some((call) => call.operationName === "IssueMeAddIssueToProjectV2"), false, scenario.name);
+	}
 });
 
 test("issueme_update_project_item updates supported Projects v2 field value types", async () => {
@@ -417,6 +515,7 @@ test("Projects v2 item tools reject invalid inputs before live mutations", async
 	for (const [toolName, params, fieldPattern] of [
 		["issueme_get_project_fields", { projectId: "PVT_1\nPVT_2" }, /projectId/],
 		["issueme_add_issue_to_project", { issueNumber: 7, projectId: "P".repeat(513) }, /projectId/],
+		["issueme_add_issue_to_project", { issueNumber: 7, projectId: "PVT_1", owner: "acme" }, /scope/],
 		["issueme_update_project_item", { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status\nnext", valueType: "single_select", singleSelectOptionId: "opt_todo" }, /fieldId/],
 		["issueme_update_project_item", { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status", valueType: "single_select", singleSelectOptionId: "opt\nnext" }, /singleSelectOptionId/],
 	]) {

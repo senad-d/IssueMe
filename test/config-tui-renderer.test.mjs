@@ -11,6 +11,7 @@ const plainTheme = { fg: (_role, text) => text, bold: (text) => text };
 function sampleConfig(overrides = {}) {
 	return {
 		issueDirectory: "issues",
+		allowedIssueCreator: "all",
 		defaultLabels: [],
 		defaultAssignees: [],
 		defaultSkillPath: null,
@@ -112,9 +113,10 @@ test("configuration TUI renderer covers wide two-pane mode", () => {
 	assert.match(text, /┬/);
 	assert.match(text, /┴/);
 	assert.match(text, /▶ Cache/);
-	assert.match(text, /CACHE\s+1\/1/);
+	assert.match(text, /CACHE\s+1\/2/);
 	assert.match(text, /Issue directory\s+issues/);
-	assert.match(text, /1\/1 • Project-local directory/);
+	assert.match(text, /Allowed issue creator\s+all│/);
+	assert.match(text, /1\/2 • Project-local directory/);
 });
 
 test("configuration TUI renderer covers narrow category and settings modes", () => {
@@ -131,8 +133,9 @@ test("configuration TUI renderer covers narrow category and settings modes", () 
 	assert.match(categoryText, /Defaults/);
 	assert.doesNotMatch(categoryText, /Issue directory\s+issues/);
 	assert.doesNotMatch(settingsText, /┬|┴/);
-	assert.match(settingsText, /CACHE\s+1\/1/);
+	assert.match(settingsText, /CACHE\s+1\/2/);
 	assert.match(settingsText, /▶ Issue directory\s+issues/);
+	assert.match(settingsText, /Allowed issue creator\s+all│/);
 	assert.doesNotMatch(settingsText, /Defaults\s*\n/);
 });
 
@@ -147,7 +150,7 @@ test("configuration TUI renderer covers tiny no-border fallback", () => {
 	assert.match(text, /^Configuration/m);
 	assert.match(text, /^Project/m);
 	assert.match(text, /^Issue directory: iss/m);
-	assert.match(text, /^s save  Esc\/q quit/m);
+	assert.match(text, /^Esc\/q save & exit/m);
 });
 
 test("configuration TUI renderer clips and pads ANSI-styled lines by visible width", () => {
@@ -217,7 +220,7 @@ test("configuration TUI renderer uses warning role for empty search results", ()
 	assert.ok(roles.includes("warning"));
 });
 
-test("configuration TUI keyboard input covers navigation, search, edit save, and edit cancel", async () => {
+test("configuration TUI keyboard input covers navigation, search, auto-save exit, and edit cancel", async () => {
 	const root = await mkdtemp(join(tmpdir(), "issueme-config-tui-"));
 	let renderRequests = 0;
 	const saved = [];
@@ -251,20 +254,50 @@ test("configuration TUI keyboard input covers navigation, search, edit save, and
 	for (const char of "issue-cache") editComponent.handleInput(char);
 	assert.match(editComponent.render(80).join("\n"), /Editing issue-cache/);
 	editComponent.handleInput("\r");
-	assert.match(editComponent.render(80).join("\n"), /Setting updated/);
+	assert.match(editComponent.render(80).join("\n"), /saves automatically on exit/);
+	assert.match(editComponent.render(80).join("\n"), /Modified/);
 	assert.match(editComponent.render(80).join("\n"), /Issue directory\s+issue-cache/);
-	editComponent.handleInput("s");
+	editComponent.handleInput("q");
 	assert.equal(saved.at(-1).issueDirectory, "issue-cache");
 
 	const cancelSaved = [];
 	const cancelComponent = new IssueMeConfigTui(root, sampleConfig(), plainTheme, (result) => cancelSaved.push(result), () => { renderRequests += 1; }, { focus: "settings" });
 	cancelComponent.handleInput("\r");
 	for (const char of "-draft") cancelComponent.handleInput(char);
-	assert.match(cancelComponent.render(80).join("\n"), /Editing issues-draft/);
+	assert.match(cancelComponent.render(80).join("\n"), /Editing -draft/);
 	cancelComponent.handleInput("\u001b");
 	assert.match(cancelComponent.render(80).join("\n"), /Edit cancelled/);
 	assert.doesNotMatch(cancelComponent.render(80).join("\n"), /issues-draft/);
-	cancelComponent.handleInput("s");
-	assert.equal(cancelSaved.at(-1).issueDirectory, "issues");
+	cancelComponent.handleInput("q");
+	assert.equal(cancelSaved.at(-1), undefined);
 	assert.ok(renderRequests > 0);
+});
+
+test("configuration TUI edits and validates the allowed issue creator cache setting", async () => {
+	const root = await mkdtemp(join(tmpdir(), "issueme-config-tui-creator-"));
+	const saved = [];
+	const component = new IssueMeConfigTui(root, sampleConfig(), plainTheme, (result) => saved.push(result), () => {}, {
+		focus: "settings",
+		selectedSettingByCategory: [1, 0, 0],
+	});
+
+	component.handleInput("\r");
+	for (const char of "Senad-D") component.handleInput(char);
+	component.handleInput("\r");
+	assert.match(component.render(80).join("\n"), /Allowed issue creator\s+Senad-D/);
+	component.handleInput("\u001b");
+	assert.equal(saved.at(-1).allowedIssueCreator, "Senad-D");
+
+	const invalidSaved = [];
+	const invalid = new IssueMeConfigTui(root, sampleConfig(), plainTheme, (result) => invalidSaved.push(result), () => {}, {
+		focus: "settings",
+		selectedSettingByCategory: [1, 0, 0],
+	});
+	invalid.handleInput("\r");
+	for (const char of "octocat hubot") invalid.handleInput(char);
+	invalid.handleInput("\r");
+	assert.match(invalid.render(80).join("\n"), /Allowed issue creator must be all or one GitHub username/);
+	invalid.handleInput("\u001b");
+	invalid.handleInput("q");
+	assert.equal(invalidSaved.at(-1), undefined);
 });

@@ -105,7 +105,7 @@ async function openConfig(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promi
 async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?: string): Promise<void> {
 	const trusted = ctx.isProjectTrusted();
 	const projectRoot = trusted ? (await resolveIssueMeProjectRoot(ctx.cwd)).root : resolve(ctx.cwd);
-	const config = trusted ? await loadIssueMeConfig(projectRoot) : DEFAULT_ISSUEME_CONFIG;
+	const { config, configError } = trusted ? await loadInfoConfig(projectRoot) : { config: DEFAULT_ISSUEME_CONFIG, configError: undefined };
 	const tokenStatus = await getGitHubTokenStatus(projectRoot, process.env, { readProjectEnv: trusted });
 	let repositoryStatus: string;
 	try {
@@ -115,15 +115,24 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 		repositoryStatus = error instanceof Error ? error.message : String(error);
 	}
 
-	const cacheResult = trusted ? await listIssueFileEntries(projectRoot, config) : { files: [], invalidFiles: [] };
+	const configUnavailable = "unavailable until config is fixed";
+	const cacheResult = trusted && !configError ? await listIssueFileEntries(projectRoot, config) : { files: [], invalidFiles: [] };
+	const displayedIssueDirectory = configError ? configUnavailable : config.issueDirectory;
+	const displayedAllowedIssueCreator = configError ? configUnavailable : config.allowedIssueCreator;
+	const displayedDefaultSkillPath = configError ? configUnavailable : config.defaultSkillPath;
+	const combinedWarning = [warning, configError ? `IssueMe config error: ${configError.message}` : undefined]
+		.filter((line): line is string => line !== undefined && line.length > 0)
+		.join("\n") || undefined;
 	const text = renderIssueMeInfo({
-		warning,
+		warning: combinedWarning,
 		trusted,
 		repositoryStatus,
 		tokenStatus: tokenStatus.present ? `present (${tokenStatus.source})` : tokenStatus.error ? `error (${tokenStatus.message})` : "missing",
 		configPath: DEFAULT_CONFIG_PATH,
-		issueDirectory: config.issueDirectory,
-		defaultSkillPath: config.defaultSkillPath,
+		configStatus: configError ? `error (${configError.message})` : undefined,
+		issueDirectory: displayedIssueDirectory,
+		allowedIssueCreator: displayedAllowedIssueCreator,
+		defaultSkillPath: displayedDefaultSkillPath,
 		cachedIssues: cacheResult.files.length,
 		invalidCacheFiles: cacheResult.invalidFiles.length,
 	});
@@ -132,18 +141,44 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 		display: true,
 		content: text,
 		details: {
-			warning,
+			warning: combinedWarning,
 			trusted,
 			repositoryStatus,
 			tokenPresent: tokenStatus.present,
 			configPath: DEFAULT_CONFIG_PATH,
-			issueDirectory: config.issueDirectory,
-			defaultSkillPath: config.defaultSkillPath,
+			configStatus: configError ? "error" : "ok",
+			...(configError ? { configError: safeConfigErrorDetails(configError) } : {}),
+			issueDirectory: displayedIssueDirectory,
+			allowedIssueCreator: displayedAllowedIssueCreator,
+			defaultSkillPath: displayedDefaultSkillPath,
 			cachedIssues: cacheResult.files.length,
 			invalidCacheFiles: cacheResult.invalidFiles.length,
 			tools: [...ISSUEME_TOOL_NAMES],
 		},
 	});
+}
+
+async function loadInfoConfig(projectRoot: string): Promise<{ config: IssueMeConfig; configError?: IssueMeError }> {
+	try {
+		return { config: await loadIssueMeConfig(projectRoot) };
+	} catch (error) {
+		return { config: DEFAULT_ISSUEME_CONFIG, configError: normalizeConfigError(error) };
+	}
+}
+
+function normalizeConfigError(error: unknown): IssueMeError {
+	if (error instanceof IssueMeError) return error;
+	return new IssueMeError(ISSUEME_ERROR_CODES.CONFIG_READ_FAILED, "Unable to read IssueMe config.");
+}
+
+function safeConfigErrorDetails(error: IssueMeError): Record<string, unknown> {
+	return {
+		code: error.code,
+		category: error.category,
+		message: error.message,
+		recoveryHint: error.recoveryHint,
+		details: error.safeDetails,
+	};
 }
 
 export function renderIssueMeInfo(input: {
@@ -152,7 +187,9 @@ export function renderIssueMeInfo(input: {
 	repositoryStatus: string;
 	tokenStatus: string;
 	configPath: string;
+	configStatus?: string;
 	issueDirectory: string;
+	allowedIssueCreator: string;
 	defaultSkillPath: string | null;
 	cachedIssues: number;
 	invalidCacheFiles: number;
@@ -170,7 +207,9 @@ export function renderIssueMeInfo(input: {
 		`Repository: ${input.repositoryStatus}`,
 		`Token: ${input.tokenStatus}`,
 		`Config path: ${input.configPath}`,
+		input.configStatus ? `Config status: ${input.configStatus}` : undefined,
 		`Issue directory: ${input.issueDirectory}`,
+		`Allowed issue creator: ${input.allowedIssueCreator}`,
 		`Default skill path: ${input.defaultSkillPath ?? "not set"}`,
 		`Cached open issue files: ${input.cachedIssues}`,
 		`Invalid cache files: ${input.invalidCacheFiles}`,

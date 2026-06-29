@@ -13,6 +13,7 @@ import { registerIssueMeTools } from "../src/tools/issueme-tools.ts";
 function sampleConfig(overrides = {}) {
 	return {
 		issueDirectory: "issues",
+		allowedIssueCreator: "all",
 		defaultLabels: [],
 		defaultAssignees: [],
 		defaultSkillPath: null,
@@ -118,6 +119,7 @@ test("renderIssueMeInfo is one combined help/status surface", () => {
 		tokenStatus: "missing",
 		configPath: ".pi/agent/issueme.json",
 		issueDirectory: "issues",
+		allowedIssueCreator: "all",
 		defaultSkillPath: null,
 		cachedIssues: 0,
 		invalidCacheFiles: 0,
@@ -126,6 +128,7 @@ test("renderIssueMeInfo is one combined help/status surface", () => {
 	assert.match(text, /\/issueme info \| help \| --help \| -h/);
 	assert.match(text, /issueme_sync_issues/);
 	assert.match(text, /Project trusted: no/);
+	assert.match(text, /Allowed issue creator: all/);
 	assert.match(text, /Default skill path: not set/);
 	assert.match(text, /Troubleshooting/);
 });
@@ -267,7 +270,7 @@ test("/issueme help aliases render the same info surface", async () => {
 
 test("/issueme info honors project-local reads only when the project is trusted", async () => withCleanGitHubEnv(async () => {
 	const root = await tempProject();
-	const localConfig = sampleConfig({ issueDirectory: "custom-cache" });
+	const localConfig = sampleConfig({ issueDirectory: "custom-cache", allowedIssueCreator: "senad-d" });
 	await mkdir(join(root, ".pi", "agent"), { recursive: true });
 	await writeFile(join(root, ".pi", "agent", "issueme.json"), `${JSON.stringify(localConfig, null, 2)}\n`, "utf8");
 	await writeFile(join(root, ".env"), "GH_TOKEN=project-secret\n", "utf8");
@@ -281,8 +284,9 @@ test("/issueme info honors project-local reads only when the project is trusted"
 	assert.match(untrustedText, /Repository: Project trust is required/);
 	assert.match(untrustedText, /Token: missing/);
 	assert.match(untrustedText, /Issue directory: issues/);
+	assert.match(untrustedText, /Allowed issue creator: all/);
 	assert.match(untrustedText, /Cached open issue files: 0/);
-	assert.doesNotMatch(untrustedText, /project-env|project-secret|custom-cache|owner\/repo/);
+	assert.doesNotMatch(untrustedText, /project-env|project-secret|custom-cache|senad-d|owner\/repo/);
 
 	const trustedPi = fakePi();
 	registerIssueMeCommand(trustedPi);
@@ -292,7 +296,29 @@ test("/issueme info honors project-local reads only when the project is trusted"
 	assert.match(trustedText, /Repository: owner\/repo/);
 	assert.match(trustedText, /Token: present \(project-env:GH_TOKEN\)/);
 	assert.match(trustedText, /Issue directory: custom-cache/);
+	assert.match(trustedText, /Allowed issue creator: senad-d/);
 	assert.match(trustedText, /Cached open issue files: 1/);
+}));
+
+test("/issueme info reports invalid allowedIssueCreator safely without widening scope", async () => withCleanGitHubEnv(async () => {
+	const root = await tempProject();
+	await mkdir(join(root, ".pi", "agent"), { recursive: true });
+	await writeIssueRecord(root, sampleConfig(), sampleIssue({ title: "Private cached title" }));
+	await writeFile(join(root, ".pi", "agent", "issueme.json"), `${JSON.stringify(sampleConfig({ allowedIssueCreator: "bad login" }), null, 2)}\n`, "utf8");
+
+	const pi = fakePi();
+	registerIssueMeCommand(pi);
+	await pi.commands.get("issueme").handler("info", fakeCtx(root));
+	const text = pi.messages[0].message.content;
+	assert.match(text, /IssueMe config error: Allowed issue creator/);
+	assert.match(text, /Config status: error/);
+	assert.match(text, /Allowed issue creator: unavailable until config is fixed/);
+	assert.match(text, /Cached open issue files: 0/);
+	assert.doesNotMatch(text, /bad login|Private cached title/);
+	assert.equal(pi.messages[0].message.details.configStatus, "error");
+	assert.equal(pi.messages[0].message.details.configError.code, "config_tui_invalid_setting");
+	assert.equal(pi.messages[0].message.details.configError.details.field, "allowedIssueCreator");
+	assert.equal(pi.messages[0].message.details.allowedIssueCreator, "unavailable until config is fixed");
 }));
 
 test("/issueme info exercises a safe non-TUI command path without project secrets", async () => withCleanGitHubEnv(async () => {
@@ -306,6 +332,7 @@ test("/issueme info exercises a safe non-TUI command path without project secret
 	assert.match(text, /Repository: owner\/repo/);
 	assert.match(text, /Token: missing/);
 	assert.match(text, /Default skill path: not set/);
+	assert.equal(pi.messages[0].message.details.allowedIssueCreator, "all");
 	assert.equal(pi.messages[0].message.details.tokenPresent, false);
 	assert.doesNotMatch(text, /project-secret|process-secret/);
 }));
@@ -399,7 +426,7 @@ test("configuration TUI renderer follows wide, narrow, and tiny width modes", ()
 	assert.doesNotMatch(tiny.join("\n"), /╭|╰/);
 });
 
-test("configuration TUI handles search, edit, save, cancel, and validation states", async () => {
+test("configuration TUI handles search, edit, auto-save exit, cancel, and validation states", async () => {
 	const root = await tempProject();
 	const saved = [];
 	const component = new IssueMeConfigTui(root, sampleConfig(), { fg: (_role, text) => text, bold: (text) => text }, (result) => saved.push(result));
@@ -407,8 +434,9 @@ test("configuration TUI handles search, edit, save, cancel, and validation state
 	component.handleInput("\r");
 	for (const char of "cache") component.handleInput(char);
 	component.handleInput("\r");
-	component.handleInput("s");
-	assert.equal(saved.at(-1).issueDirectory, "issuescache");
+	assert.match(component.render(80).join("\n"), /saves automatically on exit/);
+	component.handleInput("q");
+	assert.equal(saved.at(-1).issueDirectory, "cache");
 
 	const invalid = new IssueMeConfigTui(root, sampleConfig(), { fg: (_role, text) => text, bold: (text) => text }, (result) => saved.push(result));
 	invalid.handleInput("\t");
@@ -426,6 +454,14 @@ test("configuration TUI handles search, edit, save, cancel, and validation state
 	search.handleInput("\u001b");
 	assert.doesNotMatch(search.render(80).join("\n"), /SEARCH LABELS/);
 	assert.equal(closed.length, 0);
+
+	for (const escapeInput of ["\u001b", "\u001b[27u", "\u001b[27;1u", "\u001b[27;1;27~"]) {
+		const results = [];
+		const component = new IssueMeConfigTui(root, sampleConfig(), { fg: (_role, text) => text, bold: (text) => text }, (result) => results.push(result));
+		component.handleInput(escapeInput);
+		assert.equal(results.length, 1, `escape input ${JSON.stringify(escapeInput)} should close the config TUI`);
+		assert.equal(results[0], undefined);
+	}
 });
 
 test("non-TUI /issueme config path sends actionable config text without opening an editor", async () => {

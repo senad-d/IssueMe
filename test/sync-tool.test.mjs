@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { MAX_TOOL_ISSUES, MAX_TOOL_PATHS } from "../src/constants.ts";
+import { writeIssueRecord } from "../src/issues/store.ts";
 import { registerSyncIssuesTool } from "../src/tools/sync-issues.ts";
 
 function githubIssue(overrides = {}) {
@@ -20,6 +21,7 @@ function githubIssue(overrides = {}) {
 		created_at: "2026-06-27T00:00:00Z",
 		updated_at: "2026-06-27T00:00:00Z",
 		closed_at: null,
+		user: { login: "octocat" },
 		...overrides,
 	};
 }
@@ -146,6 +148,71 @@ test("issueme_sync_issues reports title-slug changes as renames instead of dupli
 		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["1-renamed-title.json"]);
 		assert.match(second.content[0].text, /Created: 0, updated: 0, renamed: 1/);
 	});
+});
+
+test("restricted issueme_sync_issues applies creator scope and removes stale out-of-scope cache files", async () => {
+	const projectRoot = await tempProject();
+	const restrictedConfig = { issueDirectory: "issues", allowedIssueCreator: "hubot", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	await mkdir(join(projectRoot, ".pi", "agent"), { recursive: true });
+	await writeFile(join(projectRoot, ".pi", "agent", "issueme.json"), `${JSON.stringify(restrictedConfig, null, 2)}\n`, "utf8");
+	await writeIssueRecord(projectRoot, restrictedConfig, {
+		schemaVersion: 1,
+		repository: "owner/repo",
+		number: 2,
+		title: "Stale Intruder",
+		state: "open",
+		creator: "intruder",
+		body: "Do not expose",
+		labels: [],
+		assignees: [],
+		milestone: null,
+		comments: [],
+		html_url: "https://github.com/owner/repo/issues/2",
+		created_at: "2026-06-27T00:00:00Z",
+		updated_at: "2026-06-27T00:00:00Z",
+		closed_at: null,
+		synced_at: "2026-06-27T00:00:01Z",
+	});
+
+	const pi = fakePi();
+	registerSyncIssuesTool(pi);
+	const originalFetch = globalThis.fetch;
+	const originalGhToken = process.env.GH_TOKEN;
+	const originalGithubToken = process.env.GITHUB_TOKEN;
+	const originalGithubRepository = process.env.GITHUB_REPOSITORY;
+	const calls = [];
+	globalThis.fetch = async (input) => {
+		const url = new URL(input.toString());
+		calls.push(url);
+		if (url.pathname === "/repos/owner/repo/issues") {
+			return jsonResponse([
+				githubIssue({ number: 1, title: "Allowed Hubot", user: { login: "Hubot" } }),
+				githubIssue({ number: 3, title: "Unexpected Intruder", user: { login: "intruder" }, html_url: "https://github.com/owner/repo/issues/3" }),
+			]);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments") return jsonResponse([]);
+		throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
+	};
+	process.env.GH_TOKEN = "ghp_test_token";
+	delete process.env.GITHUB_TOKEN;
+	process.env.GITHUB_REPOSITORY = "owner/repo";
+	try {
+		const result = await executeSync(pi.syncTool, projectRoot);
+		assert.equal(calls[0].searchParams.get("creator"), "hubot");
+		assert.deepEqual(result.details.paths, ["issues/1-allowed-hubot.json"]);
+		assert.deepEqual(result.details.removedPaths, ["issues/2-stale-intruder.json"]);
+		assert.equal(result.details.creatorScope, "hubot");
+		assert.deepEqual(result.details.issues.map((item) => item.creator), ["Hubot"]);
+		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["1-allowed-hubot.json"]);
+		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "1-allowed-hubot.json"), "utf8"));
+		assert.equal(cached.creator, "Hubot");
+		assert.doesNotMatch(JSON.stringify(result), /Do not expose|Unexpected Intruder/);
+	} finally {
+		globalThis.fetch = originalFetch;
+		restoreEnv("GH_TOKEN", originalGhToken);
+		restoreEnv("GITHUB_TOKEN", originalGithubToken);
+		restoreEnv("GITHUB_REPOSITORY", originalGithubRepository);
+	}
 });
 
 test("issueme_sync_issues reports invalid cache files safely and leaves them untouched", async () => {

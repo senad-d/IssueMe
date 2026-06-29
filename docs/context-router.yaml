@@ -49,6 +49,14 @@ canonical_paths:
   tool_close: src/tools/close-issue.ts
   tool_bulk: src/tools/bulk-issues.ts
   github_client: src/github/client.ts
+  github_transport: src/github/transport.ts
+  github_issues_client: src/github/issues-client.ts
+  github_projects_client: src/github/projects-client.ts
+  github_sub_issues_client: src/github/sub-issues-client.ts
+  github_development_links_client: src/github/development-links-client.ts
+  github_graphql_errors: src/github/graphql-errors.ts
+  github_graphql_normalizers: src/github/graphql-normalizers.ts
+  github_shared_helpers: src/github/shared.ts
   github_repository: src/github/repository.ts
   issue_store: src/issues/store.ts
   issue_format: src/issues/format.ts
@@ -204,6 +212,14 @@ routes:
       - README.md
     files:
       - src/github/client.ts
+      - src/github/transport.ts
+      - src/github/issues-client.ts
+      - src/github/projects-client.ts
+      - src/github/sub-issues-client.ts
+      - src/github/development-links-client.ts
+      - src/github/graphql-errors.ts
+      - src/github/graphql-normalizers.ts
+      - src/github/shared.ts
       - src/github/repository.ts
       - test/github-client.test.mjs
       - test/github-client-remediation.test.mjs

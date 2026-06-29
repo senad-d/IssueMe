@@ -439,6 +439,7 @@ function issueMetadataFromRecord(path: string, record: IssueRecord): IssueFileMe
 		number: record.number,
 		title: record.title,
 		state: record.state,
+		...(record.creator ? { creator: record.creator } : {}),
 		updated_at: record.updated_at,
 	};
 }
@@ -460,6 +461,7 @@ function validateIssueRecord(value: unknown): IssueValidationFailure | undefined
 	if (typeof record.number !== "number" || !Number.isSafeInteger(record.number) || record.number <= 0) return validationFailure("issue_file_number_invalid", "number");
 	if (!isNonEmptySafeString(record.title)) return validationFailure("issue_file_title_invalid", "title");
 	if (record.state !== "open" && record.state !== "closed") return validationFailure("issue_file_state_invalid", "state");
+	if (record.creator !== undefined && !isGitHubLogin(record.creator)) return validationFailure("issue_file_creator_invalid", "creator");
 	if (typeof record.body !== "string") return validationFailure("issue_file_body_invalid", "body");
 	if (!isLabelList(record.labels)) return validationFailure("issue_file_labels_invalid", "labels");
 	if (!isAssigneeList(record.assignees)) return validationFailure("issue_file_assignees_invalid", "assignees");
@@ -543,6 +545,7 @@ function isIssueRelationshipSummary(value: unknown): boolean {
 	if (typeof issue.number !== "number" || !Number.isSafeInteger(issue.number) || issue.number <= 0) return false;
 	if (!isNonEmptySafeString(issue.title)) return false;
 	if (issue.state !== undefined && issue.state !== "open" && issue.state !== "closed") return false;
+	if (issue.creator !== undefined && !isGitHubLogin(issue.creator)) return false;
 	if (typeof issue.html_url !== "string") return false;
 	return parseHttpsGitHubUrl(issue.html_url) !== undefined;
 }
@@ -593,6 +596,7 @@ function orderIssueRecord(record: IssueRecord): IssueRecord {
 		number: record.number,
 		title: record.title,
 		state: record.state,
+		...(record.creator !== undefined ? { creator: record.creator } : {}),
 		body: record.body,
 		labels: record.labels,
 		assignees: record.assignees,

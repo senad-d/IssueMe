@@ -254,6 +254,87 @@ test("GitHub client refuses issue search queries that try to escape the reposito
 	assert.equal(calls, 0);
 });
 
+test("GitHub client rejects unsafe numeric identifiers before request construction", async () => {
+	const invalidValues = [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1];
+	const cases = [
+		["getIssue", (client, value) => client.getIssue(value), "issueNumber"],
+		["listComments", (client, value) => client.listComments(value), "issueNumber"],
+		["getIssueComment", (client, value) => client.getIssueComment(value), "commentId"],
+		["updateIssue", (client, value) => client.updateIssue(value, { title: "New" }), "issueNumber"],
+		["updateIssue milestone", (client, value) => client.updateIssue(1, { milestone: value }), "milestoneNumber"],
+		["addComment", (client, value) => client.addComment(value, "Body"), "issueNumber"],
+		["updateComment issue", (client, value) => client.updateComment(value, 1, "Body"), "issueNumber"],
+		["updateComment comment", (client, value) => client.updateComment(1, value, "Body"), "commentId"],
+		["deleteComment comment", (client, value) => client.deleteComment(1, value), "commentId"],
+		["addAssignees", (client, value) => client.addAssignees(value, ["octocat"]), "issueNumber"],
+		["removeAssignees", (client, value) => client.removeAssignees(value, ["octocat"]), "issueNumber"],
+		["addLabels", (client, value) => client.addLabels(value, ["bug"]), "issueNumber"],
+		["setLabels", (client, value) => client.setLabels(value, ["bug"]), "issueNumber"],
+		["removeLabel", (client, value) => client.removeLabel(value, "bug"), "issueNumber"],
+		["closeIssue", (client, value) => client.closeIssue(value), "issueNumber"],
+		["reopenIssue", (client, value) => client.reopenIssue(value), "issueNumber"],
+		["addSubIssue parent", (client, value) => client.addSubIssue(value, 2), "parentNumber"],
+		["addSubIssue child", (client, value) => client.addSubIssue(1, value), "childNumber"],
+		["removeSubIssue child", (client, value) => client.removeSubIssue(1, value), "childNumber"],
+		["listSubIssueRelationships", (client, value) => client.listSubIssueRelationships(value), "issueNumber"],
+		["listIssueDevelopmentLinks", (client, value) => client.listIssueDevelopmentLinks(value), "issueNumber"],
+		["updateRepositoryMilestone", (client, value) => client.updateRepositoryMilestone(value, { title: "v1" }), "milestoneNumber"],
+		["deleteRepositoryMilestone", (client, value) => client.deleteRepositoryMilestone(value), "milestoneNumber"],
+		["addIssueToProjectV2", (client, value) => client.addIssueToProjectV2({ projectId: "PVT_1", issueNumber: value }), "issueNumber"],
+		["updateProjectV2ItemField", (client, value) => client.updateProjectV2ItemField({ projectId: "PVT_1", itemId: "PVTI_1", fieldId: "PVTF_1", issueNumber: value, value: { text: "Ready" } }), "issueNumber"],
+	];
+
+	for (const invalidValue of invalidValues) {
+		for (const [name, operation, field] of cases) {
+			let calls = 0;
+			const client = new GitHubClient({
+				repository,
+				token,
+				fetchFn: async () => {
+					calls += 1;
+					return jsonResponse(issue());
+				},
+			});
+			await assert.rejects(
+				() => operation(client, invalidValue),
+				(error) => {
+					assert.equal(error?.code, "invalid_tool_input", name);
+					assert.equal(error.safeDetails?.field, field, name);
+					assert.match(error.message, /positive safe integer/, name);
+					return true;
+				},
+			);
+			assert.equal(calls, 0, `${name} should reject ${invalidValue} before fetch`);
+		}
+	}
+});
+
+test("GitHub client accepts positive safe integer boundary identifiers", async () => {
+	const boundary = Number.MAX_SAFE_INTEGER;
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			const parsed = new URL(url.toString());
+			calls.push({ method: init.method, path: parsed.pathname, body: init.body === undefined ? undefined : JSON.parse(init.body) });
+			if (parsed.pathname === `/repos/owner/repo/issues/${boundary}`) return jsonResponse(issue({ number: boundary, html_url: `https://github.com/owner/repo/issues/${boundary}` }));
+			if (parsed.pathname === `/repos/owner/repo/issues/comments/${boundary}`) return jsonResponse({ id: boundary, issue_url: `https://api.github.com/repos/owner/repo/issues/${boundary}`, html_url: `https://github.com/owner/repo/issues/${boundary}#issuecomment-${boundary}` });
+			if (parsed.pathname === `/repos/owner/repo/milestones/${boundary}`) return jsonResponse({ number: boundary, title: "v1", state: "open" });
+			throw new Error(`Unexpected request ${init.method} ${parsed.pathname}`);
+		},
+	});
+
+	assert.equal((await client.getIssue(boundary)).number, boundary);
+	assert.equal((await client.getIssueComment(boundary)).id, boundary);
+	assert.equal((await client.updateRepositoryMilestone(boundary, { title: "v1" })).number, boundary);
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		`GET /repos/owner/repo/issues/${boundary}`,
+		`GET /repos/owner/repo/issues/comments/${boundary}`,
+		`PATCH /repos/owner/repo/milestones/${boundary}`,
+	]);
+});
+
 test("mutating methods re-check state and refuse closed issues before sending mutation payloads", async () => {
 	const calls = [];
 	const client = new GitHubClient({

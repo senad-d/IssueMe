@@ -1,13 +1,13 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_PROJECT_FIELD_OPTIONS, MAX_TOOL_PROJECT_FIELDS, MAX_TOOL_PROJECT_ITERATIONS, MAX_TOOL_PROJECTS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2Scope } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalGitHubOpaqueId, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId, normalizeRequiredIsoDateOnly } from "../utils/validation.ts";
-import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
 const DEFAULT_PROJECT_FIELD_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELDS);
@@ -50,6 +50,8 @@ const AddIssueToProjectParams = Type.Object(
 	{
 		issueNumber: Type.Integer({ minimum: 1, description: "Open issue number." }),
 		projectId: Type.String({ description: "ProjectV2 node ID; one-line and at most 512 characters." }),
+		scope: Type.Optional(ProjectScope),
+		owner: Type.Optional(Type.String({ description: "Expected org/user login for Projects v2 add preflight; only valid when scope is organization or user. Defaults to repo owner for org/user scope." })),
 	},
 	{ additionalProperties: false },
 );
@@ -70,13 +72,7 @@ const UpdateProjectItemParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListProjectsToolParams {
-	scope?: GitHubProjectV2Scope;
-	owner?: string;
-	query?: string;
-	includeClosed?: boolean;
-	limit?: number;
-}
+type ListProjectsToolParams = Static<typeof ListProjectsParams>;
 
 interface NormalizedListProjectsParams {
 	scope: GitHubProjectV2Scope;
@@ -86,15 +82,7 @@ interface NormalizedListProjectsParams {
 	limit: number;
 }
 
-interface GetProjectFieldsToolParams {
-	projectId?: string;
-	scope?: GitHubProjectV2Scope;
-	owner?: string;
-	projectNumber?: number;
-	fieldLimit?: number;
-	optionLimit?: number;
-	iterationLimit?: number;
-}
+type GetProjectFieldsToolParams = Static<typeof GetProjectFieldsParams>;
 
 interface NormalizedGetProjectFieldsParams {
 	projectId?: string;
@@ -106,28 +94,26 @@ interface NormalizedGetProjectFieldsParams {
 	iterationLimit: number;
 }
 
-interface AddIssueToProjectToolParams {
-	issueNumber?: number;
-	projectId?: string;
-}
+type AddIssueToProjectToolParams = Static<typeof AddIssueToProjectParams>;
 
 interface NormalizedAddIssueToProjectParams {
 	issueNumber: number;
 	projectId: string;
+	scope?: GitHubProjectV2Scope;
+	owner?: string;
 }
 
-interface UpdateProjectItemToolParams {
-	projectId?: string;
-	itemId?: string;
-	fieldId?: string;
-	issueNumber?: number;
-	valueType?: GitHubProjectV2FieldValueType;
-	singleSelectOptionId?: string;
-	iterationId?: string;
-	date?: string;
-	text?: string;
-	numberValue?: number;
-}
+type UpdateProjectItemToolParams = Static<typeof UpdateProjectItemParams>;
+type UpdateProjectItemValueField = Exclude<keyof UpdateProjectItemToolParams, "projectId" | "itemId" | "fieldId" | "issueNumber" | "valueType"> & string;
+
+export const UPDATE_PROJECT_ITEM_COMMON_FIELDS = ["projectId", "itemId", "issueNumber", "fieldId", "valueType"] as const satisfies readonly (keyof UpdateProjectItemToolParams & string)[];
+export const UPDATE_PROJECT_ITEM_VALUE_FIELDS = {
+	single_select: ["singleSelectOptionId"],
+	iteration: ["iterationId"],
+	date: ["date"],
+	text: ["text"],
+	number: ["numberValue"],
+} as const satisfies Record<GitHubProjectV2FieldValueType, readonly UpdateProjectItemValueField[]>;
 
 interface NormalizedUpdateProjectItemParams {
 	projectId: string;
@@ -157,7 +143,7 @@ export function registerListProjectsTool(pi: ExtensionAPI, options: IssueMeToolR
 			],
 			parameters: ListProjectsParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListProjectsParams(params as ListProjectsToolParams);
+				const normalized = normalizeListProjectsParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const result = await runtime.client.listProjectsV2(normalized, signal);
 				const details: IssueMeToolDetails = {
@@ -190,7 +176,7 @@ export function registerGetProjectFieldsTool(pi: ExtensionAPI, options: IssueMeT
 			],
 			parameters: GetProjectFieldsParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeGetProjectFieldsParams(params as GetProjectFieldsToolParams);
+				const normalized = normalizeGetProjectFieldsParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const result = await runtime.client.getProjectV2Fields(normalized, signal);
 				const details: IssueMeToolDetails = {
@@ -222,16 +208,18 @@ export function registerAddIssueToProjectTool(pi: ExtensionAPI, options: IssueMe
 			description: "Add an open issue to a Projects v2 board.",
 			promptSnippet: "Add open issue to Projects v2 board.",
 			promptGuidelines: [
-				"Use issueme_add_issue_to_project only with an open issueNumber and discovered ProjectV2 projectId.",
+				"Use issueme_add_issue_to_project only with an open issueNumber and discovered ProjectV2 projectId; pass matching scope/owner when the board is not under the current repository/default owner policy.",
 			],
 			executionMode: "sequential",
 			parameters: AddIssueToProjectParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeAddIssueToProjectParams(params as AddIssueToProjectToolParams);
+				const normalized = normalizeAddIssueToProjectParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "add_issue_to_project", signal);
 				const result = await runtime.client.addIssueToProjectV2(normalized, signal);
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
+					creatorScope: issueCreatorScopeLabel(runtime.config),
 					status: "add_issue_to_project",
 					project: result.item.project,
 					projectItem: result.item,
@@ -257,8 +245,9 @@ export function registerUpdateProjectItemTool(pi: ExtensionAPI, options: IssueMe
 			executionMode: "sequential",
 			parameters: UpdateProjectItemParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeUpdateProjectItemParams(params as UpdateProjectItemToolParams);
+				const normalized = normalizeUpdateProjectItemParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "update_project_item", signal);
 				const result = await runtime.client.updateProjectV2ItemField({
 					projectId: normalized.projectId,
 					itemId: normalized.itemId,
@@ -268,6 +257,7 @@ export function registerUpdateProjectItemTool(pi: ExtensionAPI, options: IssueMe
 				}, signal);
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
+					creatorScope: issueCreatorScopeLabel(runtime.config),
 					status: "update_project_item",
 					project: result.item.project,
 					projectItem: result.item,
@@ -315,9 +305,17 @@ function normalizeGetProjectFieldsParams(params: GetProjectFieldsToolParams): No
 }
 
 function normalizeAddIssueToProjectParams(params: AddIssueToProjectToolParams): NormalizedAddIssueToProjectParams {
+	const scope = params.scope === undefined ? undefined : normalizeScope(params.scope);
+	const owner = normalizeOptionalText(params.owner, "owner");
+	if (scope === undefined && owner) {
+		throw new IssueMeError("invalid_tool_input", "scope is required when owner is provided for Projects v2 add preflight.", { field: "scope" });
+	}
+	if (scope !== undefined) assertProjectOwnerScope(scope, owner);
 	return {
 		issueNumber: normalizePositiveInteger(params.issueNumber, "issueNumber"),
 		projectId: normalizeRequiredProjectId(params.projectId, "projectId"),
+		...(scope ? { scope } : {}),
+		...(owner ? { owner } : {}),
 	};
 }
 
@@ -339,15 +337,8 @@ function normalizeProjectFieldValueType(value: GitHubProjectV2FieldValueType | u
 }
 
 function normalizeProjectFieldValue(params: UpdateProjectItemToolParams, valueType: GitHubProjectV2FieldValueType): GitHubProjectV2FieldValueInput {
-	const valueFields = ["singleSelectOptionId", "iterationId", "date", "text", "numberValue"] as const;
-	const expectedFieldByType = {
-		single_select: "singleSelectOptionId",
-		iteration: "iterationId",
-		date: "date",
-		text: "text",
-		number: "numberValue",
-	} as const satisfies Record<GitHubProjectV2FieldValueType, typeof valueFields[number]>;
-	const expectedField = expectedFieldByType[valueType];
+	const valueFields = Object.values(UPDATE_PROJECT_ITEM_VALUE_FIELDS).flatMap((fields) => fields);
+	const expectedField = UPDATE_PROJECT_ITEM_VALUE_FIELDS[valueType][0];
 	const providedFields = valueFields.filter((field) => params[field] !== undefined);
 	if (providedFields.length !== 1 || providedFields[0] !== expectedField) {
 		throw new IssueMeError("invalid_tool_input", `valueType ${valueType} requires exactly ${expectedField}.`, { field: expectedField, providedFields });

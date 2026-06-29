@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import issueMeExtension from "../src/extension.ts";
+import { BULK_ISSUE_ACTION_FIELDS, BULK_ISSUE_COMMON_FIELDS } from "../src/tools/bulk-issues.ts";
 import { ISSUEME_TOOL_NAMES } from "../src/tools/inventory.ts";
+import { MANAGE_LABEL_ACTION_FIELDS, MANAGE_LABEL_COMMON_FIELDS } from "../src/tools/manage-label.ts";
+import { MANAGE_MILESTONE_ACTION_FIELDS, MANAGE_MILESTONE_COMMON_FIELDS } from "../src/tools/manage-milestone.ts";
+import { UPDATE_PROJECT_ITEM_COMMON_FIELDS, UPDATE_PROJECT_ITEM_VALUE_FIELDS } from "../src/tools/projects.ts";
 
 const expectedTools = [...ISSUEME_TOOL_NAMES];
 
@@ -92,6 +96,19 @@ test("all IssueMe tools expose prompt metadata and strict schemas", () => {
 	}
 });
 
+test("all IssueMe tools expose result-policy prompt guidance", () => {
+	const pi = fakePi();
+	issueMeExtension(pi);
+	for (const name of expectedTools) {
+		const guidelines = pi.tools.get(name)?.promptGuidelines ?? [];
+		const guideline = guidelines.find((entry) => entry.includes(`${name}: check details.result`));
+		assert.ok(guideline, `${name} missing result-policy prompt guidance`);
+		assert.match(guideline, /details\.status/);
+		assert.match(guideline, /details\.needsSync/);
+		assert.match(guideline, /partial_success\/error may not throw/);
+	}
+});
+
 test("mutating and cache-refresh IssueMe tools request sequential execution to avoid same-issue races", () => {
 	const pi = fakePi();
 	issueMeExtension(pi);
@@ -117,6 +134,53 @@ test("native issue dependency/blocker support remains a documented unsupported d
 	assert.match(readme, /does not create body-only/i);
 });
 
+test("action/value-specific normalizer field policies stay in parity with registered schemas", () => {
+	const pi = fakePi();
+	issueMeExtension(pi);
+	const policies = [
+		{
+			toolName: "issueme_bulk_update_issues",
+			discriminator: "action",
+			commonFields: BULK_ISSUE_COMMON_FIELDS,
+			fieldsByValue: BULK_ISSUE_ACTION_FIELDS,
+		},
+		{
+			toolName: "issueme_update_project_item",
+			discriminator: "valueType",
+			commonFields: UPDATE_PROJECT_ITEM_COMMON_FIELDS,
+			fieldsByValue: UPDATE_PROJECT_ITEM_VALUE_FIELDS,
+		},
+		{
+			toolName: "issueme_manage_label",
+			discriminator: "action",
+			commonFields: MANAGE_LABEL_COMMON_FIELDS,
+			fieldsByValue: MANAGE_LABEL_ACTION_FIELDS,
+		},
+		{
+			toolName: "issueme_manage_milestone",
+			discriminator: "action",
+			commonFields: MANAGE_MILESTONE_COMMON_FIELDS,
+			fieldsByValue: MANAGE_MILESTONE_ACTION_FIELDS,
+		},
+	];
+
+	for (const policy of policies) {
+		const tool = pi.tools.get(policy.toolName);
+		const schemaProperties = sortedUnique(Object.keys(tool.parameters.properties));
+		const acceptedProperties = sortedUnique([
+			...policy.commonFields,
+			...Object.values(policy.fieldsByValue).flat(),
+		]);
+		assert.deepEqual(acceptedProperties, schemaProperties, `${policy.toolName} schema properties must match normalizer accepted fields`);
+		assert.deepEqual(sortedUnique(Object.keys(policy.fieldsByValue)), sortedUnique(tool.parameters.properties[policy.discriminator].enum), `${policy.toolName} discriminator values must match field policy keys`);
+		for (const [value, fields] of Object.entries(policy.fieldsByValue)) {
+			for (const field of fields) {
+				assert.ok(tool.parameters.properties[field], `${policy.toolName} policy for ${value} references missing schema field ${field}`);
+			}
+		}
+	}
+});
+
 test("tool schemas avoid provider-hostile union, literal, and nullable patterns", () => {
 	const pi = fakePi();
 	issueMeExtension(pi);
@@ -130,6 +194,7 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.deepEqual(pi.tools.get("issueme_list_milestones").parameters.properties.sort.enum, ["due_on", "completeness"]);
 	assert.deepEqual(pi.tools.get("issueme_list_projects").parameters.properties.scope.enum, ["repository", "organization", "user"]);
 	assert.deepEqual(pi.tools.get("issueme_get_project_fields").parameters.properties.scope.enum, ["repository", "organization", "user"]);
+	assert.deepEqual(pi.tools.get("issueme_add_issue_to_project").parameters.properties.scope.enum, ["repository", "organization", "user"]);
 	assert.deepEqual(pi.tools.get("issueme_update_project_item").parameters.properties.valueType.enum, ["single_select", "iteration", "date", "text", "number"]);
 	assert.equal(pi.tools.get("issueme_add_issue_to_project").parameters.properties.issueNumber.type, "integer");
 	assert.equal(pi.tools.get("issueme_update_project_item").parameters.properties.issueNumber.type, "integer");
@@ -148,6 +213,10 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.equal(pi.tools.get("issueme_update_issue").parameters.properties.milestoneNumber.type, "integer");
 	assert.equal(pi.tools.get("issueme_update_issue").parameters.properties.clearMilestone.type, "boolean");
 });
+
+function sortedUnique(values) {
+	return [...new Set(values)].sort();
+}
 
 function collectForbiddenSchemaPatterns(value, path = "$") {
 	if (!value || typeof value !== "object") return [];

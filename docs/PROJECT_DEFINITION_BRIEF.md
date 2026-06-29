@@ -14,13 +14,14 @@
 - Display name: `IssueMe`
 - Exported extension function: `issueMeExtension`
 - Repository URL: `https://github.com/senad-d/issueme`
-- One-sentence pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents list/search, sync, create, update, add/edit/delete comments, label, assign, manage repository labels/milestones, update Projects v2 items, reopen, close, bulk-update explicit issue lists, inspect linked development, and inspect/link/reorder native sub-issues through structured Pi tools; native dependency/blocker links are documented as unsupported until GitHub exposes a stable API.
+- One-sentence pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents list/search, sync, create, update, add/edit/delete comments, label, assign, manage repository labels/milestones, update Projects v2 items, reopen, close, bulk-update explicit issue lists, inspect linked development, and inspect/link/reorder native sub-issues through structured Pi tools, with an optional IssueMe-only creator processing scope; native dependency/blocker links are documented as unsupported until GitHub exposes a stable API.
 
 ## 3. Users and use cases
 
 - Primary users: Pi users, Pi agents, and GitHub Actions workflows.
 - Primary use cases:
   - List/search issues and inspect linked development work before starting implementation.
+  - Optionally limit IssueMe processing to issues created by one trusted GitHub username while leaving GitHub repository permissions unchanged.
   - Create GitHub issues.
   - Sync open GitHub issues into local `issues/<issue-number>-<issue-title-slug>.json` files.
   - Refresh one known issue in any state through `issueme_get_issue`.
@@ -43,17 +44,17 @@
 
 | Surface | Name | Purpose | Notes |
 | --- | --- | --- | --- |
-| Command | `/issueme` | Open configuration UI | Implemented with a non-secret configuration TUI in TUI mode and safe non-TUI fallback. |
-| Command | `/issueme info`/`help`/`--help`/`-h` | Show combined help/status | Implemented; includes repo/auth/cache/trust status without secrets. |
+| Command | `/issueme` | Open configuration UI | Implemented with a non-secret configuration TUI in TUI mode and safe non-TUI fallback, including Cache > Allowed issue creator. |
+| Command | `/issueme info`/`help`/`--help`/`-h` | Show combined help/status | Implemented; includes repo/auth/cache/trust/creator-scope status without secrets. |
 | Command | `/issueme start [skill-path]` | Start skill-guided workflow | Implemented; validates an explicit readable project-local skill file or configured `defaultSkillPath`, then sends an agent prompt with a project-relative `@path` skill reference. |
-| Tool | `issueme_sync_issues` | Fetch open issues and update local files | Implemented; removes local files for closed issues. |
-| Tool | `issueme_list_issues` | List/search issues in the resolved repository | Implemented with REST list mode and bounded repository-scoped Search API mode. |
+| Tool | `issueme_sync_issues` | Fetch open in-scope issues and update local files | Implemented; removes local files for closed or out-of-scope issues. |
+| Tool | `issueme_list_issues` | List/search in-scope issues in the resolved repository | Implemented with REST list mode and bounded repository-scoped Search API mode. |
 | Tool | `issueme_list_labels` | Discover repository labels | Implemented read-only with bounded metadata and filters. |
 | Tool | `issueme_list_milestones` | Discover repository milestones | Implemented read-only with state/sort filters and bounded metadata. |
 | Tool | `issueme_list_assignees` | Discover assignable repository users | Implemented read-only with bounded login/profile metadata. |
 | Tool | `issueme_list_projects` | Discover GitHub Projects v2 boards | Implemented read-only through GraphQL for repository, organization, or user scopes. |
 | Tool | `issueme_get_project_fields` | Inspect Projects v2 fields/options | Implemented read-only through GraphQL with bounded field/option metadata. |
-| Tool | `issueme_add_issue_to_project` | Add or confirm an open issue as a Projects v2 item | Implemented with GraphQL and open-issue verification. |
+| Tool | `issueme_add_issue_to_project` | Add or confirm an open issue as a Projects v2 item | Implemented with GraphQL, open-issue verification, and project identity/owner preflight. |
 | Tool | `issueme_update_project_item` | Update one discovered Projects v2 item field | Implemented with GraphQL and represented-issue state verification. |
 | Tool | `issueme_manage_label` | Create/update/explicitly delete repository labels | Implemented with validation; delete requires confirmation and never deletes issue objects. |
 | Tool | `issueme_manage_milestone` | Create/update/close/reopen/explicitly delete repository milestones | Implemented with validation; delete requires confirmation and removes milestone associations from issues. |
@@ -64,7 +65,7 @@
 | Tool | `issueme_reorder_sub_issues` | Reorder native child issue priority | Implemented with GraphQL `reprioritizeSubIssue`, exact child-list validation, cache refresh, and no body-only ordering fallback. |
 | Tool | `issueme_list_sub_issues` | Inspect native parent/sub-issue relationships | Implemented with GraphQL `subIssues` metadata, bounded output, optional `refreshCache`; no body-only fallback. |
 | Tool | `issueme_list_issue_development_links` | Inspect linked implementation work | Implemented with GitHub GraphQL timeline metadata for linked PRs, branch names, commits, and closing/reference events; read-only, bounded, no PR bodies, and no body-text guessing. |
-| Tool | `issueme_get_issue` | Read issue details from cache or focused remote refresh | Implemented; refreshes one known issue in any state with bounded cache-action details. |
+| Tool | `issueme_get_issue` | Read in-scope issue details from cache or focused remote refresh | Implemented; refreshes one known issue in any state with bounded cache-action details and creator-scope refusal. |
 | Tool | `issueme_update_issue` | Update title/body/milestone/etc. for open issues | Implemented; rejects closed issues. |
 | Tool | `issueme_comment_issue` | Add comments to open issues | Implemented; rejects closed issues. |
 | Tool | `issueme_update_comment` | Edit existing comments on open issues | Implemented; verifies comment-to-issue ownership and rejects closed issues. |
@@ -109,20 +110,21 @@
 
 ## 6. Config, state, and persistence
 
-- Config source: `.pi/agent/issueme.json` for non-secret settings.
+- Config source: `.pi/agent/issueme.json` for non-secret settings, including `issueDirectory`, `allowedIssueCreator`, defaults, and `defaultSkillPath`.
+- `allowedIssueCreator` source: project config value `all` or one GitHub username; it is IssueMe processing scope only and not GitHub access control.
 - Auth source: trusted project-root `.env` `GH_TOKEN`, trusted project-root `.env` `GITHUB_TOKEN`, process `GH_TOKEN`, then process `GITHUB_TOKEN`.
 - Repo source: `GITHUB_REPOSITORY` first; otherwise trusted local Git metadata (`.git/config`, `.git` files, worktrees, and nested cwd discovery) without shelling out.
 - Session state: minimal; tool results should include useful safe `details`.
 - Files written:
   - `.pi/agent/issueme.json`
   - `issues/<issue-number>-<issue-title-slug>.json`
-- Cleanup behavior: remove local issue JSON when the issue is closed.
+- Cleanup behavior: remove local issue JSON when the issue is closed or no longer in the configured creator scope during sync.
 
 ## 7. Security and privacy
 
 - Shell execution: none.
 - File access/mutation: reads trusted project `.env`, Git metadata, `.pi/agent/issueme.json`, and configured issue JSON files; writes only `.pi/agent/issueme.json` and configured issue-cache JSON files.
-- Network access: GitHub REST and GraphQL APIs for the current repository plus selected GitHub Projects v2 owner scopes only.
+- Network access: GitHub REST and GraphQL APIs for the current repository plus selected GitHub Projects v2 owner scopes only, with GitHub `/user` used to verify restricted create flows.
 - Credentials/secrets: read only; never write tokens to disk or tool output.
 - Telemetry/retention: no telemetry.
 - User confirmations: no automatic remote mutation; remote changes happen only through explicit commands/tools.
@@ -160,4 +162,5 @@
   - No webhooks now.
   - No GitHub CLI.
   - Project-local IssueMe state is honored only in trusted projects.
+  - `allowedIssueCreator` limits what IssueMe processes, caches, and mutates; it does not prevent public GitHub users from creating issues in the repository.
   - `specs/spec-configuration-tui-design-standard.md` remains the implemented supplemental design standard for the `/issueme` configuration TUI.

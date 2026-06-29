@@ -19,6 +19,7 @@ export interface ConfigTuiState {
 	searchActive: boolean;
 	editing: boolean;
 	editBuffer: string;
+	editBufferSelected: boolean;
 	status?: string;
 	validationError?: string;
 }
@@ -48,6 +49,13 @@ export const CONFIG_TUI_CATEGORIES: ConfigTuiCategory[] = [
 				description: "Project-local directory for IssueMe issue JSON files.",
 				type: "path",
 				emptyLabel: "issues",
+			},
+			{
+				id: "allowedIssueCreator",
+				label: "Allowed issue creator",
+				description: "Creator scope for GitHub-created issues: all or one GitHub username.",
+				type: "text",
+				emptyLabel: "all",
 			},
 		],
 	},
@@ -89,6 +97,7 @@ export const CONFIG_TUI_CATEGORIES: ConfigTuiCategory[] = [
 export class IssueMeConfigTui {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private readonly initial: IssueMeConfig;
 	private readonly draft: IssueMeConfig;
 	private readonly state: ConfigTuiState;
 	private readonly projectRoot: string;
@@ -108,6 +117,7 @@ export class IssueMeConfigTui {
 		this.theme = theme;
 		this.done = done;
 		this.requestRender = requestRender;
+		this.initial = cloneConfig(initialConfig);
 		this.draft = cloneConfig(initialConfig);
 		this.state = {
 			focus: "categories",
@@ -117,6 +127,7 @@ export class IssueMeConfigTui {
 			searchActive: false,
 			editing: false,
 			editBuffer: "",
+			editBufferSelected: false,
 			...state,
 		};
 	}
@@ -140,7 +151,7 @@ export class IssueMeConfigTui {
 		}
 
 		if (data === "q" || data === "\u0003") {
-			this.done(undefined);
+			this.closeWithAutoSave();
 			return;
 		}
 		if (this.state.searchActive && data === "\x7f") {
@@ -154,7 +165,7 @@ export class IssueMeConfigTui {
 			return;
 		}
 		if (data === "s") {
-			this.save();
+			this.saveNow();
 			return;
 		}
 		if (data === "\t") {
@@ -168,13 +179,13 @@ export class IssueMeConfigTui {
 			this.invalidateAndRender();
 			return;
 		}
-		if (data === "\u001b") {
+		if (isEscape(data)) {
 			if (this.state.searchActive) {
 				this.state.searchActive = false;
 				this.state.search = "";
 				this.invalidateAndRender();
 			} else {
-				this.done(undefined);
+				this.closeWithAutoSave();
 			}
 			return;
 		}
@@ -238,12 +249,12 @@ export class IssueMeConfigTui {
 	}
 
 	private helpLine(mode: ConfigViewMode): string {
-		if (this.state.editing) return mode === "tiny" ? "Enter save  Esc cancel" : "Type value  Enter save  Esc cancel";
+		if (this.state.editing) return mode === "tiny" ? "Type replace  Enter update" : "Type to replace  Enter update  Esc cancel";
 		if (this.state.searchActive) return mode === "wide" ? "↑↓ move  Enter edit  Esc clear  q quit" : "Esc clear  q quit  ↑↓ move  Enter edit";
-		if (mode === "wide") return "↑↓ move  Tab pane  Enter edit  / search  Esc/q quit  s save";
-		if (mode === "narrow-category") return "Esc/q quit  s save  ↑↓ category  Enter open";
-		if (mode === "narrow-settings") return "Esc/q quit  s save  ↑↓ move  Enter edit";
-		return "s save  Esc/q quit";
+		if (mode === "wide") return "↑↓ move  Tab pane  Enter edit  / search  Esc/q save & exit";
+		if (mode === "narrow-category") return "Esc/q save & exit  ↑↓ category  Enter open";
+		if (mode === "narrow-settings") return "Esc/q save & exit  ↑↓ move  Enter edit";
+		return "Esc/q save & exit";
 	}
 
 	private renderCategoryRows(width: number, height: number): string[] {
@@ -323,15 +334,21 @@ export class IssueMeConfigTui {
 
 	private valueStyled(setting: ConfigTuiSetting, width: number): string {
 		const value = this.valueText(setting);
-		const clipped = setting.type === "path" ? tailFit(value, width) : fit(value, width);
+		const clipped = setting.type === "path" ? tailFit(value, width) : truncateAnsi(value, width);
 		return value === setting.emptyLabel ? this.dim(clipped) : clipped;
 	}
 
 	private footerText(): string {
 		if (this.state.validationError) return `${this.warning(this.state.validationError)} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
-		if (this.state.editing) return `${this.selectionCounter()} • ${this.state.editBuffer ? `Editing ${this.state.editBuffer}` : "Type value"} • Enter save • Esc cancel`;
+		if (this.state.editing) {
+			const editText = this.state.editBuffer
+				? `Editing ${this.state.editBuffer}${this.state.editBufferSelected ? " (type to replace)" : ""}`
+				: "Type value";
+			return `${this.selectionCounter()} • ${editText} • Enter update • Esc cancel`;
+		}
 		if (this.state.status) return `${this.state.status} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.state.searchActive) return `${this.state.search ? `Search: ${this.state.search}` : "Search: type to filter all settings"} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
+		if (this.hasChanges()) return `Modified • saves automatically on exit • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		return `${this.selectionCounter()} • ${this.selectedDescription()}`;
 	}
 
@@ -347,6 +364,7 @@ export class IssueMeConfigTui {
 	private scopeLabel(): string {
 		if (this.state.searchActive && this.state.search) return "Search";
 		if (this.state.editing) return "Editing";
+		if (this.hasChanges()) return "Modified";
 		return "Project";
 	}
 
@@ -366,14 +384,18 @@ export class IssueMeConfigTui {
 		if (!setting) return;
 		this.state.editing = true;
 		this.state.editBuffer = this.rawValue(setting);
+		this.state.editBufferSelected = true;
+		this.state.status = undefined;
 		this.state.validationError = undefined;
 	}
 
 	private handleEditInput(data: string): void {
-		if (data === "\u001b") {
+		if (isEscape(data)) {
 			this.state.editing = false;
 			this.state.editBuffer = "";
+			this.state.editBufferSelected = false;
 			this.state.status = "Edit cancelled";
+			this.state.validationError = undefined;
 			this.invalidateAndRender();
 			return;
 		}
@@ -381,29 +403,65 @@ export class IssueMeConfigTui {
 			this.commitEdit();
 			return;
 		}
-		if (data === "\x7f") this.state.editBuffer = dropLastGrapheme(this.state.editBuffer);
-		else if (isPrintable(data)) this.state.editBuffer += data;
-		this.invalidateAndRender();
+		if (isClearEditKey(data)) {
+			this.state.editBuffer = "";
+			this.state.editBufferSelected = false;
+			this.state.validationError = undefined;
+			this.invalidateAndRender();
+			return;
+		}
+		if (isBackspace(data) || isDelete(data)) {
+			this.state.editBuffer = this.state.editBufferSelected ? "" : dropLastGrapheme(this.state.editBuffer);
+			this.state.editBufferSelected = false;
+			this.state.validationError = undefined;
+			this.invalidateAndRender();
+			return;
+		}
+		if (isPrintable(data)) {
+			this.state.editBuffer = this.state.editBufferSelected ? data : this.state.editBuffer + data;
+			this.state.editBufferSelected = false;
+			this.state.validationError = undefined;
+			this.invalidateAndRender();
+		}
 	}
 
 	private commitEdit(): void {
 		const setting = this.selectedSetting();
 		if (!setting) return;
 		try {
-			this.applySetting(setting, this.state.editBuffer);
-			validateIssueMeConfig(this.projectRoot, this.draft);
+			const nextDraft = cloneConfig(this.draft);
+			this.applySetting(nextDraft, setting, this.state.editBuffer);
+			this.replaceDraft(validateIssueMeConfig(this.projectRoot, nextDraft));
 			this.state.editing = false;
 			this.state.editBuffer = "";
-			this.state.status = "Setting updated";
+			this.state.editBufferSelected = false;
+			this.state.status = "Setting updated — saves automatically on exit";
 			this.state.validationError = undefined;
 		} catch (error) {
+			this.state.editBufferSelected = false;
 			this.state.validationError = error instanceof Error ? error.message : String(error);
 		}
 		this.invalidateAndRender();
 	}
 
-	private save(): void {
+	private hasChanges(): boolean {
+		return !configsEqual(this.draft, this.initial);
+	}
+
+	private saveNow(): void {
+		this.finish(true);
+	}
+
+	private closeWithAutoSave(): void {
+		this.finish(this.hasChanges());
+	}
+
+	private finish(forceSave: boolean): void {
 		try {
+			if (!forceSave) {
+				this.done(undefined);
+				return;
+			}
 			const config = validateIssueMeConfig(this.projectRoot, this.draft);
 			this.done(config);
 		} catch (error) {
@@ -412,16 +470,25 @@ export class IssueMeConfigTui {
 		}
 	}
 
-	private applySetting(setting: ConfigTuiSetting, raw: string): void {
+	private applySetting(target: IssueMeConfig, setting: ConfigTuiSetting, raw: string): void {
 		if (setting.type === "list") {
 			const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
-			(this.draft[setting.id] as string[]) = [...new Set(values)];
+			(target[setting.id] as string[]) = [...new Set(values)];
 			return;
 		}
 		const value = raw.trim();
-		if (setting.id === "defaultSkillPath") this.draft.defaultSkillPath = value || null;
-		else if (setting.id === "issueDirectory") this.draft.issueDirectory = value || "issues";
+		if (setting.id === "defaultSkillPath") target.defaultSkillPath = value || null;
+		else if (setting.id === "issueDirectory") target.issueDirectory = value || "issues";
+		else if (setting.id === "allowedIssueCreator") target.allowedIssueCreator = value || "all";
 		else throw new IssueMeError("config_tui_invalid_setting", "Unsupported config setting.");
+	}
+
+	private replaceDraft(config: IssueMeConfig): void {
+		this.draft.issueDirectory = config.issueDirectory;
+		this.draft.allowedIssueCreator = config.allowedIssueCreator;
+		this.draft.defaultLabels = [...config.defaultLabels];
+		this.draft.defaultAssignees = [...config.defaultAssignees];
+		this.draft.defaultSkillPath = config.defaultSkillPath;
 	}
 
 	private rawValue(setting: ConfigTuiSetting): string {
@@ -493,10 +560,23 @@ function sourceLine(): string {
 function cloneConfig(config: IssueMeConfig): IssueMeConfig {
 	return {
 		issueDirectory: config.issueDirectory,
+		allowedIssueCreator: config.allowedIssueCreator ?? "all",
 		defaultLabels: [...config.defaultLabels],
 		defaultAssignees: [...config.defaultAssignees],
 		defaultSkillPath: config.defaultSkillPath,
 	};
+}
+
+function configsEqual(left: IssueMeConfig, right: IssueMeConfig): boolean {
+	return left.issueDirectory === right.issueDirectory
+		&& left.allowedIssueCreator === right.allowedIssueCreator
+		&& left.defaultSkillPath === right.defaultSkillPath
+		&& arraysEqual(left.defaultLabels, right.defaultLabels)
+		&& arraysEqual(left.defaultAssignees, right.defaultAssignees);
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function visibleWindow(count: number, selectedIndex: number, height: number): number[] {
@@ -676,6 +756,40 @@ function isUp(data: string): boolean {
 
 function isDown(data: string): boolean {
 	return data === "\u001b[B" || data === "j";
+}
+
+function isBackspace(data: string): boolean {
+	return data === "\x7f" || data === "\b";
+}
+
+function isDelete(data: string): boolean {
+	return data === "\u001b[3~";
+}
+
+function isEscape(data: string): boolean {
+	return data === "\u001b" || isPlainKittyKey(data, 27) || isPlainModifyOtherKeysKey(data, 27);
+}
+
+function isPlainKittyKey(data: string, codepoint: number): boolean {
+	const match = data.match(/^\u001b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
+	if (!match) return false;
+	return Number.parseInt(match[1] ?? "", 10) === codepoint && isPlainModifier(match[4]);
+}
+
+function isPlainModifyOtherKeysKey(data: string, codepoint: number): boolean {
+	const match = data.match(/^\u001b\[27;(\d+);(\d+)~$/);
+	if (!match) return false;
+	return Number.parseInt(match[2] ?? "", 10) === codepoint && isPlainModifier(match[1]);
+}
+
+function isPlainModifier(modifierValue: string | undefined): boolean {
+	const modifier = modifierValue === undefined ? 0 : Number.parseInt(modifierValue, 10) - 1;
+	const lockModifierMask = 64 + 128;
+	return Number.isFinite(modifier) && (modifier & ~lockModifierMask) === 0;
+}
+
+function isClearEditKey(data: string): boolean {
+	return data === "\u0015";
 }
 
 function isPrintable(data: string): boolean {

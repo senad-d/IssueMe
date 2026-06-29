@@ -1,6 +1,6 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
@@ -23,16 +23,16 @@ const ManageLabelParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-type LabelManagementAction = "create" | "update" | "delete";
+type ManageLabelToolParams = Static<typeof ManageLabelParams>;
+type LabelManagementAction = ManageLabelToolParams["action"];
+type LabelActionSpecificField = Exclude<keyof ManageLabelToolParams, "action" | "name"> & string;
 
-interface ManageLabelToolParams {
-	action?: LabelManagementAction;
-	name?: string;
-	newName?: string;
-	color?: string;
-	description?: string;
-	confirmDelete?: boolean;
-}
+export const MANAGE_LABEL_COMMON_FIELDS = ["action", "name"] as const satisfies readonly (keyof ManageLabelToolParams & string)[];
+export const MANAGE_LABEL_ACTION_FIELDS = {
+	create: ["color", "description"],
+	update: ["newName", "color", "description"],
+	delete: ["confirmDelete"],
+} as const satisfies Record<LabelManagementAction, readonly LabelActionSpecificField[]>;
 
 interface NormalizedManageLabelParams {
 	action: LabelManagementAction;
@@ -56,7 +56,7 @@ export function registerManageLabelTool(pi: ExtensionAPI, options: IssueMeToolRe
 			executionMode: "sequential",
 			parameters: ManageLabelParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeManageLabelParams(params as ManageLabelToolParams);
+				const normalized = normalizeManageLabelParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				try {
 					if (normalized.action === "create") {
@@ -95,8 +95,8 @@ export function registerManageLabelTool(pi: ExtensionAPI, options: IssueMeToolRe
 function normalizeManageLabelParams(params: ManageLabelToolParams): NormalizedManageLabelParams {
 	const action = normalizeAction(params.action);
 	const name = normalizeLabelName(params.name, "name");
+	assertManageLabelActionFields(params, action);
 	if (action === "create") {
-		if (params.newName !== undefined) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "newName is only valid for label updates.", { field: "newName" });
 		return {
 			action,
 			name,
@@ -136,6 +136,19 @@ function normalizeManageLabelParams(params: ManageLabelToolParams): NormalizedMa
 function normalizeAction(value: LabelManagementAction | undefined): LabelManagementAction {
 	if (value === "create" || value === "update" || value === "delete") return value;
 	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label action must be create, update, or delete.", { field: "action" });
+}
+
+function assertManageLabelActionFields(params: ManageLabelToolParams, action: LabelManagementAction): void {
+	const allowed = new Set([...MANAGE_LABEL_COMMON_FIELDS, ...MANAGE_LABEL_ACTION_FIELDS[action]]);
+	const actionFields = Object.values(MANAGE_LABEL_ACTION_FIELDS).flatMap((fields) => fields);
+	const unexpected = actionFields.filter((field) => !allowed.has(field) && params[field] !== undefined);
+	if (unexpected.length > 0) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`Fields ${unexpected.join(", ")} do not apply to label action ${action}.`,
+			{ fields: unexpected, action },
+		);
+	}
 }
 
 function normalizeLabelName(value: string | undefined, field: string): string {

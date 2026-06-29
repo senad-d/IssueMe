@@ -4,7 +4,7 @@ import { Type } from "typebox";
 
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const AssignIssueParams = Type.Object(
 	{
@@ -30,6 +30,7 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const assignees = params.action === "set" ? sanitizeGitHubLoginList(params.assignees, "assignees") : requireNonEmptyGitHubLogins(params.assignees, "assignees");
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.number, "assign_issue", signal);
 				const updatedIssue = params.action === "add"
 					? await runtime.client.addAssignees(params.number, assignees, signal)
 					: params.action === "remove"
@@ -42,6 +43,7 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 					const { record, summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Assignees for issue #${params.number}: ${record.assignees.length ? record.assignees.join(", ") : "none"}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						changedFields: ["assignees"],
 						paths: path ? [path] : [],
@@ -53,6 +55,7 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							...(updatedSummary ? { issue: updatedSummary } : {}),
 							changedFields: ["assignees"],
 						},

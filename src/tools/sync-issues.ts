@@ -9,7 +9,7 @@ import { issueRecordToToolSummary, isPullRequestIssue } from "../issues/format.t
 import { issueFileDiagnosticReason, listIssueFileEntries, relativeIssuePath, removeClosedIssueFiles, writeIssueRecord } from "../issues/store.ts";
 import type { InvalidIssueFileDiagnostic, IssueMeToolDetails, IssueWriteResult } from "../types.ts";
 import { resolveIssueFilePath } from "../utils/slug.ts";
-import { assertNotAborted, createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertNotAborted, createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, issueCreatorMatchesConfig, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const SyncIssuesParams = Type.Object({}, { additionalProperties: false });
 
@@ -31,7 +31,9 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const beforeEntries = await listIssueFileEntries(runtime.projectRoot, runtime.config, { repository: runtime.repository });
 				const before = beforeEntries.files;
 				const invalidFiles = relativeInvalidFileDiagnostics(runtime.projectRoot, beforeEntries.invalidFiles);
-				const issues = (await runtime.client.listOpenIssues(signal)).filter((issue) => !isPullRequestIssue(issue));
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
+				const listResult = await runtime.client.listIssues({ state: "open", ...(creatorScope !== "all" ? { creator: creatorScope } : {}) }, signal);
+				const issues = listResult.issues.filter((issue) => !isPullRequestIssue(issue) && issueCreatorMatchesConfig(runtime.config, issue.user));
 				const openNumbers = new Set<number>();
 				const counts = { created: 0, updated: 0, renamed: 0, unchanged: 0, removed: 0, invalid: invalidFiles.length };
 				const paths: string[] = [];
@@ -83,6 +85,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const commentTruncation = runtime.commentsTruncated ? commentTruncationDetails(runtime.truncatedCommentIssues) : undefined;
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
+					creatorScope,
 					counts,
 					paths,
 					removedPaths,
@@ -96,6 +99,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const staleBefore = before.length - openNumbers.size;
 				const text = [
 					`Synced ${issues.length} open issue(s) for ${runtime.repository}.`,
+					`Creator scope: ${creatorScope}.`,
 					`Created: ${counts.created}, updated: ${counts.updated}, renamed: ${counts.renamed}, unchanged: ${counts.unchanged}, removed local files: ${counts.removed}.`,
 					counts.invalid > 0 ? `Invalid local issue files: ${counts.invalid} left untouched with safe diagnostics in details.invalidFiles.` : undefined,
 					runtime.commentsTruncated ? `Some issue comments were truncated in local cache according to the IssueMe comment policy (${MAX_CACHE_COMMENTS} comments per issue).` : undefined,

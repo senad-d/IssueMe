@@ -7,6 +7,7 @@ import { renderConfigTuiSnapshot } from "../src/commands/config-tui.ts";
 const outputDir = join("test", "snapshots", "tui", "issueme-config");
 const config = {
 	issueDirectory: "issues",
+	allowedIssueCreator: "all",
 	defaultLabels: ["bug", "agent-ready"],
 	defaultAssignees: [],
 	defaultSkillPath: null,

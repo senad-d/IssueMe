@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { IssueMeError } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, ToolCommentSummary, ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const ReopenIssueParams = Type.Object(
 	{
@@ -30,10 +30,12 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				const commentBody = normalizeReopenComment(params.comment);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const current = await runtime.client.getIssue(params.number, signal);
+				assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "reopen_issue" });
 				const currentSummary = issueSummaryFromGitHub(runtime, current);
 				if (current.state === "open") {
 					return toolText(`Issue #${params.number} is already open: ${currentSummary.title}\nURL: ${currentSummary.html_url}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: currentSummary,
 						changedFields: [],
 						cacheUpdated: false,
@@ -58,6 +60,7 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 							`Reopened issue #${params.number}: ${reopenedSummary.title}\nURL: ${reopenedSummary.html_url}\nAdding the reopen comment failed; run issueme_sync_issues before retrying local work.`,
 							{
 								repository: runtime.repository,
+								creatorScope: issueCreatorScopeLabel(runtime.config),
 								issue: reopenedSummary,
 								changedFields,
 								cacheUpdated: false,
@@ -77,6 +80,7 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						`Reopened issue #${params.number}: ${summary.title}\nURL: ${summary.html_url}${commentDetails?.html_url ? `\nComment: ${commentDetails.html_url}` : ""}\nLocal file: ${path ?? "not written"}`,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							issue: summary,
 							...(commentDetails ? { comment: commentDetails } : {}),
 							changedFields,
@@ -92,6 +96,7 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							issue: reopenedSummary,
 							...(commentDetails ? { comment: commentDetails } : {}),
 							changedFields,

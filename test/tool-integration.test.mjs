@@ -205,6 +205,9 @@ function makeSuccessFetch() {
 			if (body.operationName === "IssueMeGetProjectV2FieldsByNumber") {
 				return jsonResponse({ data: { repository: { projectV2: { ...project, fields: { nodes: projectFields, pageInfo: { hasNextPage: false } } } } } });
 			}
+			if (body.operationName === "IssueMeValidateProjectV2ForAdd") {
+				return jsonResponse({ data: { node: project } });
+			}
 			if (body.operationName === "IssueMeAddIssueToProjectV2") {
 				return jsonResponse({ data: { addProjectV2ItemById: { item: projectItem } } });
 			}
@@ -521,6 +524,46 @@ test("IssueMe runtime validates injected repository objects", () => {
 		() => normalizeRuntimeRepository({ owner: "owner/name", repo: "repo", fullName: "owner/name/repo" }),
 		(error) => error?.code === "invalid_github_repository" && /valid GitHub/.test(error.message),
 	);
+});
+
+test("registered IssueMe tools reject unsafe numeric identifiers before requests or cache writes", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tools = registerInjectedTools(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		calls.push({ method: init.method ?? "GET", path: url.pathname });
+		return jsonResponse({});
+	});
+	const unsafe = Number.MAX_SAFE_INTEGER + 1;
+	const cases = [
+		["issueme_get_issue", { number: unsafe, refresh: true }, "issueNumber"],
+		["issueme_update_issue", { number: unsafe, title: "Updated" }, "issueNumber"],
+		["issueme_update_issue", { number: 1, milestoneNumber: unsafe }, "milestoneNumber"],
+		["issueme_comment_issue", { number: unsafe, body: "Progress note" }, "issueNumber"],
+		["issueme_update_comment", { issueNumber: 1, commentId: unsafe, body: "Corrected note" }, "commentId"],
+		["issueme_delete_comment", { issueNumber: 1, commentId: unsafe }, "commentId"],
+		["issueme_close_issue", { number: unsafe }, "issueNumber"],
+		["issueme_reopen_issue", { number: unsafe }, "issueNumber"],
+		["issueme_add_sub_issue", { parentNumber: unsafe, childNumber: 2 }, "issueNumber"],
+		["issueme_reorder_sub_issues", { parentNumber: unsafe, orderedChildNumbers: [2] }, "parentNumber"],
+		["issueme_list_sub_issues", { issueNumber: unsafe }, "issueNumber"],
+		["issueme_add_issue_to_project", { issueNumber: unsafe, projectId: "PVT_repo_1" }, "issueNumber"],
+		["issueme_update_project_item", { projectId: "PVT_repo_1", itemId: "PVTI_1", issueNumber: unsafe, fieldId: "PVTSSF_status", valueType: "single_select", singleSelectOptionId: "opt_todo" }, "issueNumber"],
+	];
+
+	for (const [name, params, field] of cases) {
+		const callCountBefore = calls.length;
+		await assert.rejects(
+			() => execute(tools.get(name), projectRoot, params),
+			(error) => {
+				assert.equal(error?.code, "invalid_tool_input", name);
+				assert.equal(error.safeDetails?.field, field, name);
+				return true;
+			},
+		);
+		assert.equal(calls.length, callCountBefore, `${name} should fail before GitHub requests`);
+	}
+	assert.deepEqual(await readdir(projectRoot), []);
 });
 
 test("IssueMe tool runtime accepts an injected GitHubClient instance", async () => {

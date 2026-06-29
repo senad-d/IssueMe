@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { IssueMeError } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, listChangedFields, normalizeIssueBody, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, listChangedFields, normalizeIssueBody, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const UpdateIssueParams = Type.Object(
 	{
@@ -53,6 +53,7 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				if (changedFields.length === 0) throw new IssueMeError("invalid_tool_input", "Provide at least one field to update.");
 
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.number, "update_issue", signal);
 				const updatedIssue = await runtime.client.updateIssue(params.number, updatePayload, signal);
 				let updatedSummary: ToolIssueSummary | undefined;
 				try {
@@ -60,6 +61,7 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 					const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Updated issue #${params.number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						changedFields,
 						paths: path ? [path] : [],
@@ -72,6 +74,7 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							...(updatedSummary ? { issue: updatedSummary } : {}),
 							changedFields,
 						},

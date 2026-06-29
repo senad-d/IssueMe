@@ -1,11 +1,11 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_DEVELOPMENT_LINKS } from "../constants.ts";
 import type { GitHubIssueDevelopmentLinksResult, NativeSubIssueSummary } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolIssueDevelopmentLinkSummary, ToolIssueSummary } from "../types.ts";
 import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
-import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_DEVELOPMENT_LINK_LIMIT = 25;
 const DEVELOPMENT_LINK_LIMITATION = "GitHub development-link data comes from issue timeline events; standalone branches or private/cross-repository references may be absent unless GitHub exposes them to the token.";
@@ -18,10 +18,7 @@ const ListIssueDevelopmentLinksParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListIssueDevelopmentLinksToolParams {
-	issueNumber?: number;
-	limit?: number;
-}
+type ListIssueDevelopmentLinksToolParams = Static<typeof ListIssueDevelopmentLinksParams>;
 
 interface NormalizedListIssueDevelopmentLinksParams {
 	issueNumber: number;
@@ -40,11 +37,13 @@ export function registerListIssueDevelopmentLinksTool(pi: ExtensionAPI, options:
 			],
 			parameters: ListIssueDevelopmentLinksParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListIssueDevelopmentLinksParams(params as ListIssueDevelopmentLinksToolParams);
+				const normalized = normalizeListIssueDevelopmentLinksParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "list_issue_development_links", signal, { requireOpen: false });
 				const result = await runtime.client.listIssueDevelopmentLinks(normalized.issueNumber, { limit: normalized.limit }, signal);
-				const details = buildDevelopmentLinksDetails(runtime.repository, result, normalized);
-				return toolText(formatDevelopmentLinksText(runtime.repository, result, normalized), details);
+				const creatorScope = issueCreatorScopeLabel(runtime.config);
+				const details = buildDevelopmentLinksDetails(runtime.repository, result, normalized, creatorScope);
+				return toolText(formatDevelopmentLinksText(runtime.repository, result, normalized, creatorScope), details);
 			},
 		}),
 	);
@@ -69,11 +68,13 @@ function buildDevelopmentLinksDetails(
 	repository: string,
 	result: GitHubIssueDevelopmentLinksResult,
 	params: NormalizedListIssueDevelopmentLinksParams,
+	creatorScope: string,
 ): IssueMeToolDetails {
 	const pullRequests = result.links.filter((link) => link.type === "pull_request").length;
 	const commits = result.links.filter((link) => link.type === "commit").length;
 	return {
 		repository,
+		creatorScope,
 		status: "list_issue_development_links",
 		issue: nativeIssueToToolSummary(repository, result.issue),
 		developmentLinks: result.links,
@@ -96,9 +97,11 @@ function formatDevelopmentLinksText(
 	repository: string,
 	result: GitHubIssueDevelopmentLinksResult,
 	params: NormalizedListIssueDevelopmentLinksParams,
+	creatorScope: string,
 ): string {
 	const lines = [
 		`Development links for ${repository}#${result.issue.number}: ${result.links.length} linked item(s) returned.`,
+		`Creator scope: ${creatorScope}.`,
 		"This tool is read-only; it does not fetch pull-request bodies or write local IssueMe cache files.",
 		result.links.length === 0 ? "No linked pull requests, commits, or development references were returned by GitHub for this issue." : undefined,
 		...result.links.map(formatDevelopmentLinkLine),
@@ -130,6 +133,7 @@ function nativeIssueToToolSummary(repository: string, issue: NativeSubIssueSumma
 		number: issue.number,
 		title: issue.title,
 		state: issue.state,
+		...(issue.creator ? { creator: issue.creator } : {}),
 		labels: [],
 		assignees: [],
 		html_url: issue.html_url,

@@ -1,5 +1,6 @@
 import { ISSUE_SCHEMA_VERSION, MAX_GET_BODY_CHARS, MAX_GET_COMMENT_CHARS, MAX_GET_COMMENTS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
+import { isValidGitHubLogin } from "../utils/github-login.ts";
 import type {
 	GitHubCommentResponse,
 	GitHubIssueResponse,
@@ -59,6 +60,7 @@ export function githubIssueToRecord(
 		number,
 		title,
 		state,
+		...(normalizeIssueCreator(issue.user) ? { creator: normalizeIssueCreator(issue.user) } : {}),
 		body: typeof issue.body === "string" ? issue.body : "",
 		labels: normalizeLabels(issue.labels),
 		assignees: normalizeAssignees(issue.assignees),
@@ -88,6 +90,7 @@ export function issueRecordToToolSummary(record: IssueRecord, localPath?: string
 		number: record.number,
 		title: record.title,
 		state: record.state,
+		...(record.creator ? { creator: record.creator } : {}),
 		labels: [...record.labels],
 		assignees: [...record.assignees],
 		html_url: record.html_url,
@@ -133,6 +136,7 @@ export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFor
 		`#${record.number} ${record.title}`,
 		`Repository: ${record.repository}`,
 		`State: ${record.state}`,
+		...(record.creator ? [`Creator: ${record.creator}`] : []),
 		`URL: ${record.html_url}`,
 		`Labels: ${record.labels.length ? record.labels.join(", ") : "none"}`,
 		`Assignees: ${record.assignees.length ? record.assignees.join(", ") : "none"}`,
@@ -200,6 +204,7 @@ function normalizeRelationshipSummary(value: unknown): IssueRelationshipSummary 
 	const number = value.number;
 	const title = value.title;
 	const rawUrl = value.html_url ?? value.url;
+	const creator = normalizeIssueCreator(value.user ?? value.author);
 	if (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0) return undefined;
 	if (typeof title !== "string" || !title.trim()) return undefined;
 	if (typeof rawUrl !== "string" || !rawUrl.trim()) return undefined;
@@ -208,6 +213,7 @@ function normalizeRelationshipSummary(value: unknown): IssueRelationshipSummary 
 		number,
 		title,
 		...(state ? { state } : {}),
+		...(creator ? { creator } : {}),
 		html_url: rawUrl,
 	};
 }
@@ -245,6 +251,12 @@ function formatSubIssueSummary(record: IssueRecord): string {
 	const total = record.sub_issues_count ?? subIssues.length;
 	const shown = subIssues.map(formatRelationshipSummary).join(", ");
 	return total > subIssues.length ? `${shown} (${subIssues.length} shown of ${total})` : shown;
+}
+
+function normalizeIssueCreator(value: unknown): string | undefined {
+	if (!isObject(value)) return undefined;
+	const login = value.login;
+	return isValidGitHubLogin(login) ? login : undefined;
 }
 
 function normalizeCommentCount(value: unknown, fallback: number | undefined, minimum: number): number {

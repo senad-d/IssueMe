@@ -6,7 +6,7 @@ import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
 import type { GitHubIssueCloseReason } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
-import { createIssueMeRuntime, partialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const CloseIssueParams = Type.Object(
 	{
@@ -33,6 +33,7 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const changedFields = reason ? ["state", "state_reason"] : ["state"];
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const current = await runtime.client.getIssue(params.number, signal);
+				assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "close_issue" });
 				const alreadyClosed = current.state === "closed";
 				const issue = alreadyClosed ? current : await runtime.client.closeIssue(params.number, { reason }, signal);
 				const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
@@ -47,6 +48,7 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							issue: issueSummary,
 							changedFields: alreadyClosed ? [] : changedFields,
 						},
@@ -56,6 +58,7 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const title = typeof issue.title === "string" ? issue.title : `#${params.number}`;
 				return toolText(`${alreadyClosed ? "Issue was already closed" : "Closed issue"} #${params.number}: ${title}${!alreadyClosed && reason ? `\nClose reason: ${reason}` : ""}\nURL: ${issueSummary.html_url}\nRemoved local file(s): ${removedPaths.length || 0}`, {
 					repository: runtime.repository,
+					creatorScope: issueCreatorScopeLabel(runtime.config),
 					issue: issueSummary,
 					removedPaths,
 					changedFields: alreadyClosed ? [] : changedFields,

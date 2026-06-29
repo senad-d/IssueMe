@@ -1,5 +1,6 @@
 export interface IssueMeConfig {
 	issueDirectory: string;
+	allowedIssueCreator: string;
 	defaultLabels: string[];
 	defaultAssignees: string[];
 	defaultSkillPath: string | null;
@@ -43,6 +44,7 @@ export interface IssueRelationshipSummary {
 	number: number;
 	title: string;
 	state?: IssueState;
+	creator?: string;
 	html_url: string;
 }
 
@@ -52,6 +54,7 @@ export interface IssueRecord {
 	number: number;
 	title: string;
 	state: IssueState;
+	creator?: string;
 	body: string;
 	labels: string[];
 	assignees: string[];
@@ -77,6 +80,7 @@ export interface IssueFileMetadata {
 	number: number;
 	title: string;
 	state: IssueState;
+	creator?: string;
 	updated_at: string;
 }
 
@@ -138,6 +142,7 @@ export interface GitHubIssueResponse {
 	number?: unknown;
 	title?: unknown;
 	state?: unknown;
+	user?: unknown;
 	body?: unknown;
 	labels?: unknown;
 	assignees?: unknown;
@@ -170,6 +175,7 @@ export interface ToolIssueSummary {
 	number: number;
 	title: string;
 	state: IssueState;
+	creator?: string;
 	labels: string[];
 	assignees: string[];
 	html_url: string;
@@ -319,6 +325,7 @@ export type IssueMeToolResult = "success" | "partial_success" | "error";
 export interface IssueMeToolBaseDetails {
 	result?: IssueMeToolResult;
 	repository?: string;
+	creatorScope?: string;
 	issue?: ToolIssueSummary;
 	issues?: ToolIssueSummary[];
 	labels?: ToolLabelSummary[];

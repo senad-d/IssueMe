@@ -7,7 +7,7 @@ import type { IssueMeConfig } from "../types.ts";
 import { resolveCurrentRepository } from "../github/repository.ts";
 import { formatIssueSummary, issueRecordToToolSummary } from "../issues/format.ts";
 import { findIssueByLookup, findIssueByNumber, relativeIssuePath } from "../issues/store.ts";
-import { assertTrustedProject, createIssueMeRuntime, getIssueMeProjectRoot, normalizeRuntimeRepository, refreshIssueRecord, resolveRuntimeOptions, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { assertIssueCreatorAllowed, assertTrustedProject, createIssueMeRuntime, getIssueMeProjectRoot, issueCreatorScopeLabel, normalizeRuntimeRepository, refreshIssueRecord, resolveRuntimeOptions, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const GetIssueParams = Type.Object(
 	{
@@ -47,6 +47,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 					if (issueNumber === undefined && hasLookup) {
 						const localLookup = await findIssueByLookup(runtime.projectRoot, runtime.config, lookup, runtime.repository);
 						if (!localLookup) throw new IssueMeError("issue_not_found", "Issue not found in local IssueMe cache; provide a number to refresh directly from GitHub.");
+						assertIssueCreatorAllowed(runtime.config, localLookup.record, { repository: runtime.repository, operation: "get_issue_refresh_lookup" });
 						issueNumber = localLookup.record.number;
 						previousPath = relativeIssuePath(runtime.projectRoot, localLookup.path);
 					}
@@ -60,6 +61,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 					const formatted = formatIssueSummary(record);
 					return toolText(`${formatted.text}\n\nLocal cache action: ${action}\nLocal file: ${path ?? "removed (issue is closed)"}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						paths: path ? [path] : [],
 						removedPaths: allRemovedPaths,
@@ -81,6 +83,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 					? await findIssueByNumber(localScope.projectRoot, localScope.config, params.number, localScope.repository)
 					: await findIssueByLookup(localScope.projectRoot, localScope.config, lookup ?? "", localScope.repository);
 				if (!localLookup) throw new IssueMeError("issue_not_found", "Issue not found in the current repository's local IssueMe cache. Run issueme_sync_issues or use refresh with a number.");
+				assertIssueCreatorAllowed(localScope.config, localLookup.record, { repository: localScope.repository, operation: "get_issue_local_lookup" });
 
 				const { projectRoot } = localScope;
 
@@ -88,6 +91,7 @@ export function registerGetIssueTool(pi: ExtensionAPI, options: IssueMeToolRegis
 				const path = relativeIssuePath(projectRoot, localLookup.path);
 				return toolText(formatted.text, {
 					repository: localLookup.record.repository,
+					creatorScope: issueCreatorScopeLabel(localScope.config),
 					issue: issueRecordToToolSummary(localLookup.record, path),
 					paths: path ? [path] : [],
 					truncated: formatted.truncated,

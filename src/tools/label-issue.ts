@@ -2,7 +2,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { createIssueMeRuntime, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const LabelIssueParams = Type.Object(
 	{
@@ -28,6 +28,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const labels = params.action === "set" ? sanitizeStringList(params.labels, "labels") : requireNonEmptyStrings(params.labels, "labels");
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.number, "label_issue", signal);
 				if (params.action === "add") await runtime.client.addLabels(params.number, labels, signal);
 				else if (params.action === "set") await runtime.client.setLabels(params.number, labels, signal);
 				else {
@@ -44,6 +45,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 							`Removed ${removedLabelMutations} label(s) from issue #${params.number} before a later label removal failed. Run issueme_sync_issues before retrying local work.`,
 							{
 								repository: runtime.repository,
+								creatorScope: issueCreatorScopeLabel(runtime.config),
 								changedFields: ["labels"],
 								cacheUpdated: false,
 								needsSync: true,
@@ -59,6 +61,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 					const { record, summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Labels for issue #${params.number}: ${record.labels.length ? record.labels.join(", ") : "none"}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						changedFields: ["labels"],
 						paths: path ? [path] : [],
@@ -70,6 +73,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							changedFields: ["labels"],
 						},
 					);

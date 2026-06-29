@@ -1,4 +1,4 @@
 Configuration       
 Project             
 Issue directory: iss
-s save  Esc/q quit  
+Esc/q save & exit   

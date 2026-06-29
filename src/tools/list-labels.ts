@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
@@ -17,11 +17,7 @@ const ListLabelsParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-interface ListLabelsToolParams {
-	name?: string;
-	query?: string;
-	limit?: number;
-}
+type ListLabelsToolParams = Static<typeof ListLabelsParams>;
 
 interface NormalizedListLabelsParams {
 	name?: string;
@@ -41,7 +37,7 @@ export function registerListLabelsTool(pi: ExtensionAPI, options: IssueMeToolReg
 			],
 			parameters: ListLabelsParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const normalized = normalizeListLabelsParams(params as ListLabelsToolParams);
+				const normalized = normalizeListLabelsParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const result = await runtime.client.listLabels(normalized, signal);
 				const labels = summarizeLabels(result.labels);

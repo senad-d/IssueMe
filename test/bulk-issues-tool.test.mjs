@@ -10,6 +10,7 @@ import { registerBulkIssueOperationsTool } from "../src/tools/bulk-issues.ts";
 const TOKEN = "ghp_bulk_secret";
 const REPOSITORY = "owner/repo";
 const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+const restrictedConfig = { ...config, allowedIssueCreator: "hubot" };
 
 function fakePi() {
 	const tools = new Map();
@@ -23,11 +24,11 @@ async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-bulk-tool-test-"));
 }
 
-function registerBulkTool(fetchFn) {
+function registerBulkTool(fetchFn, runtimeConfig = config) {
 	const pi = fakePi();
 	registerBulkIssueOperationsTool(pi, {
 		runtime: {
-			config,
+			config: runtimeConfig,
 			repository: REPOSITORY,
 			token: TOKEN,
 			fetchFn,
@@ -137,10 +138,12 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 
 	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
 		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1",
 		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/1/labels",
 		"GET /repos/owner/repo/issues/1",
 		"GET /repos/owner/repo/issues/1/comments",
+		"GET /repos/owner/repo/issues/2",
 		"GET /repos/owner/repo/issues/2",
 		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/2/labels",
@@ -189,6 +192,7 @@ test("issueme_bulk_update_issues reports partial success if aborted before cache
 
 	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
 		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1",
 		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/1/labels",
 		"GET /repos/owner/repo/issues/1",
@@ -216,6 +220,21 @@ test("issueme_bulk_update_issues adds explicitly listed issues to a project and 
 		calls.push({ method, path: url.pathname, body });
 
 		if (url.pathname === "/repos/owner/repo/issues/7" && method === "GET") return jsonResponse(issue);
+		if (url.pathname === "/graphql" && method === "POST" && body.operationName === "IssueMeValidateProjectV2ForAdd") {
+			return jsonResponse({
+				data: {
+					node: {
+						id: "PVT_roadmap",
+						title: "Roadmap",
+						number: 1,
+						url: "https://github.com/users/owner/projects/1",
+						closed: false,
+						public: false,
+						owner: { __typename: "User", login: "owner" },
+					},
+				},
+			});
+		}
 		if (url.pathname === "/graphql" && method === "POST" && body.operationName === "IssueMeAddIssueToProjectV2") {
 			return jsonResponse({
 				data: {
@@ -244,17 +263,76 @@ test("issueme_bulk_update_issues adds explicitly listed issues to a project and 
 
 	const result = await executeBulk(tool, projectRoot, { issueNumbers: [7], action: "add_to_project", projectId: "PVT_roadmap" });
 
-	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+	assert.deepEqual(calls.map((call) => call.body?.operationName ?? `${call.method} ${call.path}`), [
 		"GET /repos/owner/repo/issues/7",
-		"POST /graphql",
+		"GET /repos/owner/repo/issues/7",
+		"IssueMeValidateProjectV2ForAdd",
+		"IssueMeAddIssueToProjectV2",
 	]);
-	assert.equal(calls[1].body.variables.projectId, "PVT_roadmap");
-	assert.equal(calls[1].body.variables.contentId, "I_7");
+	assert.equal(calls[2].body.variables.projectId, "PVT_roadmap");
+	assert.equal(calls[3].body.variables.projectId, "PVT_roadmap");
+	assert.equal(calls[3].body.variables.contentId, "I_7");
 	assert.equal(result.details.result, "success");
 	assert.equal(result.details.cacheUpdated, false);
 	assert.deepEqual(result.details.paths, []);
 	assert.equal(result.details.bulkResults[0].projectItem.id, "PVTI_existing_7");
 	assert.match(result.content[0].text, /Added or confirmed issue #7/);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues refuses out-of-scope issues before mutation and skips later issues by default", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push({ method, path: url.pathname });
+
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") {
+			return jsonResponse(githubIssue(1, "Intruder Target", { user: { login: "intruder" } }));
+		}
+
+		throw new Error(`Unexpected restricted bulk request: ${method} ${url.pathname}`);
+	}, restrictedConfig);
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"] });
+
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["GET /repos/owner/repo/issues/1"]);
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.status, "bulk_failed");
+	assert.equal(result.details.creatorScope, "hubot");
+	assert.deepEqual(result.details.counts, { requested: 2, succeeded: 0, partial: 0, failed: 1, skipped: 1 });
+	assert.deepEqual(result.details.bulkResults.map((item) => item.status), ["failed", "skipped"]);
+	assert.equal(result.details.bulkResults[0].error.code, "issue_creator_not_allowed");
+	assert.equal(result.details.bulkResults[0].error.details.allowedIssueCreator, "hubot");
+	assert.equal(result.details.bulkResults[0].error.details.creator, "intruder");
+	assert.match(result.content[0].text, /creator scope=hubot/);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues refuses out-of-scope already-closed close without local cleanup", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push({ method, path: url.pathname });
+
+		if (url.pathname === "/repos/owner/repo/issues/5" && method === "GET") {
+			return jsonResponse(githubIssue(5, "Already Closed Intruder", { state: "closed", closed_at: "2026-06-27T01:00:00Z", user: { login: "intruder" } }));
+		}
+
+		throw new Error(`Unexpected restricted bulk close request: ${method} ${url.pathname}`);
+	}, restrictedConfig);
+
+	await writeIssueRecord(projectRoot, restrictedConfig, issueRecord(5, "Already Closed Intruder", { creator: "intruder" }));
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [5], action: "close", reason: "not_planned" });
+
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["GET /repos/owner/repo/issues/5"]);
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.bulkResults[0].status, "failed");
+	assert.equal(result.details.bulkResults[0].error.code, "issue_creator_not_allowed");
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["5-already-closed-intruder.json"]);
 	assertNoToken(result);
 });
 

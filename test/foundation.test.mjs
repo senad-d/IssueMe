@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { getIssueMeConfigPath, loadIssueMeConfig, saveIssueMeConfig } from "../src/config/config.ts";
 import { parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
+import { githubIssueToRecord, issueRecordToToolSummary, formatIssueSummary } from "../src/issues/format.ts";
 import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
 import { isValidIsoDateOnly } from "../src/utils/date.ts";
 import { parseProjectEnvTokens, readProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
@@ -210,22 +211,45 @@ test("config loader/saver handles defaults, non-secret settings, validation, and
 	const cwd = await tempProject();
 	assert.deepEqual(await loadIssueMeConfig(cwd), {
 		issueDirectory: "issues",
+		allowedIssueCreator: "all",
 		defaultLabels: [],
 		defaultAssignees: [],
 		defaultSkillPath: null,
 	});
 	await saveIssueMeConfig(cwd, {
 		issueDirectory: "issues/custom",
+		allowedIssueCreator: " Senad-D ",
 		defaultLabels: ["bug", "bug", "agent-ready", ""],
 		defaultAssignees: ["octocat"],
 		defaultSkillPath: "skills/issue/SKILL.md",
 	});
 	assert.deepEqual(await loadIssueMeConfig(cwd), {
 		issueDirectory: "issues/custom",
+		allowedIssueCreator: "Senad-D",
 		defaultLabels: ["bug", "agent-ready"],
 		defaultAssignees: ["octocat"],
 		defaultSkillPath: "skills/issue/SKILL.md",
 	});
+	await saveIssueMeConfig(cwd, { allowedIssueCreator: "ALL" });
+	assert.equal((await loadIssueMeConfig(cwd)).allowedIssueCreator, "all");
+	await writeFile(getIssueMeConfigPath(cwd), `${JSON.stringify({ issueDirectory: "issues", defaultLabels: ["legacy"] })}\n`, "utf8");
+	assert.deepEqual(await loadIssueMeConfig(cwd), {
+		issueDirectory: "issues",
+		allowedIssueCreator: "all",
+		defaultLabels: ["legacy"],
+		defaultAssignees: [],
+		defaultSkillPath: null,
+	});
+	for (const invalidAllowedIssueCreator of ["bad login", "", null]) {
+		await writeFile(getIssueMeConfigPath(cwd), `${JSON.stringify({ issueDirectory: "issues", allowedIssueCreator: invalidAllowedIssueCreator })}\n`, "utf8");
+		await assert.rejects(() => loadIssueMeConfig(cwd), (error) => {
+			assert.equal(error?.code, "config_tui_invalid_setting");
+			assert.equal(error.safeDetails?.field, "allowedIssueCreator");
+			assert.match(error.message, /Allowed issue creator/);
+			assert.doesNotMatch(error.message, /bad login/);
+			return true;
+		});
+	}
 	await assert.rejects(() => saveIssueMeConfig(cwd, { nested: { GH_TOKEN: "secret-value" } }), (error) => {
 		assert.match(error.message, /secret-like/);
 		assert.doesNotMatch(error.message, /secret-value/);
@@ -234,10 +258,49 @@ test("config loader/saver handles defaults, non-secret settings, validation, and
 	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: ".pi/issues" }), /protected/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "../issues" }), /path traversal/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "issues\0bad" }), /null byte/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { allowedIssueCreator: "octocat hubot" }), /one GitHub username/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { allowedIssueCreator: ["octocat"] }), /one valid GitHub username/);
+	await assert.rejects(() => saveIssueMeConfig(cwd, { allowedIssueCreator: "-bad" }), /valid GitHub username/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultLabels: ["bug\0secret"] }), /null bytes/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultLabels: ["bug\nnext"] }), /one line/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["octocat\0bad"] }), /null bytes/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["-bad"] }), /valid GitHub usernames/);
+});
+
+test("issue formatting and store preserve creator metadata while legacy records remain readable", async () => {
+	const cwd = await tempProject();
+	const config = { issueDirectory: "issues", allowedIssueCreator: "all", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	const repository = { owner: "owner", repo: "repo", fullName: "owner/repo" };
+	const record = githubIssueToRecord(repository, {
+		number: 22,
+		title: "Creator Metadata",
+		state: "open",
+		user: { login: "Hubot" },
+		body: "Body",
+		labels: [{ name: "bug" }],
+		assignees: [{ login: "octocat" }],
+		milestone: null,
+		html_url: "https://github.com/owner/repo/issues/22",
+		created_at: "2026-06-27T00:00:00Z",
+		updated_at: "2026-06-27T00:00:00Z",
+		closed_at: null,
+		comments: 0,
+	}, [], "2026-06-27T00:00:01Z");
+
+	assert.equal(record.creator, "Hubot");
+	assert.equal(issueRecordToToolSummary(record, "issues/22-creator-metadata.json").creator, "Hubot");
+	assert.match(formatIssueSummary(record).text, /Creator: Hubot/);
+	const written = await writeIssueRecord(cwd, config, record);
+	const cached = JSON.parse(await readFile(written.path, "utf8"));
+	assert.equal(cached.creator, "Hubot");
+	assert.ok(Object.keys(cached).indexOf("creator") > Object.keys(cached).indexOf("state"));
+	assert.ok(Object.keys(cached).indexOf("creator") < Object.keys(cached).indexOf("body"));
+
+	await writeFile(join(cwd, "issues", issueFileName(23, "Legacy Cache")), `${JSON.stringify(sampleIssue({ number: 23, title: "Legacy Cache", html_url: "https://github.com/owner/repo/issues/23" }))}\n`, "utf8");
+	assert.equal((await readIssueByNumber(cwd, config, 23, "owner/repo")).creator, undefined);
+	await writeFile(join(cwd, "issues", issueFileName(24, "Bad Creator")), `${JSON.stringify(sampleIssue({ number: 24, title: "Bad Creator", creator: "-bad", html_url: "https://github.com/owner/repo/issues/24" }))}\n`, "utf8");
+	const entries = await listIssueFileEntries(cwd, config, { repository: "owner/repo" });
+	assert.ok(entries.invalidFiles.some((file) => file.reason === "issue_file_creator_invalid"));
 });
 
 test("issue store writes pretty JSON, reads by metadata, renames titles, preserves unchanged synced_at, and removes closed issues", async () => {

@@ -4,16 +4,17 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR } from "../constants.ts";
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { IssueMeConfig } from "../types.ts";
+import { GITHUB_LOGIN_PATTERN, normalizeAllowedIssueCreatorForLoad, normalizeAllowedIssueCreatorForSave } from "../utils/github-login.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
 import { readTrustedTextFile } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 import { assertPathInside, assertSafeIssueDirectoryValue, normalizeIssueDirectoryValue, resolveIssueDirectory } from "../utils/slug.ts";
 
 const SECRET_KEY_PATTERN = /(token|secret|password|credential|api[_-]?key)/i;
-const GITHUB_LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
 export const DEFAULT_ISSUEME_CONFIG: IssueMeConfig = {
 	issueDirectory: DEFAULT_ISSUES_DIR,
+	allowedIssueCreator: "all",
 	defaultLabels: [],
 	defaultAssignees: [],
 	defaultSkillPath: null,
@@ -36,7 +37,7 @@ export async function loadIssueMeConfig(projectRoot: string): Promise<IssueMeCon
 			raceSwapMessage: "IssueMe config changed while it was being opened for reading.",
 		});
 		const parsed = JSON.parse(text) as unknown;
-		return validateIssueMeConfig(projectRoot, dropSecretLikeKeys(parsed));
+		return validateLoadedIssueMeConfig(projectRoot, dropSecretLikeKeys(parsed));
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return cloneDefaultConfig();
 		if (error instanceof SyntaxError) {
@@ -65,17 +66,29 @@ export async function saveIssueMeConfig(projectRoot: string, input: unknown): Pr
 }
 
 export function validateIssueMeConfig(projectRoot: string, input: unknown): IssueMeConfig {
-	const config = normalizeIssueMeConfig(input);
+	const config = normalizeIssueMeConfig(input, { strictAllowedIssueCreator: true });
 	assertSafeIssueDirectoryValue(config.issueDirectory);
 	resolveIssueDirectory(projectRoot, config.issueDirectory);
 	validateDefaultSkillPath(projectRoot, config.defaultSkillPath);
 	return config;
 }
 
-export function normalizeIssueMeConfig(input: unknown): IssueMeConfig {
+function validateLoadedIssueMeConfig(projectRoot: string, input: unknown): IssueMeConfig {
+	const config = normalizeIssueMeConfig(input, { strictAllowedIssueCreator: false });
+	assertSafeIssueDirectoryValue(config.issueDirectory);
+	resolveIssueDirectory(projectRoot, config.issueDirectory);
+	validateDefaultSkillPath(projectRoot, config.defaultSkillPath);
+	return config;
+}
+
+export function normalizeIssueMeConfig(input: unknown, options: { strictAllowedIssueCreator?: boolean } = {}): IssueMeConfig {
 	if (!isObject(input)) return cloneDefaultConfig();
+	const allowedIssueCreator = options.strictAllowedIssueCreator
+		? normalizeAllowedIssueCreatorForSave(input.allowedIssueCreator)
+		: normalizeAllowedIssueCreatorForLoad(input.allowedIssueCreator, { fieldPresent: hasOwn(input, "allowedIssueCreator") });
 	return {
 		issueDirectory: normalizeIssueDirectoryValue(normalizeOptionalString(input.issueDirectory, DEFAULT_ISSUEME_CONFIG.issueDirectory)),
+		allowedIssueCreator,
 		defaultLabels: normalizeStringArray(input.defaultLabels, "defaultLabels"),
 		defaultAssignees: normalizeStringArray(input.defaultAssignees, "defaultAssignees"),
 		defaultSkillPath: normalizeNullableString(input.defaultSkillPath),
@@ -146,6 +159,7 @@ async function assertConfigParentSafe(projectRoot: string, targetDirectory: stri
 function cloneDefaultConfig(): IssueMeConfig {
 	return {
 		issueDirectory: DEFAULT_ISSUEME_CONFIG.issueDirectory,
+		allowedIssueCreator: DEFAULT_ISSUEME_CONFIG.allowedIssueCreator,
 		defaultLabels: [...DEFAULT_ISSUEME_CONFIG.defaultLabels],
 		defaultAssignees: [...DEFAULT_ISSUEME_CONFIG.defaultAssignees],
 		defaultSkillPath: DEFAULT_ISSUEME_CONFIG.defaultSkillPath,
@@ -202,6 +216,10 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 		normalized.push(trimmed);
 	}
 	return [...new Set(normalized)];
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

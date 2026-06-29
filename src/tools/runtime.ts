@@ -27,12 +27,15 @@ import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.
 import { relativeIssuePath, writeIssueRecord } from "../issues/store.ts";
 import type { GitHubIssueResponse, GitHubRepository, IssueMeConfig, IssueMeToolDetails, IssueMeToolResult, IssueRecord, IssueRelationshipSummary, IssueWriteResult, SafeToolError, ToolAssigneeSummary, ToolBulkIssueResultStatus, ToolBulkIssueResultSummary, ToolCommentSummary, ToolFileActionSummary, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolLabelSummary, ToolMilestoneSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
 import { assertNotAborted } from "../utils/abort.ts";
+import { ALL_ISSUE_CREATORS, GITHUB_LOGIN_PATTERN, isValidGitHubLogin, issueCreatorEquals, normalizeAllowedIssueCreatorForLoad } from "../utils/github-login.ts";
 import { resolveGitHubToken } from "../utils/env.ts";
 import { resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
 export const ISSUEME_SHARED_PROMPT_GUIDELINE = "IssueMe shared for issueme_sync_issues and all issueme_* tools: current repository is implicit; issue means GitHub issue; cache means local IssueMe JSON; list/discovery tools are read-only unless sync/refresh; existing-issue mutations require open issues except issueme_reopen_issue.";
 
-const GITHUB_LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+export function issueMeResultPolicyPromptGuideline(toolName: string): string {
+	return `${toolName}: check details.result, details.status, details.needsSync; partial_success/error may not throw.`;
+}
 
 export interface IssueMeRuntime {
 	projectRoot: string;
@@ -64,6 +67,7 @@ export async function createIssueMeRuntime(ctx: ExtensionContext, optionsProvide
 	const options = await resolveRuntimeOptions(ctx, optionsProvider);
 	const projectRoot = options.projectRoot ?? await getIssueMeProjectRoot(ctx.cwd);
 	const config = options.config ?? await loadIssueMeConfig(projectRoot);
+	allowedIssueCreator(config);
 	const env = options.env ?? process.env;
 	const client = options.client ?? await createRuntimeGitHubClient(projectRoot, env, options);
 	const repository = options.repository ? normalizeRuntimeRepository(options.repository) : client.repository;
@@ -121,11 +125,103 @@ export function assertTrustedProject(ctx: Pick<ExtensionContext, "isProjectTrust
 	if (!isProjectTrusted(ctx)) throw new IssueMeError("project_untrusted", message);
 }
 
+export function allowedIssueCreator(config: Partial<IssueMeConfig>): string {
+	return normalizeAllowedIssueCreatorForLoad(config.allowedIssueCreator, { fieldPresent: hasAllowedIssueCreator(config) });
+}
+
+export function isCreatorScopeRestricted(config: Partial<IssueMeConfig>): boolean {
+	const creator = allowedIssueCreator(config);
+	return creator !== ALL_ISSUE_CREATORS && isValidGitHubLogin(creator);
+}
+
+function hasAllowedIssueCreator(config: Partial<IssueMeConfig>): boolean {
+	return Object.prototype.hasOwnProperty.call(config, "allowedIssueCreator");
+}
+
+export function issueCreatorMatchesConfig(config: Partial<IssueMeConfig>, creator: unknown): boolean {
+	if (!isCreatorScopeRestricted(config)) return true;
+	const login = isValidGitHubLogin(creator) ? creator : extractIssueCreator(creator) ?? extractLoginFromUserNode(creator);
+	return isValidGitHubLogin(login) && issueCreatorEquals(login, allowedIssueCreator(config));
+}
+
+export function issueCreatorScopeLabel(config: Partial<IssueMeConfig>): string {
+	return isCreatorScopeRestricted(config) ? allowedIssueCreator(config) : ALL_ISSUE_CREATORS;
+}
+
+export function assertIssueCreatorAllowed(
+	config: Partial<IssueMeConfig>,
+	issueOrRecord: unknown,
+	context: { repository?: string; operation?: string; issueNumber?: number } = {},
+): void {
+	if (!isCreatorScopeRestricted(config)) return;
+	const allowed = allowedIssueCreator(config);
+	const creator = extractIssueCreator(issueOrRecord);
+	if (creator && issueCreatorEquals(creator, allowed)) return;
+	const issueNumber = context.issueNumber ?? extractIssueNumber(issueOrRecord);
+	const creatorText = creator ?? "unknown";
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.ISSUE_CREATOR_NOT_ALLOWED,
+		`Issue${issueNumber !== undefined ? ` #${issueNumber}` : ""} was created by ${creatorText}; IssueMe is configured to process only issues created by ${allowed}.`,
+		{
+			allowedIssueCreator: allowed,
+			creator: creatorText,
+			...(issueNumber !== undefined ? { issueNumber } : {}),
+			...(context.repository ? { repository: context.repository } : {}),
+			...(context.operation ? { operation: context.operation } : {}),
+		},
+	);
+}
+
+export async function assertExistingIssueCreatorAllowed(
+	runtime: IssueMeRuntime,
+	issueNumber: number,
+	operation: string,
+	signal?: AbortSignal,
+	options: { requireOpen?: boolean } = {},
+): Promise<GitHubIssueResponse | undefined> {
+	if (!isCreatorScopeRestricted(runtime.config)) return undefined;
+	const issue = options.requireOpen === false
+		? await runtime.client.getIssue(issueNumber, signal)
+		: await runtime.client.ensureIssueOpen(issueNumber, signal);
+	assertIssueCreatorAllowed(runtime.config, issue, { repository: runtime.repository, operation, issueNumber });
+	return issue;
+}
+
+export async function assertAuthenticatedUserAllowedForCreate(runtime: IssueMeRuntime, signal?: AbortSignal): Promise<void> {
+	if (!isCreatorScopeRestricted(runtime.config)) return;
+	const allowed = allowedIssueCreator(runtime.config);
+	const login = await runtime.client.getAuthenticatedUserLogin(signal);
+	if (issueCreatorEquals(login, allowed)) return;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.ISSUE_CREATOR_NOT_ALLOWED,
+		`Authenticated GitHub user ${login} does not match allowed issue creator ${allowed}; refusing to create an out-of-scope issue.`,
+		{ repository: runtime.repository, allowedIssueCreator: allowed, authenticatedUser: login, operation: "create_issue" },
+	);
+}
+
+export function extractIssueCreator(issueOrRecord: unknown): string | undefined {
+	if (!isRecord(issueOrRecord)) return undefined;
+	if (isValidGitHubLogin(issueOrRecord.creator)) return issueOrRecord.creator;
+	return extractLoginFromUserNode(issueOrRecord.user) ?? extractLoginFromUserNode(issueOrRecord.author);
+}
+
+function extractLoginFromUserNode(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	return isValidGitHubLogin(value.login) ? value.login : undefined;
+}
+
+function extractIssueNumber(issueOrRecord: unknown): number | undefined {
+	if (!isRecord(issueOrRecord)) return undefined;
+	const number = issueOrRecord.number;
+	return typeof number === "number" && Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
 export async function fetchIssueRecord(
 	runtime: IssueMeRuntime,
 	issue: GitHubIssueResponse,
 	signal?: AbortSignal,
 ): Promise<IssueRecord> {
+	assertIssueCreatorAllowed(runtime.config, issue, { repository: runtime.repository, operation: "fetch_issue_record" });
 	const number = typeof issue.number === "number" ? issue.number : undefined;
 	const comments = number ? await runtime.client.listComments(number, signal, { limit: MAX_CACHE_COMMENTS }) : [];
 	const remoteCommentCount = typeof issue.comments === "number" && Number.isSafeInteger(issue.comments) && issue.comments >= comments.length
@@ -775,6 +871,7 @@ function boundIssueRelationshipSummary(issue: IssueRelationshipSummary | undefin
 			number: issue.number,
 			title,
 			...(issue.state ? { state: issue.state } : {}),
+			...(issue.creator ? { creator: issue.creator } : {}),
 			html_url: htmlUrl,
 		},
 		truncated: Object.keys(truncation).length > 0,

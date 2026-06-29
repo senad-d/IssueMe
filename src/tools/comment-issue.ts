@@ -3,7 +3,7 @@ import { Type } from "typebox";
 
 import { IssueMeError } from "../errors.ts";
 import type { GitHubCommentResponse, ToolCommentSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const CommentIssueParams = Type.Object(
 	{
@@ -45,6 +45,7 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const body = normalizeCommentBody(params.body);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.number, "comment_issue", signal);
 				const comment = await runtime.client.addComment(params.number, body, signal);
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
@@ -52,6 +53,7 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Added comment to issue #${params.number}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						comment: commentDetails,
 						changedFields: ["comments"],
@@ -64,6 +66,7 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							comment: commentDetails,
 							changedFields: ["comments"],
 						},
@@ -89,6 +92,7 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const body = normalizeCommentBody(params.body);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.issueNumber, "update_comment", signal);
 				const comment = await runtime.client.updateComment(params.issueNumber, params.commentId, body, signal);
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
@@ -96,6 +100,7 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
 					return toolText(`Updated comment ${params.commentId} on issue #${params.issueNumber}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						comment: commentDetails,
 						changedFields: ["comments"],
@@ -108,6 +113,7 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							comment: commentDetails,
 							changedFields: ["comments"],
 						},
@@ -132,6 +138,7 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 			parameters: DeleteCommentParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, params.issueNumber, "delete_comment", signal);
 				const deletedComment = await runtime.client.deleteComment(params.issueNumber, params.commentId, signal);
 				const commentDetails = commentSummary(deletedComment);
 				const commentUrl = commentDetails.html_url;
@@ -139,6 +146,7 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
 					return toolText(`Deleted comment ${params.commentId} from issue #${params.issueNumber}.${commentUrl ? `\nDeleted comment URL: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
+						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						comment: commentDetails,
 						changedFields: ["comments"],
@@ -152,6 +160,7 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 						error,
 						{
 							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
 							comment: commentDetails,
 							changedFields: ["comments"],
 						},

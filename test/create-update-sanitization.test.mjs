@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ function githubIssue(overrides = {}) {
 		number: 1,
 		title: "Tool Target",
 		state: "open",
+		user: { login: "octocat" },
 		body: "Body",
 		labels: [],
 		assignees: [],
@@ -131,6 +132,85 @@ test("issueme_create_issue applies configured defaults only when label and assig
 		assert.deepEqual(requests[1].body.labels, []);
 		assert.deepEqual(requests[1].body.assignees, []);
 	}, config);
+});
+
+test("restricted issueme_create_issue verifies authenticated user before remote create", async () => {
+	const restrictedConfig = { allowedIssueCreator: "hubot" };
+	const requests = [];
+	await withMockedIssueTools(async (input, init) => {
+		const url = new URL(input.toString());
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		requests.push(`${init.method} ${url.pathname}`);
+		if (url.pathname === "/user" && init.method === "GET") return jsonResponse({ login: "Hubot" });
+		if (url.pathname === "/repos/owner/repo/issues" && init.method === "POST") {
+			return jsonResponse(issueFromPayload(body, { number: 7, user: { login: "Hubot" } }));
+		}
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.toString()}`);
+	}, async ({ projectRoot, tools }) => {
+		const result = await execute(tools.get("issueme_create_issue"), projectRoot, { title: "Restricted create", body: "Body" });
+		assert.deepEqual(requests, ["GET /user", "POST /repos/owner/repo/issues"]);
+		assert.equal(result.details.creatorScope, "hubot");
+		assert.equal(result.details.issue.creator, "Hubot");
+		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "7-restricted-create.json"), "utf8"));
+		assert.equal(cached.creator, "Hubot");
+	}, restrictedConfig);
+
+	const deniedRequests = [];
+	await withMockedIssueTools(async (input, init) => {
+		const url = new URL(input.toString());
+		deniedRequests.push(`${init.method} ${url.pathname}`);
+		if (url.pathname === "/user" && init.method === "GET") return jsonResponse({ login: "intruder" });
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.toString()}`);
+	}, async ({ projectRoot, tools }) => {
+		await assert.rejects(
+			() => execute(tools.get("issueme_create_issue"), projectRoot, { title: "Denied", body: "Body" }),
+			(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.authenticatedUser === "intruder",
+		);
+		assert.deepEqual(deniedRequests, ["GET /user"]);
+	}, restrictedConfig);
+});
+
+test("restricted issueme_update_issue refuses out-of-scope issues before mutation", async () => {
+	const requests = [];
+	await withMockedIssueTools(async (input, init) => {
+		const url = new URL(input.toString());
+		requests.push(`${init.method} ${url.pathname}`);
+		if (url.pathname === "/repos/owner/repo/issues/1" && init.method === "GET") {
+			return jsonResponse(githubIssue({ user: { login: "intruder" }, body: "PRIVATE INTRUDER BODY" }));
+		}
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.toString()}`);
+	}, async ({ projectRoot, tools }) => {
+		await assert.rejects(
+			() => execute(tools.get("issueme_update_issue"), projectRoot, { number: 1, title: "Should not patch" }),
+			(error) => {
+				assert.equal(error?.code, "issue_creator_not_allowed");
+				assert.equal(error.safeDetails?.creator, "intruder");
+				assert.doesNotMatch(error.message, /PRIVATE/);
+				return true;
+			},
+		);
+		assert.deepEqual(requests, ["GET /repos/owner/repo/issues/1"]);
+	}, { allowedIssueCreator: "hubot" });
+});
+
+test("invalid loaded allowedIssueCreator blocks tools before GitHub requests", async () => {
+	const requests = [];
+	await withMockedIssueTools(async (input, init) => {
+		const url = new URL(input.toString());
+		requests.push(`${init.method} ${url.pathname}`);
+		return jsonResponse(issueFromPayload());
+	}, async ({ projectRoot, tools }) => {
+		await assert.rejects(
+			() => execute(tools.get("issueme_create_issue"), projectRoot, { title: "Should not create", body: "Body" }),
+			(error) => {
+				assert.equal(error?.code, "config_tui_invalid_setting");
+				assert.equal(error.safeDetails?.field, "allowedIssueCreator");
+				assert.match(error.message, /Allowed issue creator/);
+				return true;
+			},
+		);
+		assert.deepEqual(requests, []);
+	}, { allowedIssueCreator: "bad login" });
 });
 
 test("IssueMe create, update, assign, and label tools trim, de-duplicate, and drop blank list values consistently", async () => {
