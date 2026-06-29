@@ -45,7 +45,7 @@
 
 ## Ordered tasks
 
-- [ ] Expand packed-package handler smoke to exercise every public IssueMe tool at least once
+- [x] Expand packed-package handler smoke to exercise every public IssueMe tool at least once
 
 #### Why
 
@@ -66,7 +66,7 @@
 - No project `.env`, live GitHub call, remote mutation, or persistent repository artifact is used.
 - Packed handler smoke fails if any public handler cannot load or execute in the packaged install shape.
 
-- [ ] Add real Pi command and config TUI lifecycle verification
+- [x] Add real Pi command and config TUI lifecycle verification
 
 #### Why
 
@@ -87,7 +87,7 @@ The `/issueme` command and `IssueMeConfigTui` renderer are covered by fake conte
 - Mode-specific behavior is covered for TUI and at least one non-TUI mode.
 - Validation commands still pass after any test harness additions.
 
-- [ ] Stress-test same-issue sequential execution and file mutation queues through a Pi-like runner
+- [x] Stress-test same-issue sequential execution and file mutation queues through a Pi-like runner
 
 #### Why
 
@@ -108,7 +108,7 @@ Registration tests assert mutating tools are sequential, and unit tests cover ca
 - Abort-path tests prove no local cache write/remove occurs after cancellation checkpoints.
 - The test can run in CI or is documented with exact blocker and manual command.
 
-- [ ] Create an opt-in live GitHub verification matrix for API features that mocks cannot prove
+- [x] Create an opt-in live GitHub verification matrix for API features that mocks cannot prove
 
 #### Why
 

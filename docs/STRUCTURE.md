@@ -102,8 +102,9 @@ No template placeholder command/tool/lifecycle modules remain.
 
 ## Tests and artifacts
 
-- Unit tests cover config/env/repository/path helpers, local issue store behavior, GitHub client boundaries, command parsing, config TUI rendering, extension registration, schema compatibility, and IssueMe tool-schema prompt budget drift.
+- Unit tests cover config/env/repository/path helpers, local issue store behavior, GitHub client boundaries, command parsing, config TUI rendering, extension registration, schema compatibility, same-turn Pi session scheduling/file-mutation races, and IssueMe tool-schema prompt budget drift.
 - `npm run test:tui-artifacts` regenerates deterministic visual captures under `test/snapshots/tui/issueme-config/` for review without launching Pi.
+- `npm run smoke:pi-lifecycle` drives real Pi RPC command lifecycle checks for `/issueme info`, `/issueme`, and `/issueme start`; the remaining terminal-only config TUI key/save/close lifecycle is documented for manual verification in `docs/pi-lifecycle-verification.md`.
 
 ## Validation
 
@@ -113,13 +114,16 @@ npm run format:check
 npm run test
 npm run smoke:discover
 npm run smoke:packaged
+npm run smoke:pi-lifecycle
 npm run check:pack
 npm run validate
 pi --no-extensions -e .
 ```
 
-`npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, the package dry-run contents check, and the packed production-style smoke check. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
+`npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, the package dry-run contents check, the packed production-style smoke check, packed handler smoke, and the real Pi RPC lifecycle smoke. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
 
-Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-eight `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. The probes load registrations only; they do not invoke handlers, call GitHub, publish, update dependencies, or mutate issues.
+Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-eight `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. Use `npm run smoke:pi-lifecycle` to drive `/issueme info`, `/issueme`, and `/issueme start` through real Pi RPC in an offline temporary trusted project with IssueMe environment variables scrubbed; `docs/pi-lifecycle-verification.md` records the manual blocker and steps for terminal-only config TUI lifecycle checks. Discovery probes load registrations only; handler and lifecycle smokes do not call live GitHub, publish, update dependencies, or mutate issues.
+
+Live GitHub verification is outside the default validation contract. `docs/live-github-verification.md` defines the opt-in matrix, credential preflights, temporary artifact naming, cleanup ledger, Projects v2 prerequisites, and blocked-feature reporting for maintainers who explicitly request live API evidence.
 
 Use `pi --no-extensions -e .` for isolated manual startup testing so other configured extensions cannot interfere. Release smoke testing must pair startup checks with command/tool discovery; a no-output startup alone is insufficient.

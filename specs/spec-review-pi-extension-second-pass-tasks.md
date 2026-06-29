@@ -97,7 +97,7 @@ Many tool files define a TypeBox schema and then separately define an interface 
 - Prompt budget tests remain within limits.
 - No tool behavior changes are bundled with the prompt metadata update.
 
-- [ ] Either adopt Pi TUI utilities for the config TUI or document and test the local terminal helpers
+- [x] Either adopt Pi TUI utilities for the config TUI or document and test the local terminal helpers
 
 #### Why
 

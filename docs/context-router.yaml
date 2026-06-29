@@ -72,7 +72,11 @@ canonical_paths:
   tui_artifact_script: scripts/generate-tui-artifacts.mjs
   smoke_observability_script: scripts/smoke-observability.mjs
   smoke_packaged_script: scripts/smoke-packaged-install.mjs
+  smoke_pi_lifecycle_script: scripts/smoke-pi-lifecycle.mjs
+  pi_lifecycle_verification_doc: docs/pi-lifecycle-verification.md
+  live_github_verification_doc: docs/live-github-verification.md
   next_task_skill: .pi/skills/next-task/SKILL.md
+  issueme_e2e_skill: .pi/skills/issueme-e2e-test/SKILL.md
 runtime_path_patterns:
   project_config: .pi/agent/issueme.json
   project_env: .env
@@ -88,6 +92,7 @@ canonical_commands:
   tui_artifacts: npm run test:tui-artifacts
   smoke_discover: npm run smoke:discover
   smoke_packaged: npm run smoke:packaged
+  smoke_pi_lifecycle: npm run smoke:pi-lifecycle
   package_check: npm run check
   package_dry_run: npm run pack:dry-run
   package_contents_check: npm run check:pack
@@ -169,12 +174,14 @@ routes:
       - README.md
       - specs/spec-configuration-tui-design-standard.md
       - docs/STRUCTURE.md
+      - docs/pi-lifecycle-verification.md
     files:
       - src/commands/issueme-command.ts
       - src/commands/config-tui.ts
       - test/command-and-tui.test.mjs
       - test/tui-artifacts.test.mjs
       - scripts/generate-tui-artifacts.mjs
+      - scripts/smoke-pi-lifecycle.mjs
   tools_runtime:
     match: [tool, create issue, sync issues, list issues, search issues, filter issues, list labels, repository label discovery, repository label management, manage label, milestone discovery, milestone management, manage milestone, list milestones, assignee discovery, collaborator discovery, list assignees, list projects, project fields, projects v2, add issue to project, update project item, project item, native sub-issue, list sub-issues, reorder sub-issues, reprioritize sub-issues, relationship refresh, linked pull request, development reference, development link, issue dependency, dependency, blocker, tracked-by, get issue, update issue, comment issue, update comment, delete comment, assign issue, label issue, reopen issue, close issue, close reason, bulk issue, bulk update, bulk operations, executionMode, details, truncation]
     docs:
@@ -210,6 +217,7 @@ routes:
     docs:
       - SECURITY.md
       - README.md
+      - docs/live-github-verification.md
     files:
       - src/github/client.ts
       - src/github/transport.ts
@@ -261,17 +269,27 @@ routes:
       - src/github/client.ts
       - src/issues/store.ts
   tests_validation:
-    match: [test, validate, typecheck, format, package check, smoke, ci, mocked, no live github]
+    match: [test, validate, typecheck, format, package check, smoke, ci, mocked, no live github, live github verification, e2e]
     docs:
       - README.md
       - docs/STRUCTURE.md
+      - docs/live-github-verification.md
     files:
       - package.json
       - scripts/check-format.mjs
       - scripts/check-package-contents.mjs
       - scripts/smoke-observability.mjs
       - scripts/smoke-packaged-install.mjs
+      - scripts/smoke-pi-lifecycle.mjs
       - test
+  live_github_verification:
+    match: [live github, live verification, e2e, opt-in, credentials, projects v2 prerequisites, native sub-issue availability, development-link fixture, cleanup ledger]
+    docs:
+      - docs/live-github-verification.md
+      - README.md
+      - SECURITY.md
+    files:
+      - .pi/skills/issueme-e2e-test/SKILL.md
   packaging_ci:
     match: [package, publish, npm, files, check:pack, ci, workflow, package-lock]
     docs:

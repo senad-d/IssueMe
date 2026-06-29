@@ -529,10 +529,13 @@ npm run test
 npm run smoke:discover
 npm run smoke:packaged
 npm run smoke:handlers
+npm run smoke:pi-lifecycle
 npm run check:pack
 ```
 
-`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. `smoke:packaged` packs to a temporary directory, installs the tarball in a temporary production-style project with IssueMe devDependencies omitted and documented Pi peer dependencies satisfied, then verifies the packed package registers `/issueme` and the tools. `smoke:handlers` safely invokes checkout and packed-package `/issueme` and tool handler paths with temporary directories, scrubbed IssueMe environment variables, and mocked GitHub fetches. Discovery smoke checks do not invoke handlers; handler smoke never reads project `.env`, calls live GitHub, publishes, updates dependencies, or mutates remote issues.
+`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. `smoke:packaged` packs to a temporary directory, installs the tarball in a temporary production-style project with IssueMe devDependencies omitted and documented Pi peer dependencies satisfied, then verifies the packed package registers `/issueme` and the tools. `smoke:handlers` safely invokes checkout and packed-package `/issueme` and tool handler paths with temporary directories, scrubbed IssueMe environment variables, and mocked GitHub fetches. `smoke:pi-lifecycle` drives real Pi RPC `/issueme info`, `/issueme`, and `/issueme start` command paths in an offline temporary trusted project, while [`docs/pi-lifecycle-verification.md`](docs/pi-lifecycle-verification.md) documents the manual interactive TUI lifecycle check. Discovery smoke checks do not invoke handlers; handler and lifecycle smoke never read project `.env`, call live GitHub, publish, update dependencies, or mutate remote issues.
+
+Live GitHub verification is intentionally separate from local validation and must be explicitly requested by an operator with disposable credentials/repository fixtures. Use the opt-in matrix in [`docs/live-github-verification.md`](docs/live-github-verification.md) before running `.pi/skills/issueme-e2e-test` or any Projects v2 live checks.
 
 For manual isolated startup checks:
 
@@ -571,6 +574,7 @@ npm run test
 npm run smoke:discover
 npm run smoke:packaged
 npm run smoke:handlers
+npm run smoke:pi-lifecycle
 npm run check:pack
 npm run validate
 ```
@@ -588,6 +592,7 @@ npm run test:tui-artifacts
 npm run smoke:discover
 npm run smoke:packaged
 npm run smoke:handlers
+npm run smoke:pi-lifecycle
 ```
 
 Implementation references:
@@ -595,6 +600,7 @@ Implementation references:
 - [`docs/PROJECT_DEFINITION_BRIEF.md`](docs/PROJECT_DEFINITION_BRIEF.md)
 - [`docs/STRUCTURE.md`](docs/STRUCTURE.md)
 - [`docs/public-contracts.md`](docs/public-contracts.md)
+- [`docs/live-github-verification.md`](docs/live-github-verification.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`specs/spec-architecture.md`](specs/spec-architecture.md)
 - [`specs/spec-guidelines.md`](specs/spec-guidelines.md)

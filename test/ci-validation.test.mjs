@@ -31,11 +31,12 @@ function isIgnoredByGit(path) {
 
 test("local validation script covers CI-required checks", () => {
   assert.deepEqual(splitChainedScript("lint"), ["npm run typecheck", "npm run format:check", "npm run check"]);
-  assert.deepEqual(splitChainedScript("check"), ["node --check scripts/check-package-contents.mjs", "node --check scripts/smoke-observability.mjs", "node --check scripts/smoke-packaged-install.mjs", "node --check scripts/smoke-handler-execution.mjs"]);
-  assert.deepEqual(splitChainedScript("validate"), ["npm run lint", "npm run test", "npm run check:pack", "npm run smoke:packaged", "npm run smoke:handlers"]);
+  assert.deepEqual(splitChainedScript("check"), ["node --check scripts/check-package-contents.mjs", "node --check scripts/smoke-observability.mjs", "node --check scripts/smoke-packaged-install.mjs", "node --check scripts/smoke-handler-execution.mjs", "node --check scripts/smoke-pi-lifecycle.mjs"]);
+  assert.deepEqual(splitChainedScript("validate"), ["npm run lint", "npm run test", "npm run check:pack", "npm run smoke:packaged", "npm run smoke:handlers", "npm run smoke:pi-lifecycle"]);
   assert.equal(packageJson.scripts["smoke:discover"], "node scripts/smoke-observability.mjs");
   assert.equal(packageJson.scripts["smoke:packaged"], "node scripts/smoke-packaged-install.mjs");
   assert.equal(packageJson.scripts["smoke:handlers"], "node scripts/smoke-handler-execution.mjs");
+  assert.equal(packageJson.scripts["smoke:pi-lifecycle"], "node scripts/smoke-pi-lifecycle.mjs");
   assert.equal(packageJson.scripts["pack:dry-run"], "npm pack --dry-run --json");
   assert.equal(packageJson.scripts["check:pack"], "node scripts/check-package-contents.mjs");
 });

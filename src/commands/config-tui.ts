@@ -154,13 +154,14 @@ export class IssueMeConfigTui {
 			this.closeWithAutoSave();
 			return;
 		}
-		if (this.state.searchActive && data === "\x7f") {
+		if (this.state.searchActive && (isBackspace(data) || isDelete(data))) {
 			this.state.search = dropLastGrapheme(this.state.search);
 			this.invalidateAndRender();
 			return;
 		}
-		if (this.state.searchActive && isPrintable(data) && data !== "/") {
-			this.state.search += data;
+		const printable = printableInput(data);
+		if (this.state.searchActive && printable !== undefined && printable !== "/") {
+			this.state.search += printable;
 			this.invalidateAndRender();
 			return;
 		}
@@ -173,7 +174,7 @@ export class IssueMeConfigTui {
 			this.invalidateAndRender();
 			return;
 		}
-		if (data === "\r" || data === "\n") {
+		if (isEnter(data)) {
 			if (this.state.focus === "categories") this.state.focus = "settings";
 			else this.startEditing();
 			this.invalidateAndRender();
@@ -399,7 +400,7 @@ export class IssueMeConfigTui {
 			this.invalidateAndRender();
 			return;
 		}
-		if (data === "\r" || data === "\n") {
+		if (isEnter(data)) {
 			this.commitEdit();
 			return;
 		}
@@ -417,8 +418,9 @@ export class IssueMeConfigTui {
 			this.invalidateAndRender();
 			return;
 		}
-		if (isPrintable(data)) {
-			this.state.editBuffer = this.state.editBufferSelected ? data : this.state.editBuffer + data;
+		const printable = printableInput(data);
+		if (printable !== undefined) {
+			this.state.editBuffer = this.state.editBufferSelected ? printable : this.state.editBuffer + printable;
 			this.state.editBufferSelected = false;
 			this.state.validationError = undefined;
 			this.invalidateAndRender();
@@ -750,20 +752,45 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
 }
 
+// These terminal helpers intentionally stay local until the bespoke IssueMe
+// config UI can migrate to Pi's SettingsList/SelectList or a direct
+// @earendil-works/pi-tui peer/dev dependency. They mirror the Pi TUI contracts
+// this renderer relies on: common legacy/Kitty key variants, pasted printable
+// chunks, grapheme-aware widths, no-ellipsis clipping, and explicit resets when
+// styled text is truncated.
 function isUp(data: string): boolean {
-	return data === "\u001b[A" || data === "k";
+	return data === "\u001b[A"
+		|| data === "\u001bOA"
+		|| data === "k"
+		|| isPlainCsiArrow(data, "A")
+		|| isPlainKittyKey(data, KITTY_KEYPAD_UP_CODEPOINT);
 }
 
 function isDown(data: string): boolean {
-	return data === "\u001b[B" || data === "j";
+	return data === "\u001b[B"
+		|| data === "\u001bOB"
+		|| data === "j"
+		|| isPlainCsiArrow(data, "B")
+		|| isPlainKittyKey(data, KITTY_KEYPAD_DOWN_CODEPOINT);
+}
+
+function isEnter(data: string): boolean {
+	return data === "\r"
+		|| data === "\n"
+		|| isPlainKittyKey(data, 13)
+		|| isPlainKittyKey(data, KITTY_KEYPAD_ENTER_CODEPOINT)
+		|| isPlainModifyOtherKeysKey(data, 13);
 }
 
 function isBackspace(data: string): boolean {
-	return data === "\x7f" || data === "\b";
+	return data === "\x7f"
+		|| data === "\b"
+		|| isPlainKittyKey(data, 127)
+		|| isPlainModifyOtherKeysKey(data, 127);
 }
 
 function isDelete(data: string): boolean {
-	return data === "\u001b[3~";
+	return isPlainCsiTilde(data, 3) || isPlainKittyKey(data, KITTY_KEYPAD_DELETE_CODEPOINT);
 }
 
 function isEscape(data: string): boolean {
@@ -776,6 +803,18 @@ function isPlainKittyKey(data: string, codepoint: number): boolean {
 	return Number.parseInt(match[1] ?? "", 10) === codepoint && isPlainModifier(match[4]);
 }
 
+function isPlainCsiArrow(data: string, final: "A" | "B"): boolean {
+	const match = data.match(/^\u001b\[1;(\d+)(?::\d+)?([AB])$/);
+	if (!match) return false;
+	return match[2] === final && isPlainModifier(match[1]);
+}
+
+function isPlainCsiTilde(data: string, keyNumber: number): boolean {
+	const match = data.match(/^\u001b\[(\d+)(?:;(\d+))?(?::\d+)?~$/);
+	if (!match) return false;
+	return Number.parseInt(match[1] ?? "", 10) === keyNumber && isPlainModifier(match[2]);
+}
+
 function isPlainModifyOtherKeysKey(data: string, codepoint: number): boolean {
 	const match = data.match(/^\u001b\[27;(\d+);(\d+)~$/);
 	if (!match) return false;
@@ -783,15 +822,49 @@ function isPlainModifyOtherKeysKey(data: string, codepoint: number): boolean {
 }
 
 function isPlainModifier(modifierValue: string | undefined): boolean {
-	const modifier = modifierValue === undefined ? 0 : Number.parseInt(modifierValue, 10) - 1;
-	const lockModifierMask = 64 + 128;
-	return Number.isFinite(modifier) && (modifier & ~lockModifierMask) === 0;
+	const modifier = parseModifierMask(modifierValue);
+	return Number.isFinite(modifier) && (modifier & ~LOCK_MODIFIER_MASK) === 0;
+}
+
+function isPlainOrShiftModifier(modifierValue: string | undefined): boolean {
+	const modifier = parseModifierMask(modifierValue);
+	return Number.isFinite(modifier) && (modifier & ~(LOCK_MODIFIER_MASK | SHIFT_MODIFIER_MASK)) === 0;
+}
+
+function parseModifierMask(modifierValue: string | undefined): number {
+	return modifierValue === undefined ? 0 : Number.parseInt(modifierValue, 10) - 1;
 }
 
 function isClearEditKey(data: string): boolean {
 	return data === "\u0015";
 }
 
+function printableInput(data: string): string | undefined {
+	if (isPrintable(data)) return data;
+	return decodePlainKittyPrintable(data);
+}
+
 function isPrintable(data: string): boolean {
 	return data.length > 0 && !/[\u0000-\u001F\u007F]/.test(data);
 }
+
+function decodePlainKittyPrintable(data: string): string | undefined {
+	const match = data.match(/^\u001b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
+	if (!match || !isPlainOrShiftModifier(match[4])) return undefined;
+	const primaryCodepoint = Number.parseInt(match[1] ?? "", 10);
+	const shiftedCodepoint = match[2] ? Number.parseInt(match[2], 10) : undefined;
+	const codepoint = shiftedCodepoint ?? primaryCodepoint;
+	if (!Number.isFinite(codepoint) || codepoint < 0x20 || codepoint === 0x7F) return undefined;
+	try {
+		return String.fromCodePoint(codepoint);
+	} catch {
+		return undefined;
+	}
+}
+
+const KITTY_KEYPAD_ENTER_CODEPOINT = 57414;
+const KITTY_KEYPAD_UP_CODEPOINT = 57419;
+const KITTY_KEYPAD_DOWN_CODEPOINT = 57420;
+const KITTY_KEYPAD_DELETE_CODEPOINT = 57426;
+const SHIFT_MODIFIER_MASK = 1;
+const LOCK_MODIFIER_MASK = 64 + 128;

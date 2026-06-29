@@ -82,6 +82,64 @@ function escapeRegExp(value) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function visibleCellWidth(value) {
+	let width = 0;
+	for (const segment of graphemes(stripAnsi(value))) width += graphemeCellWidth(segment);
+	return width;
+}
+
+function stripAnsi(value) {
+	return value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function graphemes(value) {
+	if (!value) return [];
+	if (TEST_GRAPHEME_SEGMENTER) return [...TEST_GRAPHEME_SEGMENTER.segment(value)].map((part) => part.segment);
+	return Array.from(value);
+}
+
+function graphemeCellWidth(segment) {
+	if (!segment) return 0;
+	if (/\p{Emoji_Presentation}/u.test(segment) || (segment.includes("\uFE0F") && /\p{Extended_Pictographic}/u.test(segment)) || (segment.includes("\u200D") && /\p{Extended_Pictographic}/u.test(segment))) return 2;
+	let width = 0;
+	for (const char of Array.from(segment)) {
+		const codePoint = char.codePointAt(0) ?? 0;
+		if (isZeroWidthCodePoint(codePoint) || codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F)) continue;
+		width += isFullwidthCodePoint(codePoint) ? 2 : 1;
+	}
+	return width;
+}
+
+function isZeroWidthCodePoint(codePoint) {
+	return codePoint === 0x200D
+		|| (codePoint >= 0x0300 && codePoint <= 0x036F)
+		|| (codePoint >= 0x1AB0 && codePoint <= 0x1AFF)
+		|| (codePoint >= 0x1DC0 && codePoint <= 0x1DFF)
+		|| (codePoint >= 0x20D0 && codePoint <= 0x20FF)
+		|| (codePoint >= 0xFE00 && codePoint <= 0xFE0F)
+		|| (codePoint >= 0xFE20 && codePoint <= 0xFE2F)
+		|| (codePoint >= 0xE0100 && codePoint <= 0xE01EF);
+}
+
+function isFullwidthCodePoint(codePoint) {
+	return codePoint >= 0x1100 && (
+		codePoint <= 0x115F
+		|| codePoint === 0x2329
+		|| codePoint === 0x232A
+		|| (codePoint >= 0x2E80 && codePoint <= 0xA4CF && codePoint !== 0x303F)
+		|| (codePoint >= 0xAC00 && codePoint <= 0xD7A3)
+		|| (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+		|| (codePoint >= 0xFE10 && codePoint <= 0xFE19)
+		|| (codePoint >= 0xFE30 && codePoint <= 0xFE6F)
+		|| (codePoint >= 0xFF00 && codePoint <= 0xFF60)
+		|| (codePoint >= 0xFFE0 && codePoint <= 0xFFE6)
+		|| (codePoint >= 0x20000 && codePoint <= 0x3FFFD)
+	);
+}
+
+const TestSegmenterConstructor = Intl.Segmenter;
+const TEST_GRAPHEME_SEGMENTER = TestSegmenterConstructor ? new TestSegmenterConstructor(undefined, { granularity: "grapheme" }) : undefined;
+
 async function withCleanGitHubEnv(fn) {
 	const keys = ["GH_TOKEN", "GITHUB_TOKEN", "GITHUB_REPOSITORY"];
 	const previous = new Map(keys.map((key) => [key, process.env[key]]));
@@ -461,6 +519,72 @@ test("configuration TUI handles search, edit, auto-save exit, cancel, and valida
 		component.handleInput(escapeInput);
 		assert.equal(results.length, 1, `escape input ${JSON.stringify(escapeInput)} should close the config TUI`);
 		assert.equal(results[0], undefined);
+	}
+});
+
+test("configuration TUI handles terminal key variants", async () => {
+	const root = await tempProject();
+	const theme = { fg: (_role, text) => text, bold: (text) => text };
+	for (const enterInput of ["\r", "\n", "\u001b[13u", "\u001b[13;1u", "\u001b[27;1;13~"]) {
+		const component = new IssueMeConfigTui(root, sampleConfig(), theme, () => {}, () => {}, { focus: "settings" });
+		component.handleInput(enterInput);
+		assert.match(component.render(80).join("\n"), /Editing/, `enter input ${JSON.stringify(enterInput)} should start editing`);
+	}
+
+	const movementPairs = [
+		["\u001b[B", "\u001b[A"],
+		["\u001bOB", "\u001bOA"],
+		["\u001b[1;1B", "\u001b[1;1A"],
+		["\u001b[57420u", "\u001b[57419u"],
+		["j", "k"],
+	];
+	for (const [downInput, upInput] of movementPairs) {
+		const component = new IssueMeConfigTui(root, sampleConfig(), theme, () => {});
+		component.handleInput(downInput);
+		assert.match(component.render(80).join("\n"), /DEFAULTS/, `down input ${JSON.stringify(downInput)} should select Defaults`);
+		component.handleInput(upInput);
+		assert.match(component.render(80).join("\n"), /CACHE/, `up input ${JSON.stringify(upInput)} should select Cache`);
+	}
+
+	for (const deleteInput of ["\x7f", "\b", "\u001b[127u", "\u001b[127;1u", "\u001b[27;1;127~", "\u001b[3~", "\u001b[3;1~", "\u001b[57426u"]) {
+		const component = new IssueMeConfigTui(root, sampleConfig(), theme, () => {}, () => {}, { focus: "settings" });
+		component.handleInput("\r");
+		component.handleInput("abc");
+		component.handleInput(deleteInput);
+		assert.match(component.render(80).join("\n"), /Editing ab/, `delete input ${JSON.stringify(deleteInput)} should remove one grapheme`);
+	}
+});
+
+test("configuration TUI accepts pasted printable input as one edit chunk", async () => {
+	const root = await tempProject();
+	const saved = [];
+	const component = new IssueMeConfigTui(root, sampleConfig(), { fg: (_role, text) => text, bold: (text) => text }, (result) => saved.push(result), () => {}, { focus: "settings" });
+	component.handleInput("\r");
+	component.handleInput("cache-next");
+	component.handleInput("\r");
+	component.handleInput("q");
+	assert.equal(saved.at(-1).issueDirectory, "cache-next");
+});
+
+test("configuration TUI keeps complex grapheme and ANSI-styled lines width-bounded", () => {
+	const config = sampleConfig({
+		issueDirectory: "cache/e\u0301/👩‍💻/界界界界界界",
+		defaultLabels: ["e\u0301", "👩‍💻", "界界界界界界"],
+	});
+	const theme = {
+		fg(role, text) {
+			const code = role === "warning" ? 33 : role === "dim" ? 2 : role === "muted" ? 36 : 35;
+			return `\u001b[${code}m${text}`;
+		},
+		bold(text) {
+			return `\u001b[1m${text}`;
+		},
+	};
+	for (const width of [80, 40, 24, 20]) {
+		const component = new IssueMeConfigTui("/tmp/project", config, theme, () => {}, () => {}, { focus: "settings", selectedCategory: 1 });
+		const lines = component.render(width);
+		for (const line of lines) assert.ok(visibleCellWidth(line) <= width, `line exceeds width ${width}: ${JSON.stringify(line)}`);
+		if (width === 24) assert.ok(lines.some((line) => line.includes("\u001b[0m")), "truncated styled text should reset ANSI state");
 	}
 });
 

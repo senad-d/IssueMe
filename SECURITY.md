@@ -86,4 +86,5 @@ Do not open public issues for security-sensitive reports that include exploit de
 - Refuse to update, add/edit/delete comments on, label, assign, close, change project item fields for, or change native sub-issue relationships/order for already closed or out-of-scope issues; keep `issueme_reopen_issue` as the only explicit reopen exception.
 - Do not add body-only dependency/blocker references unless a future explicit opt-in fallback is designed, documented, and tested.
 - Keep package contents minimal with `npm run check:pack`.
-- Use isolated smoke tests with `pi --no-extensions -e .`, `npm run smoke:discover`, and `npm run smoke:packaged` to verify checkout and packed-package command/tool discovery.
+- Use isolated smoke tests with `pi --no-extensions -e .`, `npm run smoke:discover`, `npm run smoke:packaged`, and `npm run smoke:pi-lifecycle` to verify checkout, packed-package, and real Pi command lifecycle behavior.
+- Keep live GitHub verification opt-in and separate from default validation; follow `docs/live-github-verification.md` for credential preflights, temporary artifact naming, Projects v2 prerequisites, cleanup, and blocked-feature reporting.
