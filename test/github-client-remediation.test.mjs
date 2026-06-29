@@ -180,8 +180,10 @@ test("GitHub label endpoints use label-list semantics and missing label removal 
 		repository,
 		token,
 		fetchFn: async (url, init) => {
+			const path = new URL(url.toString()).pathname;
 			calls.push({ url: url.toString(), method: init.method, body: init.body });
-			if (init.method === "GET") return jsonResponse(issue());
+			if (init.method === "GET" && path === "/repos/owner/repo/issues/1") return jsonResponse(issue());
+			if (init.method === "GET" && path === "/repos/owner/repo/labels/bug") return jsonResponse({ name: "bug" });
 			if (init.method === "DELETE") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
 			return jsonResponse([{ name: "bug" }]);
 		},
@@ -189,7 +191,7 @@ test("GitHub label endpoints use label-list semantics and missing label removal 
 	assert.deepEqual(await client.addLabels(1, ["bug"]), [{ name: "bug" }]);
 	assert.deepEqual(await client.setLabels(1, ["bug"]), [{ name: "bug" }]);
 	assert.equal(await client.removeLabel(1, "missing"), undefined);
-	assert.deepEqual(calls.map((call) => call.method), ["GET", "POST", "GET", "PUT", "GET", "DELETE"]);
+	assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "POST", "GET", "GET", "PUT", "GET", "DELETE"]);
 });
 
 test("GitHub repository label management uses label REST endpoints", async () => {

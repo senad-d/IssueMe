@@ -173,6 +173,13 @@ function makeSuccessFetch() {
 		if (url.pathname === "/repos/owner/repo/assignees" && method === "GET") {
 			return jsonResponse(repositoryAssignees);
 		}
+		const repositoryAssigneeMatch = url.pathname.match(/^\/repos\/owner\/repo\/assignees\/([^/]+)$/);
+		if (repositoryAssigneeMatch && method === "GET") {
+			const login = decodeURIComponent(repositoryAssigneeMatch[1]);
+			return repositoryAssignees.some((assignee) => assignee.login === login)
+				? new Response(null, { status: 204, statusText: "No Content" })
+				: jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+		}
 		if (url.pathname === "/graphql" && method === "POST") {
 			if (body.operationName === "IssueMeListSubIssues") {
 				const issue = issues.get(body.variables.issueNumber);
@@ -239,6 +246,7 @@ function makeSuccessFetch() {
 			const labelName = decodeURIComponent(repositoryLabelMatch[1]);
 			const current = repositoryLabels.get(labelName);
 			if (!current) return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+			if (method === "GET") return jsonResponse(current);
 			if (method === "PATCH") {
 				const nextName = body.new_name ?? labelName;
 				const next = { ...current, name: nextName, color: body.color ?? current.color, description: body.description ?? current.description };

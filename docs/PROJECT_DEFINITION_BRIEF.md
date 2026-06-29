@@ -69,8 +69,8 @@
 | Tool | `issueme_comment_issue` | Add comments to open issues | Implemented; rejects closed issues. |
 | Tool | `issueme_update_comment` | Edit existing comments on open issues | Implemented; verifies comment-to-issue ownership and rejects closed issues. |
 | Tool | `issueme_delete_comment` | Delete existing comments on open issues | Implemented; verifies comment-to-issue ownership and rejects closed issues. |
-| Tool | `issueme_assign_issue` | Assign/unassign users | Implemented; rejects closed issues. |
-| Tool | `issueme_label_issue` | Add/remove/set labels | Implemented; rejects closed issues. |
+| Tool | `issueme_assign_issue` | Assign/unassign users | Implemented; rejects closed issues and unassignable users for add/set. |
+| Tool | `issueme_label_issue` | Add/remove/set labels | Implemented; rejects closed issues and missing repository labels for add/set. |
 | Tool | `issueme_reopen_issue` | Reopen intentionally selected closed issues | Implemented as the only closed-issue mutation exception, with optional reopen comment and cache refresh. |
 | Tool | `issueme_close_issue` | Close open issue and remove local file | Implemented with optional GitHub close reason; never deletes remote issues. |
 | Tool | `issueme_bulk_update_issues` | Apply guarded bulk actions to explicit issue-number lists | Implemented sequentially with bounded per-issue results and no query-derived mutation targets. |

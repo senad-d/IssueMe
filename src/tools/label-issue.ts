@@ -21,7 +21,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 			description: "Add, remove, or set issue labels.",
 			promptSnippet: "Add/remove/set issue labels.",
 			promptGuidelines: [
-				"Use issueme_label_issue to add, remove, or set labels on open issues.",
+				"Use issueme_label_issue to add, remove, or set labels on open issues; add/set require existing repository labels.",
 			],
 			executionMode: "sequential",
 			parameters: LabelIssueParams,

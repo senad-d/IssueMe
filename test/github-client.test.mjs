@@ -322,6 +322,60 @@ test("GitHub client links native sub-issues with GraphQL addSubIssue", async () 
 	assert.deepEqual(graphQlCall.body.variables, { issueId: "I_parent", subIssueId: "I_child" });
 });
 
+test("GitHub client rejects missing repository labels before issue label mutation", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			const path = new URL(url.toString()).pathname;
+			calls.push({ path, method: init.method });
+			if (path === "/repos/owner/repo/issues/1") return jsonResponse(issue({ number: 1, title: "Label Target" }));
+			if (path === "/repos/owner/repo/labels/missing") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+			throw new Error(`Unexpected request ${init.method} ${path}`);
+		},
+	});
+
+	await assert.rejects(() => client.addLabels(1, ["missing"]), (error) => {
+		assert.equal(error?.code, "invalid_tool_input");
+		assert.equal(error?.safeDetails?.field, "labels");
+		assert.deepEqual(error?.safeDetails?.missingLabels, ["missing"]);
+		assert.match(error.message, /already exist/);
+		return true;
+	});
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/missing",
+	]);
+});
+
+test("GitHub client rejects unassignable users before assignee mutation", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			const path = new URL(url.toString()).pathname;
+			calls.push({ path, method: init.method });
+			if (path === "/repos/owner/repo/issues/1") return jsonResponse(issue({ number: 1, title: "Assign Target" }));
+			if (path === "/repos/owner/repo/assignees/bad-user") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+			throw new Error(`Unexpected request ${init.method} ${path}`);
+		},
+	});
+
+	await assert.rejects(() => client.addAssignees(1, ["bad-user"]), (error) => {
+		assert.equal(error?.code, "invalid_tool_input");
+		assert.equal(error?.safeDetails?.field, "assignees");
+		assert.deepEqual(error?.safeDetails?.invalidAssignees, ["bad-user"]);
+		assert.match(error.message, /assignable users/);
+		return true;
+	});
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/assignees/bad-user",
+	]);
+});
+
 test("GitHub client maps forbidden addSubIssue errors to actionable permission failures", async () => {
 	const client = new GitHubClient({
 		repository,

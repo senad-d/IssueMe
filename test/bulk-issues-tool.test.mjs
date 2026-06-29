@@ -115,6 +115,7 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 
 		const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
 		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") return jsonResponse({ name: "triage" });
 
 		const labelMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)\/labels$/);
 		if (labelMatch && method === "POST") {
@@ -136,10 +137,12 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 
 	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
 		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/1/labels",
 		"GET /repos/owner/repo/issues/1",
 		"GET /repos/owner/repo/issues/1/comments",
 		"GET /repos/owner/repo/issues/2",
+		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/2/labels",
 		"GET /repos/owner/repo/issues/2",
 		"GET /repos/owner/repo/issues/2/comments",
@@ -168,6 +171,7 @@ test("issueme_bulk_update_issues reports partial success if aborted before cache
 		calls.push({ method, path: url.pathname, body });
 
 		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(issues.get(1));
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") return jsonResponse({ name: "triage" });
 		if (url.pathname === "/repos/owner/repo/issues/1/labels" && method === "POST") {
 			const updated = githubIssue(1, "Abort Bulk Refresh", { labels: body.labels });
 			issues.set(1, updated);
@@ -185,6 +189,7 @@ test("issueme_bulk_update_issues reports partial success if aborted before cache
 
 	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
 		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/1/labels",
 		"GET /repos/owner/repo/issues/1",
 		"GET /repos/owner/repo/issues/1/comments",
@@ -289,6 +294,7 @@ test("issueme_bulk_update_issues reports per-issue closed failures and continues
 
 		const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
 		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
+		if (url.pathname === "/repos/owner/repo/assignees/octocat" && method === "GET") return noContentResponse();
 
 		const assigneeMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)\/assignees$/);
 		if (assigneeMatch && method === "POST") {

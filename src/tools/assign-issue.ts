@@ -23,7 +23,7 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			description: "Add, remove, or set issue assignees.",
 			promptSnippet: "Add/remove/set issue assignees.",
 			promptGuidelines: [
-				"Use issueme_assign_issue to add, remove, or set assignees on open issues.",
+				"Use issueme_assign_issue to add, remove, or set assignees on open issues; add/set reject users GitHub reports as unassignable.",
 			],
 			executionMode: "sequential",
 			parameters: AssignIssueParams,

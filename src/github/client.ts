@@ -509,6 +509,15 @@ export class GitHubClient {
 		});
 	}
 
+	async getRepositoryLabel(name: string, signal?: AbortSignal): Promise<GitHubLabelResponse | undefined> {
+		try {
+			return await this.request<GitHubLabelResponse>("GET", this.repoPath(`/labels/${encodeURIComponent(name)}`), { signal, validate: isObject });
+		} catch (error) {
+			if (error instanceof GitHubApiError && error.status === 404) return undefined;
+			throw error;
+		}
+	}
+
 	async updateRepositoryLabel(name: string, input: GitHubRepositoryLabelUpdateInput, signal?: AbortSignal): Promise<GitHubLabelResponse> {
 		return this.request<GitHubLabelResponse>("PATCH", this.repoPath(`/labels/${encodeURIComponent(name)}`), {
 			body: compactObject(input),
@@ -632,6 +641,8 @@ export class GitHubClient {
 
 	async updateIssue(issueNumber: number, input: IssueUpdateInput, signal?: AbortSignal): Promise<GitHubIssueResponse> {
 		await this.ensureIssueOpen(issueNumber, signal);
+		if (input.labels !== undefined) await this.assertRepositoryLabelsExist(input.labels, signal);
+		if (input.assignees !== undefined) await this.assertRepositoryAssigneesAssignable(input.assignees, signal);
 		return this.request<GitHubIssueResponse>("PATCH", this.repoPath(`/issues/${issueNumber}`), {
 			body: compactObject(input),
 			signal,
@@ -666,8 +677,19 @@ export class GitHubClient {
 		return comment;
 	}
 
+	async isRepositoryAssigneeAssignable(login: string, signal?: AbortSignal): Promise<boolean> {
+		try {
+			await this.request<void>("GET", this.repoPath(`/assignees/${encodeURIComponent(login)}`), { signal, validate: (value) => value === undefined });
+			return true;
+		} catch (error) {
+			if (error instanceof GitHubApiError && error.status === 404) return false;
+			throw error;
+		}
+	}
+
 	async addAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal): Promise<GitHubIssueResponse> {
 		await this.ensureIssueOpen(issueNumber, signal);
+		await this.assertRepositoryAssigneesAssignable(assignees, signal);
 		return this.request<GitHubIssueResponse>("POST", this.repoPath(`/issues/${issueNumber}/assignees`), {
 			body: { assignees },
 			signal,
@@ -690,6 +712,7 @@ export class GitHubClient {
 
 	async addLabels(issueNumber: number, labels: string[], signal?: AbortSignal): Promise<GitHubLabelListResponse> {
 		await this.ensureIssueOpen(issueNumber, signal);
+		await this.assertRepositoryLabelsExist(labels, signal);
 		return this.request<GitHubLabelListResponse>("POST", this.repoPath(`/issues/${issueNumber}/labels`), {
 			body: { labels },
 			signal,
@@ -699,6 +722,7 @@ export class GitHubClient {
 
 	async setLabels(issueNumber: number, labels: string[], signal?: AbortSignal): Promise<GitHubLabelListResponse> {
 		await this.ensureIssueOpen(issueNumber, signal);
+		await this.assertRepositoryLabelsExist(labels, signal);
 		return this.request<GitHubLabelListResponse>("PUT", this.repoPath(`/issues/${issueNumber}/labels`), {
 			body: { labels },
 			signal,
@@ -814,6 +838,37 @@ export class GitHubClient {
 			signal,
 		);
 		return normalizeReprioritizeSubIssueResult(data, this.repository.fullName, child);
+	}
+
+	private async assertRepositoryLabelsExist(labels: string[], signal?: AbortSignal): Promise<void> {
+		const missing: string[] = [];
+		for (const label of [...new Set(labels)]) {
+			const existing = await this.getRepositoryLabel(label, signal);
+			if (!existing) missing.push(label);
+		}
+		if (missing.length > 0) {
+			throw new IssueMeError(
+				ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+				`Issue labels must already exist in repository ${this.repository.fullName}; missing label(s): ${missing.join(", ")}.`,
+				{ field: "labels", repository: this.repository.fullName, missingLabels: missing },
+				{ recoveryHint: "Use issueme_list_labels to discover existing labels or issueme_manage_label to create repository labels before applying them to issues." },
+			);
+		}
+	}
+
+	private async assertRepositoryAssigneesAssignable(assignees: string[], signal?: AbortSignal): Promise<void> {
+		const invalid: string[] = [];
+		for (const assignee of [...new Set(assignees)]) {
+			if (!await this.isRepositoryAssigneeAssignable(assignee, signal)) invalid.push(assignee);
+		}
+		if (invalid.length > 0) {
+			throw new IssueMeError(
+				ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+				`Issue assignees must be assignable users in repository ${this.repository.fullName}; invalid assignee(s): ${invalid.join(", ")}.`,
+				{ field: "assignees", repository: this.repository.fullName, invalidAssignees: invalid },
+				{ recoveryHint: "Use issueme_list_assignees to discover users assignable to this repository before applying assignees." },
+			);
+		}
 	}
 
 	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {

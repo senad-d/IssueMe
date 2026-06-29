@@ -184,6 +184,12 @@ for (const scenario of abortScenarios) {
 				controller.abort();
 				return jsonResponse(scenario.mutationResponse(body ?? {}));
 			}
+			if (method === "GET" && url.pathname === "/repos/owner/repo/assignees/octocat") {
+				return new Response(null, { status: 204, statusText: "No Content" });
+			}
+			if (method === "GET" && url.pathname === "/repos/owner/repo/labels/bug") {
+				return jsonResponse({ name: "bug" });
+			}
 			const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
 			if (method === "GET" && issueMatch) {
 				const number = Number(issueMatch[1]);

@@ -139,6 +139,10 @@ test("IssueMe create, update, assign, and label tools trim, de-duplicate, and dr
 		const url = new URL(input.toString());
 		const body = init.body === undefined ? undefined : JSON.parse(init.body);
 		requests.push({ path: url.pathname, method: init.method, body });
+		const labelMatch = url.pathname.match(/^\/repos\/owner\/repo\/labels\/([^/]+)$/);
+		if (labelMatch && init.method === "GET") return jsonResponse({ name: decodeURIComponent(labelMatch[1]) });
+		const assigneeMatch = url.pathname.match(/^\/repos\/owner\/repo\/assignees\/([^/]+)$/);
+		if (assigneeMatch && init.method === "GET") return new Response(null, { status: 204, statusText: "No Content" });
 		if (url.pathname === "/repos/owner/repo/issues" && init.method === "POST") return jsonResponse(issueFromPayload(body));
 		if (url.pathname === "/repos/owner/repo/issues/1" && init.method === "GET") return jsonResponse(githubIssue());
 		if (url.pathname === "/repos/owner/repo/issues/1" && init.method === "PATCH") return jsonResponse(issueFromPayload(body));

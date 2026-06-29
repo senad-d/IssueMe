@@ -43,6 +43,7 @@
 ### Fixed
 
 - Fixed `issueme_reorder_sub_issues` compatibility with GitHub's live GraphQL `ReprioritizeSubIssuePayload` by no longer selecting a non-existent `subIssue` payload field and reusing the prevalidated child summary before refreshing relationships.
+- Fixed issue label and assignee mutation guards so missing repository labels are rejected before GitHub can auto-create taxonomy, and unassignable users are rejected before GitHub can silently ignore them.
 
 ### Security
 
