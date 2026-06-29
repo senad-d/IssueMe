@@ -7,7 +7,7 @@ import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueListDirection, GitHubIssueListSort, GitHubIssueListState } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
-import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
+import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalIsoDateOrTimestamp, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { createIssueMeRuntime, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_ISSUE_LIST_LIMIT = 25;
@@ -21,7 +21,7 @@ const ListIssuesParams = Type.Object(
 		author: Type.Optional(Type.String({ description: "Alias for creator; do not conflict." })),
 		mentioned: Type.Optional(Type.String({ description: "Mentioned login." })),
 		milestone: Type.Optional(Type.String({ description: "Milestone number/title, none, or *." })),
-		since: Type.Optional(Type.String({ description: "Updated at/after ISO date." })),
+		since: Type.Optional(Type.String({ description: "Updated at/after ISO date (YYYY-MM-DD) or timestamp with timezone." })),
 		sort: Type.Optional(StringEnum(["created", "updated", "comments"] as const, { description: "Sort field." })),
 		direction: Type.Optional(StringEnum(["asc", "desc"] as const, { description: "Sort direction." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_ISSUES, description: `Max results. Default ${DEFAULT_ISSUE_LIST_LIMIT}; max ${MAX_TOOL_ISSUES}.` })),
@@ -170,12 +170,9 @@ function normalizeOptionalFilter(value: string | undefined, field: string): stri
 }
 
 function normalizeSince(value: string | undefined): string | undefined {
-	const since = normalizeOptionalFilter(value, "since");
-	if (!since) return undefined;
-	if (Number.isNaN(Date.parse(since))) {
-		throw new IssueMeError("invalid_tool_input", "since must be a valid ISO 8601 timestamp or date.", { field: "since" });
-	}
-	return since;
+	return normalizeOptionalIsoDateOrTimestamp(value, "since", {
+		invalidMessage: "since must be a valid ISO YYYY-MM-DD date or ISO 8601 timestamp with timezone.",
+	});
 }
 
 function normalizeQuery(value: string | undefined): string | undefined {

@@ -13,6 +13,7 @@ import {
 	isAbortError,
 	normalizeIssueBody,
 	partialSuccessToolError,
+	partialSuccessToolText,
 	refreshIssueRecord,
 	requireNonEmptyTitle,
 	safeToolError,
@@ -126,7 +127,7 @@ export function registerCreateSubIssueTool(pi: ExtensionAPI, options: IssueMeToo
 				try {
 					relationship = await runtime.client.addSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
-					return cacheCreatedIssueAfterAttachFailure(ctx, runtime, childIssue, params.parentNumber, error);
+					return cacheCreatedIssueAfterAttachFailure(ctx, runtime, childIssue, params.parentNumber, error, signal);
 				}
 
 				return cacheRelationshipAfterSuccess(ctx, runtime, relationship, "add", signal, `Created native sub-issue #${relationship.child.number}: ${relationship.child.title}\nParent: #${relationship.parent.number} ${relationship.parent.title}`);
@@ -217,15 +218,13 @@ export function registerReorderSubIssuesTool(pi: ExtensionAPI, options: IssueMeT
 					const cache = await refreshRelationshipCache(ctx, runtime, reorder.relationship, MAX_TOOL_ISSUES, signal);
 					return toolText(formatReorderSubIssuesText(runtime.repository, reorder, cache), buildReorderSubIssuesDetails(runtime.repository, reorder, normalized, cache));
 				} catch (error) {
-					const safeError = partialSuccessToolError(error, "sub_issue_cache_refresh_failed");
-					return toolText(`${formatReorderSubIssuesText(runtime.repository, reorder, undefined)}\nNative sub-issue order changed on GitHub, but local cache refresh failed; run issueme_sync_issues before relying on local cache state.`, {
-						...buildReorderSubIssuesDetails(runtime.repository, reorder, normalized),
-						cacheUpdated: false,
-						needsSync: true,
-						status: "partial_success",
-						message: safeError.message,
-						error: safeError,
-					});
+					return partialSuccessToolText(
+						`${formatReorderSubIssuesText(runtime.repository, reorder, undefined)}\nNative sub-issue order changed on GitHub, but local cache refresh failed; run issueme_sync_issues before relying on local cache state.`,
+						error,
+						buildReorderSubIssuesDetails(runtime.repository, reorder, normalized),
+						"sub_issue_cache_refresh_failed",
+						"partial_success",
+					);
 				}
 			},
 		}),
@@ -256,15 +255,13 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, cache), buildListSubIssuesDetails(runtime.repository, result, normalized, cache));
 				} catch (error) {
 					if (isAbortError(error)) throw error;
-					const safeError = partialSuccessToolError(error, "sub_issue_cache_refresh_failed");
-					return toolText(`${formatListSubIssuesText(runtime.repository, result, normalized, undefined)}\nLocal relationship inspection succeeded, but cache refresh failed; run issueme_sync_issues before relying on local cache metadata.`, {
-						...buildListSubIssuesDetails(runtime.repository, result, normalized),
-						cacheUpdated: false,
-						needsSync: true,
-						status: "partial_success",
-						message: safeError.message,
-						error: safeError,
-					});
+					return partialSuccessToolText(
+						`${formatListSubIssuesText(runtime.repository, result, normalized, undefined)}\nLocal relationship inspection succeeded, but cache refresh failed; run issueme_sync_issues before relying on local cache metadata.`,
+						error,
+						buildListSubIssuesDetails(runtime.repository, result, normalized),
+						"sub_issue_cache_refresh_failed",
+						"partial_success",
+					);
 				}
 			},
 		}),
@@ -511,18 +508,18 @@ async function cacheRelationshipAfterSuccess(
 			...(parentRelationship.truncated ? { truncation: { subIssues: { shown: parentRelationship.subIssues.length, total: parentRelationship.subIssuesCount, max: MAX_TOOL_ISSUES } } } : {}),
 		});
 	} catch (error) {
-		const safeError = partialSuccessToolError(error, "sub_issue_cache_refresh_failed");
-		return toolText(`${text}\nNative sub-issue relationship changed on GitHub, but local cache refresh failed; run issueme_sync_issues before relying on cache state.`, {
-			repository: runtime.repository,
-			issue: nativeIssueToToolSummary(runtime.repository, relationship.child),
-			issues: [nativeIssueToToolSummary(runtime.repository, relationship.parent), nativeIssueToToolSummary(runtime.repository, relationship.child)],
-			changedFields: ["sub_issues"],
-			cacheUpdated: false,
-			needsSync: true,
-			status: "partial_success",
-			message: safeError.message,
-			error: safeError,
-		});
+		return partialSuccessToolText(
+			`${text}\nNative sub-issue relationship changed on GitHub, but local cache refresh failed; run issueme_sync_issues before relying on cache state.`,
+			error,
+			{
+				repository: runtime.repository,
+				issue: nativeIssueToToolSummary(runtime.repository, relationship.child),
+				issues: [nativeIssueToToolSummary(runtime.repository, relationship.parent), nativeIssueToToolSummary(runtime.repository, relationship.child)],
+				changedFields: ["sub_issues"],
+			},
+			"sub_issue_cache_refresh_failed",
+			"partial_success",
+		);
 	}
 }
 
@@ -532,12 +529,13 @@ async function cacheCreatedIssueAfterAttachFailure(
 	childIssue: GitHubIssueResponse,
 	parentNumber: number,
 	attachError: unknown,
+	signal?: AbortSignal,
 ) {
 	const record = githubIssueToRecord(runtime.client.repository, childIssue, []);
 	const safeAttachError = subIssueAttachPartialSuccessError(attachError, record, parentNumber);
 	const guidance = subIssueAttachPartialSuccessGuidance(parentNumber, record.number);
 	try {
-		const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+		const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 		return toolText(
 			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.\nURL: ${record.html_url}\nLocal file: ${path}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{

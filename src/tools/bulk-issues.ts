@@ -8,19 +8,18 @@ import type { GitHubIssueCloseReason, GitHubProjectV2ItemMutationResult } from "
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueMeToolResult, SafeToolError, ToolBulkIssueResultSummary, ToolIssueSummary } from "../types.ts";
-import { normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
+import { normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 import {
 	assertNotAborted,
 	createIssueMeRuntime,
 	partialSuccessToolError,
-	refreshIssueRecord,
+	refreshAndCacheIssue,
 	requireNonEmptyGitHubLogins,
 	requireNonEmptyStrings,
 	safeToolError,
 	toolText,
 	type IssueMeRuntime,
 	type IssueMeToolRegistrationOptions,
-	writeAndSummarizeIssue,
 } from "./runtime.ts";
 
 const BulkIssueAction = StringEnum(["add_labels", "assign", "set_milestone", "add_to_project", "close"] as const, {
@@ -41,7 +40,7 @@ const BulkIssueParams = Type.Object(
 		labels: Type.Optional(Type.Array(Type.String(), { description: "Label names for add_labels." })),
 		assignees: Type.Optional(Type.Array(Type.String(), { description: "Usernames for assign." })),
 		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number for set_milestone." })),
-		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID for add_to_project." })),
+		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID for add_to_project; one-line and at most 512 characters." })),
 		reason: Type.Optional(BulkCloseReason),
 		continueOnError: Type.Optional(Type.Boolean({ description: "Default false; true allows partial bulk failure." })),
 	},
@@ -219,8 +218,7 @@ async function refreshIssueAfterRemoteSuccess(
 	let updatedSummary: ToolIssueSummary | undefined;
 	try {
 		if (updatedIssue) updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
-		const record = await refreshIssueRecord(runtime, issueNumber, signal);
-		const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
+		const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, issueNumber, signal);
 		return {
 			number: issueNumber,
 			action: params.action,
@@ -278,7 +276,7 @@ async function closeIssueForBulk(
 	const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
 	try {
 		assertNotAborted(signal);
-		const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, issueNumber, runtime.repository);
+		const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, issueNumber, runtime.repository, signal);
 		const removedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
 		return {
 			number: issueNumber,
@@ -396,7 +394,7 @@ function normalizeBulkIssueParams(params: BulkIssueToolParams): NormalizedBulkIs
 	}
 	if (action === "add_to_project") {
 		assertNoUnexpectedActionFields(params, ["projectId"]);
-		return { issueNumbers, action, projectId: normalizeRequiredText(params.projectId, "projectId"), continueOnError, changedFields: ["project_item"] };
+		return { issueNumbers, action, projectId: normalizeRequiredProjectId(params.projectId, "projectId"), continueOnError, changedFields: ["project_item"] };
 	}
 	assertNoUnexpectedActionFields(params, ["reason"]);
 	return { issueNumbers, action, ...(params.reason !== undefined ? { reason: normalizeCloseReason(params.reason) } : {}), continueOnError, changedFields: params.reason ? ["state", "state_reason"] : ["state"] };
@@ -439,8 +437,8 @@ function normalizeCloseReason(value: GitHubIssueCloseReason): GitHubIssueCloseRe
 	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Close reason must be completed or not_planned when provided.", { field: "reason" });
 }
 
-function normalizeRequiredText(value: string | undefined, field: string): string {
-	return normalizeRequiredTrimmedText(value, field, { requiredMessage: `${field} is required for this bulk action.` });
+function normalizeRequiredProjectId(value: string | undefined, field: string): string {
+	return normalizeRequiredGitHubOpaqueId(value, field, { requiredMessage: `${field} is required for this bulk action.` });
 }
 
 function normalizePositiveInteger(value: number | undefined, field: string): number {

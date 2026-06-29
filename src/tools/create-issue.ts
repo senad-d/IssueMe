@@ -2,7 +2,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { githubIssueToRecord } from "../issues/format.ts";
-import { createIssueMeRuntime, normalizeIssueBody, partialSuccessToolError, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, normalizeIssueBody, partialSuccessToolText, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
 
 const CreateIssueParams = Type.Object(
 	{
@@ -35,7 +35,7 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				const issue = await runtime.client.createIssue({ title, body, labels, assignees }, signal);
 				const record = githubIssueToRecord(runtime.client.repository, issue, []);
 				try {
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 					return toolText(`Created issue #${record.number}: ${record.title}\nURL: ${record.html_url}\nLocal file: ${path}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -43,17 +43,12 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Created issue #${record.number}: ${record.title}\nURL: ${record.html_url}\nLocal cache update failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							issue: { repository: runtime.repository, number: record.number, title: record.title, state: record.state, labels: record.labels, assignees: record.assignees, html_url: record.html_url },
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}

@@ -46,7 +46,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 					let result: IssueWriteResult;
 					try {
 						assertNotAborted(signal);
-						result = await writeIssueRecord(runtime.projectRoot, runtime.config, record);
+						result = await writeIssueRecord(runtime.projectRoot, runtime.config, record, signal);
 					} catch (error) {
 						if (!isInvalidIssueFileError(error)) throw error;
 						const targetPath = resolveIssueFilePath(runtime.projectRoot, runtime.config.issueDirectory, record.number, record.title);
@@ -75,7 +75,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 				}
 
 				assertNotAborted(signal);
-				const removed = await removeClosedIssueFiles(runtime.projectRoot, runtime.config, openNumbers, runtime.repository);
+				const removed = await removeClosedIssueFiles(runtime.projectRoot, runtime.config, openNumbers, runtime.repository, signal);
 				counts.removed += removed.length;
 				const staleRemovedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
 				removedPaths.push(...staleRemovedPaths);

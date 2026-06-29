@@ -4,7 +4,7 @@ import { Type } from "typebox";
 
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolError, refreshIssueRecord, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const AssignIssueParams = Type.Object(
 	{
@@ -39,8 +39,7 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 
 				try {
 					updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { record, summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Assignees for issue #${params.number}: ${record.assignees.length ? record.assignees.join(", ") : "none"}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -49,18 +48,13 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Updated assignees for issue #${params.number} remotely. Local cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							...(updatedSummary ? { issue: updatedSummary } : {}),
 							changedFields: ["assignees"],
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}

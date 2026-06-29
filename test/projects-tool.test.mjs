@@ -400,20 +400,29 @@ test("issueme_update_project_item refuses project and repository mismatches befo
 
 test("Projects v2 item tools reject invalid inputs before live mutations", async () => {
 	let calls = 0;
+	const failFetch = async () => {
+		calls += 1;
+		return jsonResponse({});
+	};
 	await assert.rejects(
-		() => executeProjectTool("issueme_update_project_item", async () => {
-			calls += 1;
-			return jsonResponse({});
-		}, { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status", valueType: "single_select", iterationId: "iter_1" }),
+		() => executeProjectTool("issueme_update_project_item", failFetch, { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status", valueType: "single_select", iterationId: "iter_1" }),
 		(error) => error?.code === "invalid_tool_input" && /singleSelectOptionId/.test(error.message),
 	);
 	for (const invalidDate of ["07/01/2026", "2026-02-30"]) {
 		await assert.rejects(
-			() => executeProjectTool("issueme_update_project_item", async () => {
-				calls += 1;
-				return jsonResponse({});
-			}, { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_date", valueType: "date", date: invalidDate }),
+			() => executeProjectTool("issueme_update_project_item", failFetch, { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_date", valueType: "date", date: invalidDate }),
 			(error) => error?.code === "invalid_tool_input" && /valid YYYY-MM-DD/.test(error.message),
+		);
+	}
+	for (const [toolName, params, fieldPattern] of [
+		["issueme_get_project_fields", { projectId: "PVT_1\nPVT_2" }, /projectId/],
+		["issueme_add_issue_to_project", { issueNumber: 7, projectId: "P".repeat(513) }, /projectId/],
+		["issueme_update_project_item", { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status\nnext", valueType: "single_select", singleSelectOptionId: "opt_todo" }, /fieldId/],
+		["issueme_update_project_item", { projectId: "PVT_1", itemId: "PVTI_1", issueNumber: 7, fieldId: "field_status", valueType: "single_select", singleSelectOptionId: "opt\nnext" }, /singleSelectOptionId/],
+	]) {
+		await assert.rejects(
+			() => executeProjectTool(toolName, failFetch, params),
+			(error) => error?.code === "invalid_tool_input" && fieldPattern.test(error.message),
 		);
 	}
 	assert.equal(calls, 0);

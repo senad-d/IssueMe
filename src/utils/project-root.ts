@@ -1,7 +1,8 @@
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { IssueMeError, isNodeError } from "../errors.ts";
+import { readTrustedTextFile } from "./safe-read.ts";
 
 export interface ProjectRootResolution {
 	root: string;
@@ -61,7 +62,14 @@ export async function resolveGitDirectory(gitRoot: string): Promise<string> {
 		throw new IssueMeError("repository_git_entry_invalid", "The .git entry is neither a directory nor a gitdir file.");
 	}
 
-	const text = await readFile(gitEntryPath, "utf8");
+	const text = await readTrustedTextFile(gitEntryPath, {
+		projectRoot: gitRoot,
+		safeDirectory: gitRoot,
+		unsafeCode: "repository_git_entry_invalid",
+		unsafeMessage: "The .git entry must be a regular, non-symlinked gitdir file.",
+		notFileMessage: "The .git entry is neither a directory nor a gitdir file.",
+		raceSwapMessage: "The .git gitdir file changed while it was being opened for reading.",
+	});
 	const match = text.match(/^gitdir:\s*(.+)\s*$/im);
 	if (!match?.[1]) {
 		throw new IssueMeError("repository_gitdir_invalid", "The .git file does not contain a valid gitdir entry.");
@@ -75,7 +83,14 @@ export async function resolveGitDirectory(gitRoot: string): Promise<string> {
 
 export async function resolveCommonGitDirectory(gitDirectory: string): Promise<string> {
 	try {
-		const text = await readFile(join(gitDirectory, "commondir"), "utf8");
+		const commonDirPath = join(gitDirectory, "commondir");
+		const text = await readTrustedTextFile(commonDirPath, {
+			safeDirectory: gitDirectory,
+			unsafeCode: "repository_common_dir_read_failed",
+			unsafeMessage: "Git commondir metadata must be a regular, non-symlinked file.",
+			notFileMessage: "Git commondir metadata must be a regular file.",
+			raceSwapMessage: "Git commondir metadata changed while it was being opened for reading.",
+		});
 		const rawCommonDir = text.trim();
 		if (!rawCommonDir || rawCommonDir.includes("\0")) return gitDirectory;
 		return isAbsolute(rawCommonDir) ? resolve(rawCommonDir) : resolve(gitDirectory, rawCommonDir);

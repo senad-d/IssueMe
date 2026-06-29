@@ -266,7 +266,7 @@ The help/status view includes usage, tool names, project trust status, repositor
 | Tool | Behavior |
 | --- | --- |
 | `issueme_sync_issues` | Fetch open issues, write/update/rename local issue files, and remove local files for closed issues in the current repository. |
-| `issueme_list_issues` | Read-only list/search for current-repository issues by state, labels, assignee, author/creator, mentioned user, milestone, updated-since, sort/direction, and limit. Text search uses GitHub Search with `repo:<owner>/<repo> is:issue` enforced and pull requests excluded. |
+| `issueme_list_issues` | Read-only list/search for current-repository issues by state, labels, assignee, author/creator, mentioned user, milestone, updated-since (`YYYY-MM-DD` or ISO timestamp with timezone), sort/direction, and limit. Text search uses GitHub Search with `repo:<owner>/<repo> is:issue` enforced and pull requests excluded. |
 | `issueme_list_labels` | Read-only repository label discovery with label name, description, color, default status, URL, optional name/text filters, limit, and truncation metadata. |
 | `issueme_list_milestones` | Read-only repository milestone discovery with milestone number, title, state, description, due date, open/closed issue counts, URL, state/sort/direction filters, limit, and truncation metadata. |
 | `issueme_list_assignees` | Read-only assignable-user discovery with login, safe ID, profile URL, user type, optional login/text filters, limit, and truncation metadata. |
@@ -295,6 +295,16 @@ The help/status view includes usage, tool names, project trust status, repositor
 | `issueme_bulk_update_issues` | Apply one limited action (`add_labels`, `assign`, `set_milestone`, `add_to_project`, or `close`) to an explicit list of issue numbers. It executes sequentially, refuses unconstrained search/query targets, defaults to stop-on-error, and returns bounded per-issue success/failure details. |
 
 Project item field updates use GitHub's stable `ProjectV2FieldValue` inputs. Assignee-style project fields are not exposed through that input today; use `issueme_assign_issue` for issue assignees and update project fields only when GitHub exposes an ID-based supported value type.
+
+### Tool result and failure signaling
+
+Pi marks a tool call as failed (`isError: true`) only when the handler throws. IssueMe throws for validation, trust, repository/token setup, closed-issue refusal, unexpected GitHub/API failures, aborts, and pre-mutation cache failures. Handled domain outcomes return normal Pi tool results with structured `details.result`:
+
+- `success` for successful work and idempotent no-ops.
+- `partial_success` when a remote mutation may have succeeded but cache/follow-up work failed; inspect `needsSync`, `status`, and safe retry guidance.
+- `error` for documented structured failures such as known label/milestone conflicts, native sub-issue operation failures without body-only fallback, and aggregate bulk per-item failures.
+
+Agents should check both Pi `isError` and IssueMe `details.result`/`status` before assuming a mutation succeeded. The public contract matrix is in [`docs/public-contracts.md`](docs/public-contracts.md).
 
 Example triage prompts:
 
@@ -509,10 +519,11 @@ npm run format:check
 npm run test
 npm run smoke:discover
 npm run smoke:packaged
+npm run smoke:handlers
 npm run check:pack
 ```
 
-`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. `smoke:packaged` packs to a temporary directory, installs the tarball in a temporary production-style project with IssueMe devDependencies omitted and documented Pi peer dependencies satisfied, then verifies the packed package registers `/issueme` and the tools. Neither smoke check invokes handlers, calls GitHub, publishes, updates dependencies, or mutates issues.
+`smoke:discover` verifies `/issueme` through Pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. `smoke:packaged` packs to a temporary directory, installs the tarball in a temporary production-style project with IssueMe devDependencies omitted and documented Pi peer dependencies satisfied, then verifies the packed package registers `/issueme` and the tools. `smoke:handlers` safely invokes checkout and packed-package `/issueme` and tool handler paths with temporary directories, scrubbed IssueMe environment variables, and mocked GitHub fetches. Discovery smoke checks do not invoke handlers; handler smoke never reads project `.env`, calls live GitHub, publishes, updates dependencies, or mutates remote issues.
 
 For manual isolated startup checks:
 
@@ -550,6 +561,7 @@ npm run format:check
 npm run test
 npm run smoke:discover
 npm run smoke:packaged
+npm run smoke:handlers
 npm run check:pack
 npm run validate
 ```
@@ -566,12 +578,14 @@ Additional checks:
 npm run test:tui-artifacts
 npm run smoke:discover
 npm run smoke:packaged
+npm run smoke:handlers
 ```
 
 Implementation references:
 
 - [`docs/PROJECT_DEFINITION_BRIEF.md`](docs/PROJECT_DEFINITION_BRIEF.md)
 - [`docs/STRUCTURE.md`](docs/STRUCTURE.md)
+- [`docs/public-contracts.md`](docs/public-contracts.md)
 - [`SECURITY.md`](SECURITY.md)
 - [`specs/spec-architecture.md`](specs/spec-architecture.md)
 - [`specs/spec-guidelines.md`](specs/spec-guidelines.md)

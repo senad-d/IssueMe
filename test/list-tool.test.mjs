@@ -112,6 +112,26 @@ test("issueme_list_issues uses safe GitHub search mode and reports truncation", 
 	assertNoPrivateBodyOrToken(result);
 });
 
+test("issueme_list_issues validates updated-since as an explicit ISO date or timestamp", async () => {
+	let calls = 0;
+	const valid = await executeListTool(async (url) => {
+		calls += 1;
+		assert.equal(new URL(url.toString()).searchParams.get("since"), "2026-06-27T00:00:00Z");
+		return jsonResponse([]);
+	}, { since: "2026-06-27T00:00:00Z" });
+	assert.equal(valid.details.status, "list");
+	assert.equal(calls, 1);
+
+	await assert.rejects(
+		() => executeListTool(async () => {
+			calls += 1;
+			return jsonResponse([]);
+		}, { since: "June 27, 2026" }),
+		(error) => error?.code === "invalid_tool_input" && /ISO/.test(error.message),
+	);
+	assert.equal(calls, 1);
+});
+
 test("issueme_list_issues rejects unsafe search boundary qualifiers before fetch", async () => {
 	let calls = 0;
 	await assert.rejects(

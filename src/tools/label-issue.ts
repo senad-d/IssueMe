@@ -2,7 +2,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { createIssueMeRuntime, partialSuccessToolError, requireNonEmptyStrings, refreshIssueRecord, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const LabelIssueParams = Type.Object(
 	{
@@ -56,8 +56,7 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 				}
 
 				try {
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { record, summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Labels for issue #${params.number}: ${record.labels.length ? record.labels.join(", ") : "none"}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -66,17 +65,12 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Updated labels for issue #${params.number} remotely. Local cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							changedFields: ["labels"],
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}

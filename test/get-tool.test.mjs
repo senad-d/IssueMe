@@ -182,6 +182,25 @@ test("issueme_get_issue reports ambiguous title or slug lookup instead of return
 	);
 });
 
+test("issueme_get_issue reports repository-scoped duplicate cache files with sync guidance", async () => {
+	const projectRoot = await tempProject();
+	await initGitHubOrigin(projectRoot);
+	await mkdir(join(projectRoot, "issues"));
+	await writeFile(join(projectRoot, "issues", "12-stale.json"), `${JSON.stringify(issue(12, "Stale Cache"))}\n`, "utf8");
+	await writeFile(join(projectRoot, "issues", "12-current.json"), `${JSON.stringify(issue(12, "Current Cache"))}\n`, "utf8");
+	const getTool = await registerGetTool();
+
+	await assert.rejects(
+		() => executeGet(getTool, projectRoot, { number: 12 }),
+		(error) => {
+			assert.equal(error?.code, "issue_lookup_ambiguous");
+			assert.match(error.message, /issueme_sync_issues|stale duplicate/);
+			assert.deepEqual(error.safeDetails?.paths, ["issues/12-current.json", "issues/12-stale.json"]);
+			return true;
+		},
+	);
+});
+
 test("issueme_get_issue rejects mismatched injected local lookup repositories", async () => {
 	const projectRoot = await setupLookupProject();
 	const client = new GitHubClient({

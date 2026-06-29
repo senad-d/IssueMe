@@ -3,8 +3,8 @@ import { Type } from "typebox";
 
 import { IssueMeError } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
-import type { IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, listChangedFields, normalizeIssueBody, partialSuccessToolError, refreshIssueRecord, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import type { ToolIssueSummary } from "../types.ts";
+import { createIssueMeRuntime, listChangedFields, normalizeIssueBody, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const UpdateIssueParams = Type.Object(
 	{
@@ -57,8 +57,7 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				let updatedSummary: ToolIssueSummary | undefined;
 				try {
 					updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Updated issue #${params.number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -68,18 +67,15 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					const details: IssueMeToolDetails = {
-						repository: runtime.repository,
-						...(updatedSummary ? { issue: updatedSummary } : {}),
-						changedFields,
-						cacheUpdated: false,
-						needsSync: true,
-						status: "partial_success",
-						message: safeError.message,
-						error: safeError,
-					};
-					return toolText(`Updated issue #${params.number} remotely: ${changedFields.join(", ")}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`, details);
+					return partialSuccessToolText(
+						`Updated issue #${params.number} remotely: ${changedFields.join(", ")}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
+						{
+							repository: runtime.repository,
+							...(updatedSummary ? { issue: updatedSummary } : {}),
+							changedFields,
+						},
+					);
 				}
 			},
 		}),

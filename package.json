@@ -45,10 +45,11 @@
     "test:tui-artifacts": "node scripts/generate-tui-artifacts.mjs",
     "smoke:discover": "node scripts/smoke-observability.mjs",
     "smoke:packaged": "node scripts/smoke-packaged-install.mjs",
-    "check": "node --check scripts/check-package-contents.mjs && node --check scripts/smoke-observability.mjs && node --check scripts/smoke-packaged-install.mjs",
+    "smoke:handlers": "node scripts/smoke-handler-execution.mjs",
+    "check": "node --check scripts/check-package-contents.mjs && node --check scripts/smoke-observability.mjs && node --check scripts/smoke-packaged-install.mjs && node --check scripts/smoke-handler-execution.mjs",
     "pack:dry-run": "npm pack --dry-run --json",
     "check:pack": "node scripts/check-package-contents.mjs",
-    "validate": "npm run lint && npm run test && npm run check:pack && npm run smoke:packaged"
+    "validate": "npm run lint && npm run test && npm run check:pack && npm run smoke:packaged && npm run smoke:handlers"
   },
   "pi": {
     "extensions": [

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 
 import { IssueMeError } from "../errors.ts";
 import type { GitHubCommentResponse, ToolCommentSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolError, refreshIssueRecord, toolText, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const CommentIssueParams = Type.Object(
 	{
@@ -49,8 +49,7 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
 				try {
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Added comment to issue #${params.number}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -60,18 +59,13 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Added comment to issue #${params.number}.${commentUrl ? `\nComment: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							comment: commentDetails,
 							changedFields: ["comments"],
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}
@@ -99,8 +93,7 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
 				try {
-					const record = await refreshIssueRecord(runtime, params.issueNumber, signal);
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
 					return toolText(`Updated comment ${params.commentId} on issue #${params.issueNumber}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -110,18 +103,13 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 						cacheUpdated: true,
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Updated comment ${params.commentId} on issue #${params.issueNumber}.${commentUrl ? `\nComment: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							comment: commentDetails,
 							changedFields: ["comments"],
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}
@@ -148,8 +136,7 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 				const commentDetails = commentSummary(deletedComment);
 				const commentUrl = commentDetails.html_url;
 				try {
-					const record = await refreshIssueRecord(runtime, params.issueNumber, signal);
-					const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
 					return toolText(`Deleted comment ${params.commentId} from issue #${params.issueNumber}.${commentUrl ? `\nDeleted comment URL: ${commentUrl}` : ""}`, {
 						repository: runtime.repository,
 						issue: summary,
@@ -160,18 +147,13 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 						status: "comment_deleted",
 					});
 				} catch (error) {
-					const safeError = partialSuccessToolError(error);
-					return toolText(
+					return partialSuccessToolText(
 						`Deleted comment ${params.commentId} from issue #${params.issueNumber}.${commentUrl ? `\nDeleted comment URL: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						error,
 						{
 							repository: runtime.repository,
 							comment: commentDetails,
 							changedFields: ["comments"],
-							cacheUpdated: false,
-							needsSync: true,
-							status: "partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
 					);
 				}

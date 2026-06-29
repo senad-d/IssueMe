@@ -217,6 +217,27 @@ test("GitHub client searches issues with enforced repository and issue qualifier
 	assert.equal(calls[0].url.searchParams.get("order"), "desc");
 });
 
+test("GitHub client rejects ambiguous since filters before request", async () => {
+	let calls = 0;
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async () => {
+			calls += 1;
+			return jsonResponse([]);
+		},
+	});
+	await assert.rejects(
+		() => client.listIssues({ since: "June 27, 2026" }),
+		(error) => error?.code === "invalid_tool_input" && /ISO/.test(error.message),
+	);
+	await assert.rejects(
+		() => client.searchIssues({ query: "bug", since: "2026-06-27T00:00:00" }),
+		(error) => error?.code === "invalid_tool_input" && /timezone/.test(error.message),
+	);
+	assert.equal(calls, 0);
+});
+
 test("GitHub client refuses issue search queries that try to escape the repository or include PRs", async () => {
 	let calls = 0;
 	const client = new GitHubClient({

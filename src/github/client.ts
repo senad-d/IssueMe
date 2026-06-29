@@ -3,7 +3,7 @@ import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeE
 import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, IssueRelationshipSummary, ProjectV2OwnerType, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
 import { isValidIsoDateOnly } from "../utils/date.ts";
 import { redactSecrets } from "../utils/env.ts";
-import { normalizeBoundedInteger, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
+import { normalizeBoundedInteger, normalizeOptionalGitHubOpaqueId, normalizeOptionalIsoDateOrTimestamp, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -1388,9 +1388,18 @@ function normalizeConnectionTotalCount(connection: unknown): number | undefined 
 	return typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : undefined;
 }
 
+function normalizeProjectV2OutputId(value: unknown, field: string): string | undefined {
+	if (typeof value !== "string") return undefined;
+	try {
+		return normalizeRequiredGitHubOpaqueId(value, field);
+	} catch {
+		return undefined;
+	}
+}
+
 function normalizeProjectV2Summary(value: unknown): ToolProjectSummary | undefined {
 	if (!isObject(value)) return undefined;
-	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const id = normalizeProjectV2OutputId(value.id, "projectId") ?? "";
 	const title = typeof value.title === "string" ? value.title.trim() : "";
 	const number = typeof value.number === "number" && Number.isSafeInteger(value.number) && value.number > 0 ? value.number : undefined;
 	const owner = normalizeProjectV2OwnerSummary(value.owner);
@@ -1427,7 +1436,7 @@ function normalizeProjectV2OwnerSummary(value: unknown): { owner: string; ownerT
 
 function normalizeProjectV2FieldSummary(value: unknown, limits: ProjectV2FieldLimits): ToolProjectFieldSummary | undefined {
 	if (!isObject(value)) return undefined;
-	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const id = normalizeProjectV2OutputId(value.id, "fieldId") ?? "";
 	const name = typeof value.name === "string" ? value.name.trim() : "";
 	const dataType = typeof value.dataType === "string" ? value.dataType.trim() : "";
 	if (!id || !name || !dataType) return undefined;
@@ -1470,7 +1479,7 @@ function normalizeProjectV2ItemMutationResult(data: ProjectV2ItemMutationData, f
 
 function normalizeProjectV2ItemSummary(value: unknown, repository: string): ToolProjectItemSummary | undefined {
 	if (!isObject(value)) return undefined;
-	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const id = normalizeProjectV2OutputId(value.id, "itemId") ?? "";
 	if (!id) return undefined;
 	const type = typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
 	const project = normalizeProjectV2Summary(value.project);
@@ -1513,7 +1522,7 @@ function assertProjectV2ItemTargetsIssue(
 	}
 
 	const project = isObject(item.project) ? item.project : undefined;
-	const actualProjectId = typeof project?.id === "string" ? project.id.trim() : undefined;
+	const actualProjectId = normalizeProjectV2OutputId(project?.id, "projectId");
 	if (!actualProjectId) {
 		throw new GitHubApiError("GitHub GraphQL ProjectV2 item validation returned incomplete project data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
@@ -1581,7 +1590,7 @@ function projectV2ItemContentToSafeSummary(
 
 function normalizeProjectV2FieldOption(value: unknown): ToolProjectFieldOptionSummary | undefined {
 	if (!isObject(value)) return undefined;
-	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const id = normalizeProjectV2OutputId(value.id, "singleSelectOptionId") ?? "";
 	const name = typeof value.name === "string" ? value.name.trim() : "";
 	if (!id || !name) return undefined;
 	const color = typeof value.color === "string" && value.color.trim() ? value.color.trim() : undefined;
@@ -1591,7 +1600,7 @@ function normalizeProjectV2FieldOption(value: unknown): ToolProjectFieldOptionSu
 
 function normalizeProjectV2Iteration(value: unknown): ToolProjectIterationSummary | undefined {
 	if (!isObject(value)) return undefined;
-	const id = typeof value.id === "string" ? value.id.trim() : "";
+	const id = normalizeProjectV2OutputId(value.id, "iterationId") ?? "";
 	const title = typeof value.title === "string" ? value.title.trim() : "";
 	if (!id || !title) return undefined;
 	const startDate = typeof value.startDate === "string" && value.startDate.trim() ? value.startDate.trim() : undefined;
@@ -1628,11 +1637,11 @@ function normalizeProjectV2Owner(scope: GitHubProjectV2Scope, value: string | un
 }
 
 function normalizeProjectV2Id(value: string | undefined): string | undefined {
-	return normalizeOptionalTrimmedText(value, "projectId");
+	return normalizeOptionalGitHubOpaqueId(value, "projectId");
 }
 
 function normalizeProjectV2IdRequired(value: string | undefined, field: string): string {
-	return normalizeRequiredTrimmedText(value, field);
+	return normalizeRequiredGitHubOpaqueId(value, field);
 }
 
 function normalizeProjectV2FieldValueInput(value: GitHubProjectV2FieldValueInput): GitHubProjectV2FieldValueInput {
@@ -1707,7 +1716,7 @@ function buildIssueListQuery(filters: GitHubIssueListFilters, limit: number | un
 		creator: normalizeOptionalQueryValue(filters.creator),
 		mentioned: normalizeOptionalQueryValue(filters.mentioned),
 		milestone: normalizeOptionalQueryValue(filters.milestone),
-		since: normalizeOptionalQueryValue(filters.since),
+		since: normalizeIssueSinceFilter(filters.since),
 		sort: normalizeIssueListSort(filters.sort),
 		direction: normalizeIssueListDirection(filters.direction),
 	});
@@ -1728,7 +1737,7 @@ function buildIssueSearchRequestQuery(repository: string, filters: GitHubIssueSe
 	if (mentioned) terms.push(`mentions:${quoteSearchQualifierValue(mentioned)}`);
 	const milestone = normalizeOptionalQueryValue(filters.milestone);
 	if (milestone) terms.push(`milestone:${quoteSearchQualifierValue(milestone)}`);
-	const since = normalizeOptionalQueryValue(filters.since);
+	const since = normalizeIssueSinceFilter(filters.since);
 	if (since) terms.push(`updated:>=${since}`);
 	return compactQuery({
 		q: terms.join(" "),
@@ -1817,6 +1826,12 @@ function normalizeMilestoneListDirection(direction: GitHubMilestoneListDirection
 	if (direction === undefined) return undefined;
 	if (direction === "asc" || direction === "desc") return direction;
 	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone list direction must be asc or desc.", { field: "direction" });
+}
+
+function normalizeIssueSinceFilter(value: string | undefined): string | undefined {
+	return normalizeOptionalIsoDateOrTimestamp(value, "since", {
+		invalidMessage: "since must be a valid ISO YYYY-MM-DD date or ISO 8601 timestamp with timezone.",
+	});
 }
 
 function normalizeOptionalQueryValue(value: string | undefined): string | undefined {

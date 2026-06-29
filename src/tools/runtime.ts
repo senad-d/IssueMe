@@ -26,6 +26,7 @@ import { parseGitHubRepository, resolveCurrentRepository } from "../github/repos
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { relativeIssuePath, writeIssueRecord } from "../issues/store.ts";
 import type { GitHubIssueResponse, GitHubRepository, IssueMeConfig, IssueMeToolDetails, IssueMeToolResult, IssueRecord, IssueRelationshipSummary, IssueWriteResult, SafeToolError, ToolAssigneeSummary, ToolBulkIssueResultStatus, ToolBulkIssueResultSummary, ToolCommentSummary, ToolFileActionSummary, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolLabelSummary, ToolMilestoneSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
+import { assertNotAborted } from "../utils/abort.ts";
 import { resolveGitHubToken } from "../utils/env.ts";
 import { resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
@@ -158,7 +159,7 @@ export async function writeAndSummarizeIssue(
 	signal?: AbortSignal,
 ): Promise<{ summary: ToolIssueSummary; path?: string; removedPaths: string[]; action: IssueWriteResult["action"] }> {
 	assertNotAborted(signal);
-	const writeResult = await writeIssueRecord(runtime.projectRoot, runtime.config, record);
+	const writeResult = await writeIssueRecord(runtime.projectRoot, runtime.config, record, signal);
 	const path = relativeIssuePath(runtime.projectRoot, writeResult.path);
 	return {
 		summary: issueRecordToToolSummary(record, path),
@@ -168,15 +169,39 @@ export async function writeAndSummarizeIssue(
 	};
 }
 
-export function assertNotAborted(signal?: AbortSignal): void {
-	if (!signal?.aborted) return;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, "IssueMe operation aborted before local cache mutation.");
+export interface CachedIssueMutationResult {
+	record: IssueRecord;
+	summary: ToolIssueSummary;
+	path?: string;
+	removedPaths: string[];
+	action: IssueWriteResult["action"];
 }
+
+export async function refreshAndCacheIssue(
+	ctx: ExtensionContext,
+	runtime: IssueMeRuntime,
+	issueNumber: number,
+	signal?: AbortSignal,
+): Promise<CachedIssueMutationResult> {
+	const record = await refreshIssueRecord(runtime, issueNumber, signal);
+	const cached = await writeAndSummarizeIssue(ctx, runtime, record, signal);
+	return { record, ...cached };
+}
+
+export { assertNotAborted };
 
 export function isAbortError(error: unknown): boolean {
 	return error instanceof IssueMeError && error.code === ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED;
 }
 
+/**
+ * IssueMe tool-result policy:
+ * - throw from execute() for Pi-level failures that should set tool isError=true;
+ * - return details.result="success" for successful work and idempotent no-ops;
+ * - return details.result="partial_success" when a remote mutation may have succeeded but cache/follow-up work failed;
+ * - return details.result="error" only for documented, handled domain outcomes that are safer as structured results.
+ * Pi itself only marks tool calls failed when execute() throws, so callers must inspect details.result/status too.
+ */
 export function toolText(text: string, details: IssueMeToolDetails = {}) {
 	const content = truncateToolText(text);
 	const normalizedDetails = normalizeToolDetails({
@@ -376,6 +401,24 @@ export function partialSuccessToolError(error: unknown, partialSuccessStatus = "
 			partialSuccessRecoveryHint: taxonomy.recoveryHint,
 		},
 	}) ?? safeError;
+}
+
+export function partialSuccessToolText(
+	text: string,
+	error: unknown,
+	details: IssueMeToolDetails = {},
+	partialSuccessStatus = "partial_success",
+	status = partialSuccessStatus,
+) {
+	const safeError = partialSuccessToolError(error, partialSuccessStatus);
+	return toolText(text, {
+		...details,
+		cacheUpdated: false,
+		needsSync: true,
+		status,
+		message: safeError.message,
+		error: safeError,
+	});
 }
 
 export function normalizeIssueBody(body: string, mode: "create" | "update"): string {

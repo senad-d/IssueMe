@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { GitHubRepository } from "../types.ts";
+import { readTrustedTextFile } from "../utils/safe-read.ts";
 import { resolveCommonGitDirectory, resolveGitDirectory, resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
@@ -77,14 +77,14 @@ async function readRepositoryConfigTexts(gitRoot: string): Promise<string[]> {
 	try {
 		const gitDirectory = await resolveGitDirectory(gitRoot);
 		const commonGitDirectory = await resolveCommonGitDirectory(gitDirectory);
-		const candidatePaths = uniquePaths([
-			join(gitDirectory, "config"),
-			join(gitDirectory, "config.worktree"),
-			join(commonGitDirectory, "config"),
+		const candidatePaths = uniquePathCandidates([
+			{ path: join(gitDirectory, "config"), safeDirectory: gitDirectory },
+			{ path: join(gitDirectory, "config.worktree"), safeDirectory: gitDirectory },
+			{ path: join(commonGitDirectory, "config"), safeDirectory: commonGitDirectory },
 		]);
 		const configTexts: string[] = [];
-		for (const path of candidatePaths) {
-			const text = await readConfigIfExists(path);
+		for (const candidate of candidatePaths) {
+			const text = await readConfigIfExists(candidate.path, candidate.safeDirectory);
 			if (text !== undefined) configTexts.push(text);
 		}
 		return configTexts;
@@ -94,17 +94,28 @@ async function readRepositoryConfigTexts(gitRoot: string): Promise<string[]> {
 	}
 }
 
-async function readConfigIfExists(path: string): Promise<string | undefined> {
+async function readConfigIfExists(path: string, safeDirectory: string): Promise<string | undefined> {
 	try {
-		return await readFile(path, "utf8");
+		return await readTrustedTextFile(path, {
+			safeDirectory,
+			unsafeCode: "repository_read_failed",
+			unsafeMessage: "Git config must be a regular, non-symlinked file.",
+			notFileMessage: "Git config path exists but is not a regular file.",
+			raceSwapMessage: "Git config changed while it was being opened for repository resolution.",
+		});
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return undefined;
 		throw error;
 	}
 }
 
-function uniquePaths(paths: string[]): string[] {
-	return [...new Set(paths)];
+function uniquePathCandidates(candidates: Array<{ path: string; safeDirectory: string }>): Array<{ path: string; safeDirectory: string }> {
+	const seen = new Set<string>();
+	return candidates.filter((candidate) => {
+		if (seen.has(candidate.path)) return false;
+		seen.add(candidate.path);
+		return true;
+	});
 }
 
 type RepositorySourceClassification =

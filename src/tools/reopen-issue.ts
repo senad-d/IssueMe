@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { IssueMeError } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, ToolCommentSummary, ToolIssueSummary } from "../types.ts";
-import { createIssueMeRuntime, partialSuccessToolError, refreshIssueRecord, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions, writeAndSummarizeIssue } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const ReopenIssueParams = Type.Object(
 	{
@@ -71,8 +71,7 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				}
 
 				try {
-					const record = await refreshIssueRecord(runtime, params.number, signal);
-					const { summary, path, removedPaths } = await writeAndSummarizeIssue(ctx, runtime, record);
+					const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					reopenedSummary = summary;
 					return toolText(
 						`Reopened issue #${params.number}: ${summary.title}\nURL: ${summary.html_url}${commentDetails?.html_url ? `\nComment: ${commentDetails.html_url}` : ""}\nLocal file: ${path ?? "not written"}`,
@@ -88,20 +87,16 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						},
 					);
 				} catch (error) {
-					const safeError = partialSuccessToolError(error, "reopened_partial_success");
-					return toolText(
+					return partialSuccessToolText(
 						`Reopened issue #${params.number}: ${reopenedSummary.title}\nURL: ${reopenedSummary.html_url}${commentDetails?.html_url ? `\nComment: ${commentDetails.html_url}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before relying on cache state.`,
+						error,
 						{
 							repository: runtime.repository,
 							issue: reopenedSummary,
 							...(commentDetails ? { comment: commentDetails } : {}),
 							changedFields,
-							cacheUpdated: false,
-							needsSync: true,
-							status: "reopened_partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
+						"reopened_partial_success",
 					);
 				}
 			},

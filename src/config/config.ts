@@ -1,10 +1,11 @@
-import { lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR } from "../constants.ts";
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
+import { readTrustedTextFile } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 import { assertPathInside, assertSafeIssueDirectoryValue, normalizeIssueDirectoryValue, resolveIssueDirectory } from "../utils/slug.ts";
 
@@ -25,7 +26,15 @@ export function getIssueMeConfigPath(projectRoot: string): string {
 export async function loadIssueMeConfig(projectRoot: string): Promise<IssueMeConfig> {
 	try {
 		await assertConfigPathSafe(projectRoot);
-		const text = await readFile(getIssueMeConfigPath(projectRoot), "utf8");
+		const configPath = getIssueMeConfigPath(projectRoot);
+		const text = await readTrustedTextFile(configPath, {
+			projectRoot,
+			safeDirectory: dirname(configPath),
+			unsafeCode: "unsafe_path",
+			unsafeMessage: "IssueMe config file cannot be a symlink.",
+			notFileMessage: "IssueMe config path exists but is not a regular file.",
+			raceSwapMessage: "IssueMe config changed while it was being opened for reading.",
+		});
 		const parsed = JSON.parse(text) as unknown;
 		return validateIssueMeConfig(projectRoot, dropSecretLikeKeys(parsed));
 	} catch (error) {

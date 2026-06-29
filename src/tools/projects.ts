@@ -6,7 +6,7 @@ import { MAX_TOOL_PROJECT_FIELD_OPTIONS, MAX_TOOL_PROJECT_FIELDS, MAX_TOOL_PROJE
 import { IssueMeError } from "../errors.ts";
 import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2Scope } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
-import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredIsoDateOnly, normalizeRequiredTrimmedText } from "../utils/validation.ts";
+import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalGitHubOpaqueId, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId, normalizeRequiredIsoDateOnly } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
@@ -35,7 +35,7 @@ const ListProjectsParams = Type.Object(
 
 const GetProjectFieldsParams = Type.Object(
 	{
-		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID; when provided, owner/scope/projectNumber are ignored." })),
+		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID; one-line and at most 512 characters. When provided, owner/scope/projectNumber are ignored." })),
 		scope: Type.Optional(ProjectScope),
 		owner: Type.Optional(Type.String({ description: "Org/user login; only valid when scope is organization or user; ignored with projectId." })),
 		projectNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Project number for scope; ignored with projectId." })),
@@ -49,20 +49,20 @@ const GetProjectFieldsParams = Type.Object(
 const AddIssueToProjectParams = Type.Object(
 	{
 		issueNumber: Type.Integer({ minimum: 1, description: "Open issue number." }),
-		projectId: Type.String({ description: "ProjectV2 node ID." }),
+		projectId: Type.String({ description: "ProjectV2 node ID; one-line and at most 512 characters." }),
 	},
 	{ additionalProperties: false },
 );
 
 const UpdateProjectItemParams = Type.Object(
 	{
-		projectId: Type.String({ description: "ProjectV2 node ID." }),
-		itemId: Type.String({ description: "ProjectV2Item node ID." }),
+		projectId: Type.String({ description: "ProjectV2 node ID; one-line and at most 512 characters." }),
+		itemId: Type.String({ description: "ProjectV2Item node ID; one-line and at most 512 characters." }),
 		issueNumber: Type.Integer({ minimum: 1, description: "Open issue number represented by item." }),
-		fieldId: Type.String({ description: "Project field node ID." }),
+		fieldId: Type.String({ description: "Project field node ID; one-line and at most 512 characters." }),
 		valueType: ProjectFieldValueType,
-		singleSelectOptionId: Type.Optional(Type.String({ description: "Single-select option ID." })),
-		iterationId: Type.Optional(Type.String({ description: "Iteration ID." })),
+		singleSelectOptionId: Type.Optional(Type.String({ description: "Single-select option ID; one-line and at most 512 characters." })),
+		iterationId: Type.Optional(Type.String({ description: "Iteration ID; one-line and at most 512 characters." })),
 		date: Type.Optional(Type.String({ description: "YYYY-MM-DD date." })),
 		text: Type.Optional(Type.String({ description: "Text value." })),
 		numberValue: Type.Optional(Type.Number({ description: "Finite number." })),
@@ -297,7 +297,7 @@ function normalizeListProjectsParams(params: ListProjectsToolParams): Normalized
 
 function normalizeGetProjectFieldsParams(params: GetProjectFieldsToolParams): NormalizedGetProjectFieldsParams {
 	const scope = normalizeScope(params.scope);
-	const projectId = normalizeOptionalText(params.projectId, "projectId");
+	const projectId = normalizeOptionalProjectId(params.projectId, "projectId");
 	const owner = normalizeOptionalText(params.owner, "owner");
 	if (!projectId) assertProjectOwnerScope(scope, owner);
 	if (!projectId && params.projectNumber === undefined) {
@@ -317,16 +317,16 @@ function normalizeGetProjectFieldsParams(params: GetProjectFieldsToolParams): No
 function normalizeAddIssueToProjectParams(params: AddIssueToProjectToolParams): NormalizedAddIssueToProjectParams {
 	return {
 		issueNumber: normalizePositiveInteger(params.issueNumber, "issueNumber"),
-		projectId: normalizeRequiredText(params.projectId, "projectId"),
+		projectId: normalizeRequiredProjectId(params.projectId, "projectId"),
 	};
 }
 
 function normalizeUpdateProjectItemParams(params: UpdateProjectItemToolParams): NormalizedUpdateProjectItemParams {
 	const valueType = normalizeProjectFieldValueType(params.valueType);
 	return {
-		projectId: normalizeRequiredText(params.projectId, "projectId"),
-		itemId: normalizeRequiredText(params.itemId, "itemId"),
-		fieldId: normalizeRequiredText(params.fieldId, "fieldId"),
+		projectId: normalizeRequiredProjectId(params.projectId, "projectId"),
+		itemId: normalizeRequiredProjectId(params.itemId, "itemId"),
+		fieldId: normalizeRequiredProjectId(params.fieldId, "fieldId"),
 		issueNumber: normalizePositiveInteger(params.issueNumber, "issueNumber"),
 		valueType,
 		value: normalizeProjectFieldValue(params, valueType),
@@ -352,8 +352,8 @@ function normalizeProjectFieldValue(params: UpdateProjectItemToolParams, valueTy
 	if (providedFields.length !== 1 || providedFields[0] !== expectedField) {
 		throw new IssueMeError("invalid_tool_input", `valueType ${valueType} requires exactly ${expectedField}.`, { field: expectedField, providedFields });
 	}
-	if (valueType === "single_select") return { singleSelectOptionId: normalizeRequiredText(params.singleSelectOptionId, "singleSelectOptionId") };
-	if (valueType === "iteration") return { iterationId: normalizeRequiredText(params.iterationId, "iterationId") };
+	if (valueType === "single_select") return { singleSelectOptionId: normalizeRequiredProjectId(params.singleSelectOptionId, "singleSelectOptionId") };
+	if (valueType === "iteration") return { iterationId: normalizeRequiredProjectId(params.iterationId, "iterationId") };
 	if (valueType === "date") return { date: normalizeDateValue(params.date) };
 	if (valueType === "text") return { text: normalizeTextValue(params.text) };
 	return { number: normalizeNumberValue(params.numberValue) };
@@ -375,8 +375,12 @@ function normalizeOptionalText(value: string | undefined, field: string): string
 	return normalizeOptionalTextFilter(value, field);
 }
 
-function normalizeRequiredText(value: string | undefined, field: string): string {
-	return normalizeRequiredTrimmedText(value, field);
+function normalizeOptionalProjectId(value: string | undefined, field: string): string | undefined {
+	return normalizeOptionalGitHubOpaqueId(value, field);
+}
+
+function normalizeRequiredProjectId(value: string | undefined, field: string): string {
+	return normalizeRequiredGitHubOpaqueId(value, field);
 }
 
 function normalizeDateValue(value: string | undefined): string {

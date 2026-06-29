@@ -6,7 +6,7 @@ import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
 import type { GitHubIssueCloseReason } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
-import { createIssueMeRuntime, partialSuccessToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { createIssueMeRuntime, partialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const CloseIssueParams = Type.Object(
 	{
@@ -38,23 +38,19 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
 				let removedPaths: string[] = [];
 				try {
-					const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, params.number, runtime.repository);
+					const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, params.number, runtime.repository, signal);
 					removedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
 				} catch (error) {
-					const safeError = partialSuccessToolError(error, alreadyClosed ? "already_closed_partial_success" : "closed_now_partial_success");
 					const title = typeof issue.title === "string" ? issue.title : `#${params.number}`;
-					return toolText(
+					return partialSuccessToolText(
 						`${alreadyClosed ? "Issue was already closed" : "Closed issue"} #${params.number}: ${title}${!alreadyClosed && reason ? `\nClose reason: ${reason}` : ""}\nURL: ${issueSummary.html_url}\nLocal cache removal failed; run issueme_sync_issues before relying on cache state.`,
+						error,
 						{
 							repository: runtime.repository,
 							issue: issueSummary,
 							changedFields: alreadyClosed ? [] : changedFields,
-							cacheUpdated: false,
-							needsSync: true,
-							status: alreadyClosed ? "already_closed_partial_success" : "closed_now_partial_success",
-							message: safeError.message,
-							error: safeError,
 						},
+						alreadyClosed ? "already_closed_partial_success" : "closed_now_partial_success",
 					);
 				}
 				const title = typeof issue.title === "string" ? issue.title : `#${params.number}`;

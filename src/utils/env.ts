@@ -1,8 +1,9 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { IssueMeError, isNodeError } from "../errors.ts";
 import type { TokenKey, TokenResolution, TokenStatus } from "../types.ts";
+import { readTrustedTextFile } from "./safe-read.ts";
 
 const TOKEN_KEYS = ["GH_TOKEN", "GITHUB_TOKEN"] as const satisfies readonly TokenKey[];
 const PROJECT_ENV_TOKEN_ORDER = TOKEN_KEYS;
@@ -50,7 +51,14 @@ export async function readProjectEnvTokens(projectRoot: string): Promise<Project
 		if (envStat.isSymbolicLink() || !envStat.isFile()) {
 			throw new IssueMeError("env_read_failed", "Project .env must be a regular, non-symlinked file for GitHub token resolution.");
 		}
-		const text = await readFile(envPath, "utf8");
+		const text = await readTrustedTextFile(envPath, {
+			projectRoot,
+			safeDirectory: projectRoot,
+			unsafeCode: "env_read_failed",
+			unsafeMessage: "Project .env must be a regular, non-symlinked file for GitHub token resolution.",
+			notFileMessage: "Project .env must be a regular, non-symlinked file for GitHub token resolution.",
+			raceSwapMessage: "Project .env changed while it was being opened for GitHub token resolution.",
+		});
 		return parseProjectEnvTokens(text);
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return {};

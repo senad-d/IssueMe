@@ -9,7 +9,7 @@ import { getIssueMeConfigPath, loadIssueMeConfig, saveIssueMeConfig } from "../s
 import { parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
 import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
 import { isValidIsoDateOnly } from "../src/utils/date.ts";
-import { parseProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
+import { parseProjectEnvTokens, readProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
 import { resolveFileMutationQueuePath } from "../src/utils/mutation-queue.ts";
 import { resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
 import { assertPathInside, issueFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
@@ -265,6 +265,24 @@ test("issue store writes pretty JSON, reads by metadata, renames titles, preserv
 	assert.equal(await readIssueByNumber(cwd, config, 12, "owner/repo"), undefined);
 });
 
+test("repository-scoped issue number lookup rejects duplicate local cache records", async () => {
+	const cwd = await tempProject();
+	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+	await mkdir(join(cwd, "issues"));
+	await writeFile(join(cwd, "issues", "12-first-title.json"), `${JSON.stringify(sampleIssue({ number: 12, title: "First Title" }))}\n`, "utf8");
+	await writeFile(join(cwd, "issues", "12-second-title.json"), `${JSON.stringify(sampleIssue({ number: 12, title: "Second Title" }))}\n`, "utf8");
+
+	for (const lookup of [() => readIssueByNumber(cwd, config, 12, "owner/repo"), () => findIssueByNumber(cwd, config, 12, "owner/repo")]) {
+		await assert.rejects(lookup, (error) => {
+			assert.equal(error?.code, "issue_lookup_ambiguous");
+			assert.match(error.message, /multiple local IssueMe cache files/);
+			assert.match(error.message, /issueme_sync_issues/);
+			assert.deepEqual(error.safeDetails?.paths, ["issues/12-first-title.json", "issues/12-second-title.json"]);
+			return true;
+		});
+	}
+});
+
 test("issue store is repository-aware and reports invalid local files safely", async () => {
 	const cwd = await tempProject();
 	const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
@@ -391,6 +409,71 @@ test("config and issue store reject symlinked local state paths", async (t) => {
 	} catch (error) {
 		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
 			t.skip("symlinks are not permitted on this platform");
+			return;
+		}
+		throw error;
+	}
+});
+
+test("trusted local state reads reject symlink swaps after initial validation", async (t) => {
+	const outside = await tempProject();
+	const outsideEnv = join(outside, "outside.env");
+	const outsideConfig = join(outside, "outside-config.json");
+	const outsideIssue = join(outside, "outside-issue.json");
+	await writeFile(outsideEnv, "GH_TOKEN=outside-secret\n", "utf8");
+	await writeFile(outsideConfig, JSON.stringify({ defaultLabels: ["outside-secret"] }), "utf8");
+	await writeFile(outsideIssue, JSON.stringify(sampleIssue({ title: "Outside Secret" })), "utf8");
+
+	const originalOpen = fs.open;
+	const swapped = new Set();
+	const swapTargets = new Map();
+	t.mock.method(fs, "open", async (...args) => {
+		const targetPath = String(args[0]);
+		const handle = await originalOpen(...args);
+		const outsideTarget = swapTargets.get(targetPath);
+		if (outsideTarget && !swapped.has(targetPath)) {
+			swapped.add(targetPath);
+			await fs.rm(targetPath, { force: true });
+			await symlink(outsideTarget, targetPath);
+		}
+		return handle;
+	});
+
+	try {
+		const envProject = await tempProject();
+		const envPath = join(envProject, ".env");
+		await writeFile(envPath, "GH_TOKEN=safe-token\n", "utf8");
+		swapTargets.set(envPath, outsideEnv);
+		await assert.rejects(() => readProjectEnvTokens(envProject), (error) => {
+			assert.equal(error?.code, "env_read_failed");
+			assert.doesNotMatch(error.message, /outside-secret|safe-token/);
+			return true;
+		});
+
+		const configProject = await tempProject();
+		const configPath = getIssueMeConfigPath(configProject);
+		await mkdir(join(configProject, ".pi", "agent"), { recursive: true });
+		await writeFile(configPath, JSON.stringify({ defaultLabels: ["safe"] }), "utf8");
+		swapTargets.set(configPath, outsideConfig);
+		await assert.rejects(() => loadIssueMeConfig(configProject), (error) => {
+			assert.equal(error?.code, "unsafe_path");
+			assert.doesNotMatch(error.message, /outside-secret|safe/);
+			return true;
+		});
+
+		const issueProject = await tempProject();
+		await mkdir(join(issueProject, "issues"));
+		const issuePath = join(issueProject, "issues", "12-fix-cache-bug.json");
+		await writeFile(issuePath, `${JSON.stringify(sampleIssue())}\n`, "utf8");
+		swapTargets.set(issuePath, outsideIssue);
+		await assert.rejects(() => readIssueFile(issuePath, join(issueProject, "issues"), issueProject), (error) => {
+			assert.equal(error?.code, "unsafe_issue_file");
+			assert.doesNotMatch(error.message, /Outside Secret/);
+			return true;
+		});
+	} catch (error) {
+		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
+			t.skip("symlink swaps are not permitted on this platform");
 			return;
 		}
 		throw error;

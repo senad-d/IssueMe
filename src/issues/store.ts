@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
 import type {
@@ -19,18 +19,22 @@ import {
 	resolveIssueFilePath,
 	toProjectRelativePath,
 } from "../utils/slug.ts";
+import { assertNotAborted } from "../utils/abort.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
+import { readTrustedTextFile } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 
-export async function writeIssueRecord(projectRoot: string, config: IssueMeConfig, record: IssueRecord): Promise<IssueWriteResult> {
+export async function writeIssueRecord(projectRoot: string, config: IssueMeConfig, record: IssueRecord, signal?: AbortSignal): Promise<IssueWriteResult> {
+	assertNotAborted(signal);
 	if (record.state !== "open") {
-		const removedPaths = await removeIssueByNumber(projectRoot, config, record.number, record.repository);
+		const removedPaths = await removeIssueByNumber(projectRoot, config, record.number, record.repository, signal);
 		return { action: "removed", removedPaths };
 	}
 
 	const targetPath = resolveIssueFilePath(projectRoot, config.issueDirectory, record.number, record.title);
 	await ensureIssueDirectorySafe(projectRoot, config, true);
 	const writeResult = await withCanonicalFileMutationQueue(targetPath, async () => {
+		assertNotAborted(signal);
 		await mkdir(dirname(targetPath), { recursive: true });
 		const safeDirectory = await ensureIssueDirectorySafe(projectRoot, config, false);
 		await ensureTargetFileSafe(targetPath, safeDirectory, projectRoot);
@@ -50,16 +54,27 @@ export async function writeIssueRecord(projectRoot: string, config: IssueMeConfi
 		let currentText: string | undefined;
 		try {
 			await ensureTargetFileSafe(targetPath, safeDirectory, projectRoot);
-			currentText = await readFile(targetPath, "utf8");
+			currentText = await readTrustedIssueFileText(targetPath, safeDirectory, projectRoot);
 		} catch (error) {
 			if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
 		}
 
-		if (currentText === nextText) return { action: "unchanged" as const, path: targetPath, removedPaths: [] };
+		if (currentText === nextText) {
+			assertNotAborted(signal);
+			return { action: "unchanged" as const, path: targetPath, removedPaths: [] };
+		}
+		assertNotAborted(signal);
 		await ensureTargetFileSafe(targetPath, safeDirectory, projectRoot);
+		assertNotAborted(signal);
 		await writeFileAtomicSafe(targetPath, nextText, {
-			validateBeforeCreate: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
-			validateBeforeRename: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
+			validateBeforeCreate: async () => {
+				assertNotAborted(signal);
+				await assertIssueWriteTargetSafe(projectRoot, config, targetPath);
+			},
+			validateBeforeRename: async () => {
+				assertNotAborted(signal);
+				await assertIssueWriteTargetSafe(projectRoot, config, targetPath);
+			},
 			validateAfterRename: () => assertIssueWriteTargetSafe(projectRoot, config, targetPath),
 		});
 		const action = currentText === undefined ? "created" as const : "updated" as const;
@@ -69,7 +84,8 @@ export async function writeIssueRecord(projectRoot: string, config: IssueMeConfi
 	const staleFiles = (await listIssueFiles(projectRoot, config, { repository: record.repository })).filter(
 		(file) => file.number === record.number && resolve(file.path) !== resolve(targetPath),
 	);
-	const removedPaths = await removeIssueFiles(projectRoot, config, staleFiles);
+	assertNotAborted(signal);
+	const removedPaths = await removeIssueFiles(projectRoot, config, staleFiles, signal);
 	const action = writeResult.action === "created" && removedPaths.length > 0 ? "renamed" : writeResult.action;
 	return { ...writeResult, action, removedPaths };
 }
@@ -82,12 +98,10 @@ export async function readIssueByNumber(
 ): Promise<IssueRecord | undefined> {
 	const files = await listIssueFiles(projectRoot, config, { repository });
 	const matches = files.filter((file) => file.number === issueNumber);
-	if (matches.length === 0) return undefined;
-	if (!repository && matches.length > 1) {
-		throw new IssueMeError("issue_lookup_ambiguous", `Issue #${issueNumber} matches multiple repositories in the local IssueMe cache.`);
-	}
+	const metadata = selectUniqueIssueNumberMatch(projectRoot, issueNumber, repository, matches);
+	if (!metadata) return undefined;
 	const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
-	return readIssueFile(matches[0].path, directory, projectRoot);
+	return readIssueFile(metadata.path, directory, projectRoot);
 }
 
 export async function findIssueByLookup(
@@ -139,13 +153,50 @@ export async function findIssueByNumber(
 ): Promise<IssueLookupResult | undefined> {
 	const files = await listIssueFiles(projectRoot, config, { repository });
 	const matches = files.filter((file) => file.number === issueNumber);
-	if (matches.length === 0) return undefined;
-	if (!repository && matches.length > 1) {
-		throw new IssueMeError("issue_lookup_ambiguous", `Issue #${issueNumber} matches multiple repositories in the local IssueMe cache.`);
-	}
-	const metadata = matches[0];
+	const metadata = selectUniqueIssueNumberMatch(projectRoot, issueNumber, repository, matches);
+	if (!metadata) return undefined;
 	const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
 	return { record: await readIssueFile(metadata.path, directory, projectRoot), path: metadata.path, metadata };
+}
+
+function selectUniqueIssueNumberMatch(
+	projectRoot: string,
+	issueNumber: number,
+	repository: string | undefined,
+	matches: IssueFileMetadata[],
+): IssueFileMetadata | undefined {
+	if (matches.length === 0) return undefined;
+	if (matches.length === 1) return matches[0];
+	throw issueNumberLookupAmbiguousError(projectRoot, issueNumber, repository, matches);
+}
+
+function issueNumberLookupAmbiguousError(projectRoot: string, issueNumber: number, repository: string | undefined, matches: IssueFileMetadata[]): IssueMeError {
+	const sortedMatches = [...matches].sort((a, b) => a.repository.localeCompare(b.repository) || a.fileName.localeCompare(b.fileName));
+	const safeMatches = sortedMatches.map((file) => ({
+		repository: file.repository,
+		number: file.number,
+		title: file.title,
+		path: toProjectRelativePath(projectRoot, file.path),
+		updated_at: file.updated_at,
+	}));
+	const paths = safeMatches.map((file) => file.path);
+	const repositories = new Set(safeMatches.map((file) => file.repository));
+	const duplicateRepository = repositories.size === 1 ? safeMatches[0]?.repository : undefined;
+	const duplicateScope = repository ?? duplicateRepository;
+	const pathText = paths.length ? ` Matching files: ${paths.join(", ")}.` : "";
+	if (duplicateScope && repositories.size === 1) {
+		return new IssueMeError(
+			"issue_lookup_ambiguous",
+			`Issue #${issueNumber} has multiple local IssueMe cache files for ${duplicateScope}. Run issueme_sync_issues or remove stale duplicate cache files before using this lookup.${pathText}`,
+			{ issueNumber, repository: duplicateScope, paths, matches: safeMatches },
+			{ recoveryHint: "Run issueme_sync_issues for the repository, or remove stale duplicate local issue JSON files before reading by issue number again." },
+		);
+	}
+	return new IssueMeError(
+		"issue_lookup_ambiguous",
+		`Issue #${issueNumber} matches multiple repositories in the local IssueMe cache. Use a repository-scoped lookup, filename, or run issueme_sync_issues before relying on local cache state.${pathText}`,
+		{ issueNumber, ...(repository ? { repository } : {}), paths, matches: safeMatches },
+	);
 }
 
 export async function listIssueFiles(
@@ -197,14 +248,14 @@ export async function listIssueFileEntries(
 			invalidFiles.push({ path, fileName: entry.name, reason: issueFileDiagnosticReason(error) });
 		}
 	}
-	files.sort((a, b) => a.number - b.number || a.repository.localeCompare(b.repository));
+	files.sort((a, b) => a.number - b.number || a.repository.localeCompare(b.repository) || a.fileName.localeCompare(b.fileName));
 	invalidFiles.sort((a, b) => a.fileName.localeCompare(b.fileName));
 	return { files, invalidFiles };
 }
 
 export async function readIssueFile(path: string, safeDirectory?: string, projectRoot?: string): Promise<IssueRecord> {
 	await ensureTargetFileSafe(path, safeDirectory, projectRoot);
-	const text = await readFile(path, "utf8");
+	const text = await readTrustedIssueFileText(path, safeDirectory, projectRoot);
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(text) as unknown;
@@ -238,12 +289,14 @@ export async function removeIssueByNumber(
 	config: IssueMeConfig,
 	issueNumber: number,
 	repository?: string,
+	signal?: AbortSignal,
 ): Promise<string[]> {
+	assertNotAborted(signal);
 	const files = (await listIssueFiles(projectRoot, config, { repository })).filter((file) => file.number === issueNumber);
 	if (!repository && files.length > 1) {
 		throw new IssueMeError("issue_lookup_ambiguous", `Issue #${issueNumber} matches multiple repositories in the local IssueMe cache.`);
 	}
-	return removeIssueFiles(projectRoot, config, files);
+	return removeIssueFiles(projectRoot, config, files, signal);
 }
 
 export async function removeClosedIssueFiles(
@@ -251,21 +304,37 @@ export async function removeClosedIssueFiles(
 	config: IssueMeConfig,
 	openIssueNumbers: ReadonlySet<number>,
 	repository?: string,
+	signal?: AbortSignal,
 ): Promise<string[]> {
 	const files = await listIssueFiles(projectRoot, config, { repository });
-	return removeIssueFiles(projectRoot, config, files.filter((file) => file.state === "closed" || !openIssueNumbers.has(file.number)));
+	assertNotAborted(signal);
+	return removeIssueFiles(projectRoot, config, files.filter((file) => file.state === "closed" || !openIssueNumbers.has(file.number)), signal);
 }
 
 export function relativeIssuePath(projectRoot: string, absolutePath: string | undefined): string | undefined {
 	return absolutePath ? toProjectRelativePath(projectRoot, absolutePath) : undefined;
 }
 
-async function removeIssueFiles(projectRoot: string, config: IssueMeConfig, files: IssueFileMetadata[]): Promise<string[]> {
+async function readTrustedIssueFileText(path: string, safeDirectory?: string, projectRoot?: string): Promise<string> {
+	return readTrustedTextFile(path, {
+		...(projectRoot !== undefined ? { projectRoot } : {}),
+		...(safeDirectory !== undefined ? { safeDirectory } : {}),
+		unsafeCode: "unsafe_issue_file",
+		unsafeMessage: "IssueMe refuses to read or mutate symlinked issue files.",
+		notFileMessage: "Issue cache path exists but is not a regular file.",
+		raceSwapMessage: "Issue cache file changed while it was being opened for reading.",
+	});
+}
+
+async function removeIssueFiles(projectRoot: string, config: IssueMeConfig, files: IssueFileMetadata[], signal?: AbortSignal): Promise<string[]> {
 	const removed: string[] = [];
 	for (const file of files) {
+		assertNotAborted(signal);
 		await withCanonicalFileMutationQueue(file.path, async () => {
+			assertNotAborted(signal);
 			const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
 			await ensureTargetFileSafe(file.path, directory, projectRoot);
+			assertNotAborted(signal);
 			await rm(file.path, { force: true });
 		});
 		removed.push(file.path);
