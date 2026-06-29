@@ -189,7 +189,6 @@ function makeSubIssueFetch(options = {}) {
 					data: {
 						reprioritizeSubIssue: {
 							issue: graphQLIssue(parent),
-							subIssue: graphQLIssue(child),
 						},
 					},
 				});
@@ -349,7 +348,9 @@ test("issueme_reorder_sub_issues reorders native children and refreshes relation
 	const reorderCall = mock.calls.find((call) => call.path === "/graphql" && call.body.operationName === "IssueMeReprioritizeSubIssue");
 	assert.ok(reorderCall);
 	assert.match(reorderCall.body.query, /reprioritizeSubIssue/);
+	assert.doesNotMatch(reorderCall.body.query, /\bsubIssue\s*\{/);
 	assert.deepEqual(reorderCall.body.variables, { issueId: "I_1", subIssueId: "I_4", beforeId: "I_2" });
+	assert.equal(mock.calls.filter((call) => call.path === "/graphql" && call.body.operationName === "IssueMeListSubIssues").length, 2);
 	assert.equal(reorderCall.headers["GraphQL-Features"], "sub_issues");
 });
 

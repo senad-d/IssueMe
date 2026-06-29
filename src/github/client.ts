@@ -588,7 +588,7 @@ export class GitHubClient {
 				if (currentOrder[0]?.number === childNumber) continue;
 				const before = currentOrder.find((issue) => issue.number !== childNumber);
 				if (!before) continue;
-				mutations.push(await this.reprioritizeSubIssue(parentIssueId, child.id, { beforeId: before.id }, signal));
+				mutations.push(await this.reprioritizeSubIssue(parentIssueId, child, { beforeId: before.id }, signal));
 				currentOrder = moveNativeSubIssue(currentOrder, childNumber, { beforeNumber: before.number });
 				continue;
 			}
@@ -597,7 +597,7 @@ export class GitHubClient {
 			if (!previous) continue;
 			const previousIndex = currentOrder.findIndex((issue) => issue.number === previousNumber);
 			if (previousIndex >= 0 && currentOrder[previousIndex + 1]?.number === childNumber) continue;
-			mutations.push(await this.reprioritizeSubIssue(parentIssueId, child.id, { afterId: previous.id }, signal));
+			mutations.push(await this.reprioritizeSubIssue(parentIssueId, child, { afterId: previous.id }, signal));
 			currentOrder = moveNativeSubIssue(currentOrder, childNumber, { afterNumber: previousNumber });
 		}
 		const refreshed = mutations.length > 0
@@ -799,7 +799,7 @@ export class GitHubClient {
 
 	private async reprioritizeSubIssue(
 		parentIssueId: string,
-		childIssueId: string,
+		child: NativeSubIssueSummary,
 		position: { beforeId?: string; afterId?: string },
 		signal?: AbortSignal,
 	): Promise<NativeSubIssueMutationResult> {
@@ -808,13 +808,12 @@ export class GitHubClient {
 			`mutation IssueMeReprioritizeSubIssue($issueId: ID!, $subIssueId: ID!, $beforeId: ID, $afterId: ID) {
 				reprioritizeSubIssue(input: {issueId: $issueId, subIssueId: $subIssueId, beforeId: $beforeId, afterId: $afterId}) {
 					issue { id number title state url }
-					subIssue { id number title state url }
 				}
 			}`,
-			compactObject({ issueId: parentIssueId, subIssueId: childIssueId, beforeId: position.beforeId, afterId: position.afterId }),
+			compactObject({ issueId: parentIssueId, subIssueId: child.id, beforeId: position.beforeId, afterId: position.afterId }),
 			signal,
 		);
-		return normalizeSubIssueMutationResult(data, "reprioritizeSubIssue", this.repository.fullName);
+		return normalizeReprioritizeSubIssueResult(data, this.repository.fullName, child);
 	}
 
 	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
@@ -1985,7 +1984,7 @@ function requireIssueNodeId(issue: GitHubIssueResponse, label: string): string {
 	});
 }
 
-function normalizeSubIssueMutationResult(data: SubIssueMutationData, field: "addSubIssue" | "removeSubIssue" | "reprioritizeSubIssue", repository: string): NativeSubIssueMutationResult {
+function normalizeSubIssueMutationResult(data: SubIssueMutationData, field: "addSubIssue" | "removeSubIssue", repository: string): NativeSubIssueMutationResult {
 	const payload = data[field];
 	if (!isObject(payload)) {
 		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
@@ -1994,6 +1993,18 @@ function normalizeSubIssueMutationResult(data: SubIssueMutationData, field: "add
 	const child = normalizeNativeSubIssueSummary(payload.subIssue, repository);
 	if (!parent || !child) {
 		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned incomplete issue data.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+	}
+	return { parent, child };
+}
+
+function normalizeReprioritizeSubIssueResult(data: SubIssueMutationData, repository: string, child: NativeSubIssueSummary): NativeSubIssueMutationResult {
+	const payload = data.reprioritizeSubIssue;
+	if (!isObject(payload)) {
+		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+	}
+	const parent = normalizeNativeSubIssueSummary(payload.issue, repository);
+	if (!parent) {
+		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned incomplete parent issue data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
 	return { parent, child };
 }

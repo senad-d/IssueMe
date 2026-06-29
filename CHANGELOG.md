@@ -40,6 +40,10 @@
 - CI uses lockfile-strict installs and local validation includes format checks.
 - Config path construction now uses Pi's exported project config directory name while retaining `.pi/agent/issueme.json` for standard Pi installs.
 
+### Fixed
+
+- Fixed `issueme_reorder_sub_issues` compatibility with GitHub's live GraphQL `ReprioritizeSubIssuePayload` by no longer selecting a non-existent `subIssue` payload field and reusing the prevalidated child summary before refreshing relationships.
+
 ### Security
 
 - Project-local `.env`, Git config, IssueMe config, and issue cache files are honored only in trusted projects.
