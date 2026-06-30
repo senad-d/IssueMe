@@ -31,7 +31,7 @@ IssueMe is a Pi extension that gives LLM agents a safe, structured GitHub issue 
 - **Native GitHub API operations:** no GitHub CLI dependency and no shell execution for GitHub issue work; native sub-issues and Projects v2 discovery/item management use GitHub GraphQL.
 - **Current-repository scope:** resolves `owner/repo` from `GITHUB_REPOSITORY` or trusted local Git metadata.
 - **Optional issue creator scope:** `allowedIssueCreator` can be `all` or one GitHub username to limit which GitHub-created issues IssueMe lists, syncs, reads, mutates, and caches. This is IssueMe processing scope only, not GitHub access control.
-- **Agent tools:** list/search, label and milestone discovery/management, assignee and Projects v2 discovery/item management, sync, create, get, update, add/edit/delete comments, assign, label, reopen, close, explicit-list bulk updates, and native sub-issue inspection/linking/reordering tools.
+- **Agent tools:** list/search, linked-development inspection, label and milestone discovery/management, assignee discovery, Projects v2 board/field discovery and item management, sync, create, get, update, add/edit/delete comments, assign, label, reopen, close, explicit-list bulk updates, and native sub-issue inspection/linking/reordering tools.
 - **Local issue files:** caches open issues as `issues/<issue-number>-<issue-title-slug>.json` by default.
 - **Closed issue safety:** closed issues are not mutated again except through explicit `issueme_reopen_issue`, and stale local files are removed.
 - **Pi-native TUI:** `/issueme` opens a non-secret configuration TUI when interactive, with safe status output elsewhere.
@@ -104,6 +104,12 @@ If the npm package is unavailable before a public release, use the source-checko
 ---
 
 ## Installation
+
+### Requirements
+
+- Pi with Node.js 22.19.0 or newer (matches the package `engines` field).
+- A trusted project checkout; IssueMe ignores project-local config, `.env`, Git metadata, skills, and cache files until Pi trust is granted.
+- A `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access. Projects v2, native sub-issues, and linked-development inspection also require the GitHub permissions/features that expose those GraphQL APIs to the token.
 
 | Scope | Command | Notes |
 | --- | --- | --- |
@@ -223,7 +229,7 @@ Supported settings:
 IssueMe validates config before saving:
 
 - rejects secret-like keys at any nesting level;
-- rejects path traversal, project-root issue directories, and protected directories such as `.git`, `.pi`, and `node_modules`;
+- rejects path traversal, project-root issue directories, and protected directories such as `.git`, the Pi config directory (`.pi` in standard installs), `node_modules`, `dist`, `build`, and `coverage`;
 - refuses symlinked IssueMe config files or config parent directories that could escape the project;
 - deduplicates and trims labels/assignees;
 - rejects null bytes and multiline entries in default labels/assignees;
@@ -233,6 +239,13 @@ IssueMe validates config before saving:
 - keeps default skill paths project-local and usable by `/issueme start` when no explicit path is provided.
 
 The `/issueme` TUI shows **Allowed issue creator** under **Cache**. Leave it as `all` to process all repository issues, or set one GitHub login such as `senad-d` to make IssueMe list, sync, read, mutate, and cache only issues created by that user. Matching is case-insensitive. This setting does not moderate GitHub and does not stop public users from opening issues; it only controls what IssueMe processes.
+
+Configuration TUI controls are keyboard-first and validated before persistence:
+
+- `↑`/`↓` or `j`/`k` move through categories/settings; `Tab` switches panes in wide layouts.
+- `Enter` opens a category, starts editing a setting, or applies the current edit buffer.
+- `/` searches settings; `Esc` clears search or cancels an edit.
+- `Esc`, `q`, or `Ctrl-C` exits and auto-saves modified config; `s` saves immediately; `Ctrl-U` clears the current edit buffer.
 
 GitHub tokens are read, never written, from this precedence order:
 
@@ -284,7 +297,7 @@ The help/status view includes usage, tool names, project trust status, repositor
 | `issueme_manage_label` | Create, update, or explicitly delete repository labels. Create requires name and hex color; update can rename/recolor/change description; delete requires `confirmDelete: true` and does not delete issue objects. |
 | `issueme_manage_milestone` | Create, update, close, reopen, or explicitly delete repository milestones. Create requires title; update can change title/description/due date; close/reopen set milestone state; delete requires `confirmDelete: true` and removes milestone associations from existing issues. |
 | `issueme_create_issue` | Create a GitHub issue and write its local JSON file. Omitted labels/assignees use defaults; explicit empty arrays override defaults. In restricted creator mode, verifies the authenticated GitHub login before creating. |
-| `issueme_create_sub_issue` | Create a normal GitHub issue, then attach it under `parentNumber` with GitHub's native `addSubIssue` GraphQL mutation. The created issue and parent cache files are refreshed; no body-only fallback is used. In restricted creator mode, verifies the parent creator and authenticated GitHub login before creating. |
+| `issueme_create_sub_issue` | Create a normal GitHub issue, then attach it under `parentNumber` with GitHub's native `addSubIssue` GraphQL mutation. Omitted labels/assignees use defaults; explicit empty arrays override defaults. The created issue and parent cache files are refreshed; no body-only fallback is used. In restricted creator mode, verifies the parent creator and authenticated GitHub login before creating. |
 | `issueme_add_sub_issue` | Attach an existing `childNumber` under `parentNumber` with GitHub's native `addSubIssue` GraphQL mutation and refresh both local cache files. |
 | `issueme_remove_sub_issue` | Detach an existing child issue from a parent with GitHub's native `removeSubIssue` GraphQL mutation and refresh both local cache files. |
 | `issueme_reorder_sub_issues` | Reorder/prioritize all current native child issues under an open parent with GitHub's `reprioritizeSubIssue` GraphQL mutation. Requires every current child issue number exactly once and refreshes relationship cache metadata; no body-only ordering fallback is used. |
@@ -473,7 +486,7 @@ IssueMe avoids local cache footguns by:
 
 ## GitHub Request Policy
 
-IssueMe sends a safe `User-Agent` and validates pagination/request URLs before following them. REST calls are constrained to the resolved repository path; issue text search may use GitHub `/search/issues` only with `repo:<owner>/<repo> is:issue` enforced for the resolved repository, configured creator scope is applied as REST `creator` or search `author`, label discovery/management uses the current repository's `/labels` endpoint, issue-label add/set verifies labels already exist before applying them, milestone discovery/management uses the current repository's `/milestones` endpoint, assignable-user discovery uses the current repository's `/assignees` endpoint, assignee add/set verifies requested users are assignable before mutation, and comment add/edit/delete uses the current repository's issue comment endpoints after issue/comment verification. In restricted creator mode, issue creation first calls GitHub `/user` to verify the authenticated token login matches `allowedIssueCreator`; if it does not, IssueMe fails before creating a remote issue. Native sub-issue inspection, mutations, and reordering use GitHub GraphQL `/graphql` with the `sub_issues` feature header; add/remove/reorder mutations use issue node IDs returned by GitHub for the same repository, relationship inspection returns bounded parent/child metadata including creator when GitHub exposes it, and restricted mode refuses relationships with missing or mismatched creators instead of exposing child detail. Linked development inspection also uses GitHub GraphQL `/graphql` for bounded issue timeline events and returns only PR/commit/reference metadata; it does not fetch PR bodies or guess from issue body text when GitHub omits data. Projects v2 discovery and item management use GitHub GraphQL `/graphql` for repository, organization, or user project owner scopes; item mutations require discovered project/item/field IDs, verify update item IDs still belong to the requested project, current repository, requested issue number, an open issue, and the configured creator scope, return bounded project item metadata, and require appropriate Projects access/read-write permissions. Comment fetching is intentionally bounded to 100 comments per issue to control API usage and local cache growth. API calls are fail-fast: IssueMe does not automatically retry 5xx responses, primary rate limits, or secondary rate limits. Rate-limit errors include safe reset/retry-after metadata when GitHub provides it; wait before rerunning the tool or run `issueme_sync_issues` later.
+IssueMe sends a safe `User-Agent` and validates pagination/request URLs before following them. REST calls are constrained to the resolved repository path; issue text search may use GitHub `/search/issues` only with `repo:<owner>/<repo> is:issue` enforced for the resolved repository, configured creator scope is applied as REST `creator` or search `author`, label discovery/management uses the current repository's `/labels` endpoint, issue-label add/set verifies labels already exist before applying them, milestone discovery/management uses the current repository's `/milestones` endpoint, assignable-user discovery uses the current repository's `/assignees` endpoint, assignee add/set verifies requested users are assignable before mutation, and comment add/edit/delete uses the current repository's issue comment endpoints after issue/comment verification. In restricted creator mode, issue-creation tools first call GitHub `/user` to verify the authenticated token login matches `allowedIssueCreator`; if it does not, IssueMe fails before creating a remote issue. Native sub-issue inspection, mutations, and reordering use GitHub GraphQL `/graphql` with the `sub_issues` feature header; add/remove/reorder mutations use issue node IDs returned by GitHub for the same repository, relationship inspection returns bounded parent/child metadata including creator when GitHub exposes it, and restricted mode refuses relationships with missing or mismatched creators instead of exposing child detail. Linked development inspection also uses GitHub GraphQL `/graphql` for bounded issue timeline events and returns only PR/commit/reference metadata; it does not fetch PR bodies or guess from issue body text when GitHub omits data. Projects v2 discovery and item management use GitHub GraphQL `/graphql` for repository, organization, or user project owner scopes; item mutations require discovered project/item/field IDs, verify update item IDs still belong to the requested project, current repository, requested issue number, an open issue, and the configured creator scope, return bounded project item metadata, and require appropriate Projects access/read-write permissions. Comment fetching is intentionally bounded to 100 comments per issue to control API usage and local cache growth. API calls are fail-fast: IssueMe does not automatically retry 5xx responses, primary rate limits, or secondary rate limits. Rate-limit errors include safe reset/retry-after metadata when GitHub provides it; wait before rerunning the tool or run `issueme_sync_issues` later.
 
 IssueMe intentionally does not use GitHub CLI, shell-based GitHub operations, body-only sub-issue inspection/linking/ordering fallbacks, body-only dependency/blocker fallbacks, webhooks, background listeners, or telemetry.
 

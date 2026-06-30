@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5A6DFF"/>
+      <stop offset="100%" stop-color="#A05AFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="260" fill="url(#g)"/>
+
+  <!-- Center node -->
+  <circle cx="512" cy="512" r="110" fill="white" fill-opacity="0.95"/>
+
+  <!-- Top-left node -->
+  <circle cx="262" cy="312" r="55" fill="white" fill-opacity="0.8"/>
+  <line x1="262" y1="312" x2="512" y2="512" stroke="white" stroke-opacity="0.7" stroke-width="20"/>
+
+  <!-- Right node -->
+  <circle cx="772" cy="372" r="55" fill="white" fill-opacity="0.8"/>
+  <line x1="772" y1="372" x2="512" y2="512" stroke="white" stroke-opacity="0.7" stroke-width="20"/>
+
+  <!-- Bottom-left node -->
+  <circle cx="312" cy="732" r="55" fill="white" fill-opacity="0.8"/>
+  <line x1="312" y1="732" x2="512" y2="512" stroke="white" stroke-opacity="0.7" stroke-width="20"/>
+</svg>

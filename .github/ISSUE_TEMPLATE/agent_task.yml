@@ -1,0 +1,113 @@
+name: Agent task
+description: Create a ready-to-pick task for the /issueme start workflow
+title: "task: "
+labels:
+  - agent-ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for work that an IssueMe agent can safely claim with `/issueme start`.
+        Keep the issue unassigned. The workflow will claim it, create a deterministic `issue/<number>-<slug>` branch, open a PR, and let the PR close the issue on merge.
+
+        Do not include secrets, tokens, private prompts, or machine-local paths.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be changed or fixed?
+      placeholder: The agent should...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List in-scope and out-of-scope work so the agent does not drift.
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Concrete conditions that must be true before the PR is opened.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation commands
+      description: Commands the agent must run from the issue worktree before opening a PR.
+      placeholder: |
+        npm run validate
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: parallel-safety
+    attributes:
+      label: Parallel safety
+      description: Can this issue be worked while other agent tasks are active?
+      options:
+        - Safe to run in parallel
+        - Possible overlap — inspect likely touched files first
+        - Not parallel-safe — split or coordinate before using /issueme start
+    validations:
+      required: true
+  - type: textarea
+    id: likely-touched-files
+    attributes:
+      label: Likely touched files or areas
+      description: List files, directories, commands, docs, or subsystems the agent is expected to touch. This helps concurrent agents avoid conflicts.
+      placeholder: |
+        Likely touched:
+        - src/...
+        - test/...
+
+        Avoid touching:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: blockers-dependencies
+    attributes:
+      label: Blockers and dependencies
+      description: State blockers, dependent issues/PRs, or write "None". Do not mark the issue agent-ready if it is blocked.
+      placeholder: |
+        None
+    validations:
+      required: true
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation notes
+      description: Relevant design notes, edge cases, links, or examples. Keep sensitive content out.
+      placeholder: |
+        Notes:
+        - ...
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Agent readiness
+      options:
+        - label: This issue is intentionally unassigned so `/issueme start` can claim it.
+          required: true
+        - label: This issue is not blocked by unresolved product, design, dependency, or access decisions.
+          required: true
+        - label: Acceptance criteria and validation commands are specific enough for an agent to verify.
+          required: true
+        - label: Likely touched files or areas are listed for parallel-agent conflict checks.
+          required: true
+        - label: "A PR with `Closes #<issue-number>` should close this issue on merge."
+          required: true
+        - label: I removed or redacted secrets, private prompts, and unrelated local paths.
+          required: true

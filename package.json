@@ -33,6 +33,7 @@
     "SECURITY.md",
     "CHANGELOG.md",
     "docs/**/*.md",
+    "skills/**/*.md",
     "src/**/*.ts",
     "tsconfig.json"
   ],
