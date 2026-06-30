@@ -138,28 +138,40 @@ async function withMockedGitHub(fetchFn, callback) {
 	}
 }
 
+async function withoutGithubRepository(callback) {
+	const originalGithubRepository = process.env.GITHUB_REPOSITORY;
+	delete process.env.GITHUB_REPOSITORY;
+	try {
+		return await callback();
+	} finally {
+		restoreEnv("GITHUB_REPOSITORY", originalGithubRepository);
+	}
+}
+
 test("issueme_get_issue registers sequential execution because refresh can mutate cache files", async () => {
 	const getTool = await registerGetTool();
 	assert.equal(getTool.executionMode, "sequential");
 });
 
 test("issueme_get_issue resolves number, filename, slug, and title fragment to the actual local path", async () => {
-	const projectRoot = await setupLookupProject();
-	const getTool = await registerGetTool();
-	const cases = [
-		[{ number: 12 }, "number"],
-		[{ lookup: "12-fix-cache-bug.json" }, "filename"],
-		[{ lookup: "fix-cache-bug" }, "slug"],
-		[{ lookup: "Cache Bug" }, "title fragment"],
-	];
+	await withoutGithubRepository(async () => {
+		const projectRoot = await setupLookupProject();
+		const getTool = await registerGetTool();
+		const cases = [
+			[{ number: 12 }, "number"],
+			[{ lookup: "12-fix-cache-bug.json" }, "filename"],
+			[{ lookup: "fix-cache-bug" }, "slug"],
+			[{ lookup: "Cache Bug" }, "title fragment"],
+		];
 
-	for (const [params, label] of cases) {
-		const result = await executeGet(getTool, projectRoot, params);
-		assert.match(result.content[0].text, /#12 Fix Cache Bug/, label);
-		assert.deepEqual(result.details.paths, ["issues/12-fix-cache-bug.json"], label);
-		assert.equal(result.details.issue.localPath, "issues/12-fix-cache-bug.json", label);
-		assert.equal(result.details.issue.number, 12, label);
-	}
+		for (const [params, label] of cases) {
+			const result = await executeGet(getTool, projectRoot, params);
+			assert.match(result.content[0].text, /#12 Fix Cache Bug/, label);
+			assert.deepEqual(result.details.paths, ["issues/12-fix-cache-bug.json"], label);
+			assert.equal(result.details.issue.localPath, "issues/12-fix-cache-bug.json", label);
+			assert.equal(result.details.issue.number, 12, label);
+		}
+	});
 });
 
 test("issueme_get_issue rejects conflicting number and lookup inputs", async () => {
@@ -172,35 +184,39 @@ test("issueme_get_issue rejects conflicting number and lookup inputs", async () 
 });
 
 test("issueme_get_issue reports ambiguous title or slug lookup instead of returning a random issue", async () => {
-	const projectRoot = await tempProject();
-	await initGitHubOrigin(projectRoot);
-	const getTool = await registerGetTool();
-	await writeIssueRecord(projectRoot, config, issue(20, "Cache Timeout"));
-	await writeIssueRecord(projectRoot, config, issue(21, "Cache Miss"));
+	await withoutGithubRepository(async () => {
+		const projectRoot = await tempProject();
+		await initGitHubOrigin(projectRoot);
+		const getTool = await registerGetTool();
+		await writeIssueRecord(projectRoot, config, issue(20, "Cache Timeout"));
+		await writeIssueRecord(projectRoot, config, issue(21, "Cache Miss"));
 
-	await assert.rejects(
-		() => executeGet(getTool, projectRoot, { lookup: "cache" }),
-		(error) => error?.code === "issue_lookup_ambiguous" && /matches multiple/.test(error.message),
-	);
+		await assert.rejects(
+			() => executeGet(getTool, projectRoot, { lookup: "cache" }),
+			(error) => error?.code === "issue_lookup_ambiguous" && /matches multiple/.test(error.message),
+		);
+	});
 });
 
 test("issueme_get_issue reports repository-scoped duplicate cache files with sync guidance", async () => {
-	const projectRoot = await tempProject();
-	await initGitHubOrigin(projectRoot);
-	await mkdir(join(projectRoot, "issues"));
-	await writeFile(join(projectRoot, "issues", "12-stale.json"), `${JSON.stringify(issue(12, "Stale Cache"))}\n`, "utf8");
-	await writeFile(join(projectRoot, "issues", "12-current.json"), `${JSON.stringify(issue(12, "Current Cache"))}\n`, "utf8");
-	const getTool = await registerGetTool();
+	await withoutGithubRepository(async () => {
+		const projectRoot = await tempProject();
+		await initGitHubOrigin(projectRoot);
+		await mkdir(join(projectRoot, "issues"));
+		await writeFile(join(projectRoot, "issues", "12-stale.json"), `${JSON.stringify(issue(12, "Stale Cache"))}\n`, "utf8");
+		await writeFile(join(projectRoot, "issues", "12-current.json"), `${JSON.stringify(issue(12, "Current Cache"))}\n`, "utf8");
+		const getTool = await registerGetTool();
 
-	await assert.rejects(
-		() => executeGet(getTool, projectRoot, { number: 12 }),
-		(error) => {
-			assert.equal(error?.code, "issue_lookup_ambiguous");
-			assert.match(error.message, /issueme_sync_issues|stale duplicate/);
-			assert.deepEqual(error.safeDetails?.paths, ["issues/12-current.json", "issues/12-stale.json"]);
-			return true;
-		},
-	);
+		await assert.rejects(
+			() => executeGet(getTool, projectRoot, { number: 12 }),
+			(error) => {
+				assert.equal(error?.code, "issue_lookup_ambiguous");
+				assert.match(error.message, /issueme_sync_issues|stale duplicate/);
+				assert.deepEqual(error.safeDetails?.paths, ["issues/12-current.json", "issues/12-stale.json"]);
+				return true;
+			},
+		);
+	});
 });
 
 test("issueme_get_issue rejects mismatched injected local lookup repositories", async () => {
@@ -220,27 +236,29 @@ test("issueme_get_issue rejects mismatched injected local lookup repositories", 
 });
 
 test("issueme_get_issue filters local lookups to the resolved current repository", async () => {
-	const projectRoot = await tempProject();
-	await initGitHubOrigin(projectRoot);
-	const getTool = await registerGetTool();
-	await writeIssueRecord(projectRoot, config, issue(12, "Current Repo Issue"));
-	await writeIssueRecord(projectRoot, config, issue(12, "Other Repo Issue", {
-		repository: "owner/other",
-		html_url: "https://github.com/owner/other/issues/12",
-	}));
-	await writeIssueRecord(projectRoot, config, issue(44, "Other Repo Secret", {
-		repository: "owner/other",
-		html_url: "https://github.com/owner/other/issues/44",
-	}));
+	await withoutGithubRepository(async () => {
+		const projectRoot = await tempProject();
+		await initGitHubOrigin(projectRoot);
+		const getTool = await registerGetTool();
+		await writeIssueRecord(projectRoot, config, issue(12, "Current Repo Issue"));
+		await writeIssueRecord(projectRoot, config, issue(12, "Other Repo Issue", {
+			repository: "owner/other",
+			html_url: "https://github.com/owner/other/issues/12",
+		}));
+		await writeIssueRecord(projectRoot, config, issue(44, "Other Repo Secret", {
+			repository: "owner/other",
+			html_url: "https://github.com/owner/other/issues/44",
+		}));
 
-	const byNumber = await executeGet(getTool, projectRoot, { number: 12 });
-	assert.match(byNumber.content[0].text, /#12 Current Repo Issue/);
-	assert.equal(byNumber.details.issue.repository, "owner/repo");
+		const byNumber = await executeGet(getTool, projectRoot, { number: 12 });
+		assert.match(byNumber.content[0].text, /#12 Current Repo Issue/);
+		assert.equal(byNumber.details.issue.repository, "owner/repo");
 
-	await assert.rejects(
-		() => executeGet(getTool, projectRoot, { lookup: "Other Repo Secret" }),
-		(error) => error?.code === "issue_not_found" && /current repository/.test(error.message),
-	);
+		await assert.rejects(
+			() => executeGet(getTool, projectRoot, { lookup: "Other Repo Secret" }),
+			(error) => error?.code === "issue_not_found" && /current repository/.test(error.message),
+		);
+	});
 });
 
 test("restricted issueme_get_issue refuses out-of-scope and legacy local cache records", async () => {
@@ -526,26 +544,28 @@ test("issueme_get_issue refresh bounds remote comments and reports truncation me
 });
 
 test("issueme_get_issue bounds oversized issue output with machine-readable truncation metadata", async () => {
-	const projectRoot = await tempProject();
-	await initGitHubOrigin(projectRoot);
-	const getTool = await registerGetTool();
-	await writeIssueRecord(projectRoot, config, issue(99, "Oversized Issue", {
-		body: "B".repeat(12000),
-		comments: Array.from({ length: 6 }, (_value, index) => issueComment(index + 1, "C".repeat(2500))),
-		comments_count: 6,
-		comments_fetch_limit: 6,
-	}));
+	await withoutGithubRepository(async () => {
+		const projectRoot = await tempProject();
+		await initGitHubOrigin(projectRoot);
+		const getTool = await registerGetTool();
+		await writeIssueRecord(projectRoot, config, issue(99, "Oversized Issue", {
+			body: "B".repeat(12000),
+			comments: Array.from({ length: 6 }, (_value, index) => issueComment(index + 1, "C".repeat(2500))),
+			comments_count: 6,
+			comments_fetch_limit: 6,
+		}));
 
-	const result = await executeGet(getTool, projectRoot, { number: 99 });
-	assert.ok(result.content[0].text.length <= MAX_TOOL_TEXT_CHARS);
-	assert.match(result.content[0].text, /IssueMe tool output truncated/);
-	assert.equal(result.details.truncated, true);
-	assert.equal(result.details.truncation.body.maxChars, 4000);
-	assert.equal(result.details.truncation.comments.shown, 5);
-	assert.equal(result.details.truncation.comments.total, 6);
-	assert.equal(result.details.truncation.commentBodies.affected, 5);
-	assert.equal(result.details.truncation.content.maxChars, MAX_TOOL_TEXT_CHARS);
-	assert.equal(result.details.issue.number, 99);
+		const result = await executeGet(getTool, projectRoot, { number: 99 });
+		assert.ok(result.content[0].text.length <= MAX_TOOL_TEXT_CHARS);
+		assert.match(result.content[0].text, /IssueMe tool output truncated/);
+		assert.equal(result.details.truncated, true);
+		assert.equal(result.details.truncation.body.maxChars, 4000);
+		assert.equal(result.details.truncation.comments.shown, 5);
+		assert.equal(result.details.truncation.comments.total, 6);
+		assert.equal(result.details.truncation.commentBodies.affected, 5);
+		assert.equal(result.details.truncation.content.maxChars, MAX_TOOL_TEXT_CHARS);
+		assert.equal(result.details.issue.number, 99);
+	});
 });
 
 function restoreEnv(name, value) {
