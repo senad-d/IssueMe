@@ -18,7 +18,7 @@ test("package declares the IssueMe Pi extension entry file", async () => {
 
 test("package metadata points at the IssueMe repository", () => {
   assert.equal(packageJson.description, "Agent-friendly GitHub issue management layer for Pi using GitHub APIs and local issue files.");
-  assert.equal(packageJson.repository?.url, "git+https://github.com/senad-d/issueme.git");
+  assert.equal(packageJson.repository?.url, "git+https://github.com/senad-d/IssueMe.git");
   assert.equal(packageJson.bugs?.url, "https://github.com/senad-d/issueme/issues");
   assert.equal(packageJson.homepage, "https://github.com/senad-d/issueme#readme");
   assert.ok(packageJson.keywords.includes("pi-package"));

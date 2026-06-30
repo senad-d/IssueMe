@@ -7,22 +7,29 @@
   "author": "Senad Dizdarević <112484166+senad-d@users.noreply.github.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/senad-d/issueme.git"
+    "url": "git+https://github.com/senad-d/IssueMe.git"
   },
   "bugs": {
     "url": "https://github.com/senad-d/issueme/issues"
   },
   "homepage": "https://github.com/senad-d/issueme#readme",
   "keywords": [
+    "pi",
     "pi-package",
     "pi-extension",
     "pi-coding-agent",
     "github",
+    "github-api",
     "github-issues",
-    "issues",
+    "issue-management",
+    "issue-tracking",
     "agent-tools",
-    "typescript",
-    "coding-agent"
+    "llm-tools",
+    "ai-agent",
+    "projects-v2",
+    "sub-issues",
+    "coding-agent",
+    "typescript"
   ],
   "engines": {
     "node": ">=22.19.0"

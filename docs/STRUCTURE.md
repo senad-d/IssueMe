@@ -2,7 +2,7 @@
 
 IssueMe is a TypeScript Pi extension package that exposes direct GitHub REST and GraphQL issue management tools to agents.
 
-> Current behavior source: this guide, `README.md`, `SECURITY.md`, source, and tests describe the implemented runtime. `specs/spec-remediation-tasks.md` tracks hardening remediation, and `specs/spec-issue-management-expansion-tasks.md` tracks the expanded issue-management surface; older planning specs are archived context.
+> Current behavior source: this guide, `README.md`, `SECURITY.md`, `docs/usage.md`, `docs/configuration.md`, `docs/tool-reference.md`, `docs/development.md`, source, and tests describe the implemented runtime. `specs/spec-remediation-tasks.md` tracks hardening remediation, and `specs/spec-issue-management-expansion-tasks.md` tracks the expanded issue-management surface; older planning specs are archived context.
 
 ## Current layout
 

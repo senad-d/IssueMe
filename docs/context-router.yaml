@@ -1,6 +1,6 @@
 schema_version: docs-context-router.v1
 purpose: Machine-readable routing for IssueMe agents and maintainers. Load only the docs and files needed for the selected task.
-current_state: implementation-first remediation model; src and tests are source of truth, and docs/specs must stay aligned with implemented behavior.
+current_state: implementation-first remediation model; README is concise, detailed user/maintainer behavior lives under docs/, src and tests are source of truth, and docs/specs must stay aligned with implemented behavior.
 minimal_load:
   - docs/context-router.yaml
   - specs/spec-remediation-tasks.md
@@ -14,6 +14,10 @@ canonical_paths:
   historical_task_file: specs/spec-tasks.md
   project_brief: docs/PROJECT_DEFINITION_BRIEF.md
   structure_doc: docs/STRUCTURE.md
+  usage_doc: docs/usage.md
+  configuration_doc: docs/configuration.md
+  tool_reference_doc: docs/tool-reference.md
+  development_doc: docs/development.md
   readme: README.md
   security: SECURITY.md
   changelog: CHANGELOG.md
@@ -85,7 +89,7 @@ runtime_path_patterns:
   generated_tui_snapshot: test/snapshots/tui/issueme-config/<state>.txt
   generated_package_tarball: "*.tgz"
 canonical_commands:
-  install: npm install
+  install: npm ci
   typecheck: npm run typecheck
   format_check: npm run format:check
   test: npm run test
@@ -112,22 +116,22 @@ ownership_rules:
     source: README.md
     rule: /issueme owns config TUI/help/status/start workflow behavior; command tests must avoid live Pi startup.
   tool_surface:
-    source: docs/STRUCTURE.md
+    source: docs/tool-reference.md
     rule: Each IssueMe tool owns its schema, prompt metadata, execution mode, safe result details, and mocked behavior tests.
   github_boundary:
     source: SECURITY.md
     rule: GitHub access uses REST for repository-scoped issue operations and GraphQL for native sub-issue inspection/mutations; no GitHub CLI or shell-based repo discovery.
   local_cache:
-    source: README.md
+    source: docs/configuration.md
     rule: Issue files are repository-aware JSON files under the configured issue directory, with safe paths, symlink refusal, bounded comments, and bounded tool details.
   config_and_env:
-    source: SECURITY.md
+    source: docs/configuration.md
     rule: Non-secret config is stored in .pi/agent/issueme.json; tokens are read only from trusted .env/process env and never persisted or returned.
   configuration_tui:
     source: specs/spec-configuration-tui-design-standard.md
     rule: TUI rendering follows width modes, theme roles, ANSI-safe line bounds, deterministic snapshots, and non-TUI fallback behavior.
   testing:
-    source: package.json
+    source: docs/development.md
     rule: Default tests use mocks/stubs and must not perform live GitHub calls or live remote mutations.
   package_contents:
     source: scripts/check-package-contents.mjs
@@ -185,7 +189,9 @@ routes:
   tools_runtime:
     match: [tool, create issue, sync issues, list issues, search issues, filter issues, list labels, repository label discovery, repository label management, manage label, milestone discovery, milestone management, manage milestone, list milestones, assignee discovery, collaborator discovery, list assignees, list projects, project fields, projects v2, add issue to project, update project item, project item, native sub-issue, list sub-issues, reorder sub-issues, reprioritize sub-issues, relationship refresh, linked pull request, development reference, development link, issue dependency, dependency, blocker, tracked-by, get issue, update issue, comment issue, update comment, delete comment, assign issue, label issue, reopen issue, close issue, close reason, bulk issue, bulk update, bulk operations, executionMode, details, truncation]
     docs:
-      - README.md
+      - docs/tool-reference.md
+      - docs/public-contracts.md
+      - docs/usage.md
       - docs/STRUCTURE.md
       - specs/spec-guidelines.md
     files:
@@ -216,7 +222,8 @@ routes:
     match: [github, rest, api, graphql, pagination, rate limit, retry, user-agent, labels endpoint, repository labels, repository label management, comments, comment edit, comment delete, native sub-issue, subIssues, reprioritizeSubIssue, linked pull request, development reference, timelineItems, issue dependency, blocker, tracked-by, projects v2, project item, closed issue]
     docs:
       - SECURITY.md
-      - README.md
+      - docs/configuration.md
+      - docs/tool-reference.md
       - docs/live-github-verification.md
     files:
       - src/github/client.ts
@@ -234,7 +241,7 @@ routes:
   issue_cache:
     match: [issue cache, local issue file, issues directory, slug, symlink, repository-aware, corrupt json, invalid file, comments_truncated]
     docs:
-      - README.md
+      - docs/configuration.md
       - SECURITY.md
       - docs/STRUCTURE.md
     files:
@@ -248,8 +255,9 @@ routes:
   config_env_repo:
     match: [config, default labels, default assignees, skill path, .env, token, trust, repository, worktree, gitdir, project root]
     docs:
-      - README.md
+      - docs/configuration.md
       - SECURITY.md
+      - README.md
     files:
       - src/config/config.ts
       - src/utils/env.ts
@@ -261,7 +269,8 @@ routes:
     match: [security, credential, token, secret, trust, privacy, network boundary, closed issue, path safety]
     docs:
       - SECURITY.md
-      - README.md
+      - docs/configuration.md
+      - docs/tool-reference.md
       - specs/spec-guidelines.md
     files:
       - src/errors.ts
@@ -271,7 +280,7 @@ routes:
   tests_validation:
     match: [test, validate, typecheck, format, package check, smoke, ci, mocked, no live github, live github verification, e2e]
     docs:
-      - README.md
+      - docs/development.md
       - docs/STRUCTURE.md
       - docs/live-github-verification.md
     files:
@@ -286,13 +295,14 @@ routes:
     match: [live github, live verification, e2e, opt-in, credentials, projects v2 prerequisites, native sub-issue availability, development-link fixture, cleanup ledger]
     docs:
       - docs/live-github-verification.md
-      - README.md
+      - docs/development.md
       - SECURITY.md
     files:
       - .pi/skills/issueme-e2e-test/SKILL.md
   packaging_ci:
     match: [package, publish, npm, files, check:pack, ci, workflow, package-lock]
     docs:
+      - docs/development.md
       - README.md
       - CHANGELOG.md
       - docs/STRUCTURE.md
@@ -307,6 +317,10 @@ routes:
     match: [docs, readme, changelog, contributing, project brief, release, structure]
     docs:
       - README.md
+      - docs/usage.md
+      - docs/configuration.md
+      - docs/tool-reference.md
+      - docs/development.md
       - CHANGELOG.md
       - CONTRIBUTING.md
       - docs/PROJECT_DEFINITION_BRIEF.md
@@ -326,10 +340,13 @@ maintenance:
     update:
       - docs/context-router.yaml
       - docs/STRUCTURE.md
+      - docs/configuration.md
       - README.md
   when_commands_or_ownership_change:
     update:
       - docs/context-router.yaml
+      - docs/tool-reference.md
+      - docs/usage.md
       - README.md
       - SECURITY.md
   when_task_process_changes:
