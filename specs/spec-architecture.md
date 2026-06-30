@@ -27,7 +27,7 @@ IssueMe should be built as a small Pi package with a minimal `src/extension.ts` 
 - Package name: `@senad-d/issueme`
 - Display name: `IssueMe`
 - Exported extension function: `issueMeExtension`
-- Repository URL: `https://github.com/senad-d/issueme`
+- Repository URL: `https://github.com/senad-d/IssueMe`
 - Pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents create, update, comment on, label, assign, close, and track issues through structured Pi tools.
 - Current scope excludes GitHub CLI usage, webhook listeners, bundled IssueMe skills, and mutation of closed/resolved issues.
 

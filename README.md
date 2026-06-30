@@ -105,7 +105,7 @@ If the npm package is unavailable before a public release, use the source checko
 | Global | `pi install npm:@senad-d/issueme` | Loads in every trusted pi project. |
 | Project-local | `pi install npm:@senad-d/issueme -l` | Writes to `.pi/settings.json` in the current project. |
 | One run | `pi -e npm:@senad-d/issueme` | Try without changing settings. |
-| Git | `pi install git:github.com/senad-d/issueme@<tag>` | Pin a tag or commit. |
+| Git | `pi install git:github.com/senad-d/IssueMe@<tag>` | Pin a tag or commit. |
 | Local checkout | `pi --no-extensions -e .` | Develop or test this repository. |
 
 Requirements:
@@ -118,7 +118,7 @@ Source checkout:
 
 ```bash
 git clone https://github.com/senad-d/IssueMe.git
-cd issueme
+cd IssueMe
 npm ci
 npm run validate
 pi --no-extensions -e .
@@ -127,7 +127,7 @@ pi --no-extensions -e .
 Use a checkout globally while developing:
 
 ```bash
-pi install /absolute/path/to/issueme
+pi install /absolute/path/to/IssueMe
 ```
 
 ---
@@ -214,6 +214,10 @@ Tokens are read but never written to config, cache files, tool output, or logs. 
 - Native sub-issues use GitHub GraphQL; IssueMe does not silently create body-only parent/dependency/blocker fallbacks.
 - Tool results are bounded and include `details.result`/status metadata; agents should check both pi tool errors and IssueMe result details.
 - IssueMe starts no webhooks, listeners, background servers, timers, file watchers, telemetry, or GitHub CLI processes.
+
+### Issue dependencies and blockers
+
+IssueMe does not register issue dependency/blocker tools today. GitHub exposes native sub-issues and Projects v2 APIs, but there is no stable native GitHub REST or GraphQL API for issue dependency, blocker, or tracked-by links with documented list/add/remove semantics. IssueMe does not create body-only `blocked by`, `depends on`, or `tracked by` references as a silent fallback; use native sub-issues, Projects v2 fields, or GitHub's UI instead.
 
 Read [`SECURITY.md`](SECURITY.md) before installing in sensitive environments.
 

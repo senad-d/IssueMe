@@ -10,9 +10,9 @@
     "url": "git+https://github.com/senad-d/IssueMe.git"
   },
   "bugs": {
-    "url": "https://github.com/senad-d/issueme/issues"
+    "url": "https://github.com/senad-d/IssueMe/issues"
   },
-  "homepage": "https://github.com/senad-d/issueme#readme",
+  "homepage": "https://github.com/senad-d/IssueMe#readme",
   "keywords": [
     "pi",
     "pi-package",
@@ -63,7 +63,8 @@
   "pi": {
     "extensions": [
       "./src/extension.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/senad-d/IssueMe/main/img/demo.gif"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

@@ -13,7 +13,7 @@
 - Package name: `@senad-d/issueme`
 - Display name: `IssueMe`
 - Exported extension function: `issueMeExtension`
-- Repository URL: `https://github.com/senad-d/issueme`
+- Repository URL: `https://github.com/senad-d/IssueMe`
 - One-sentence pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents list/search, sync, create, update, add/edit/delete comments, label, assign, manage repository labels/milestones, update Projects v2 items, reopen, close, bulk-update explicit issue lists, inspect linked development, and inspect/link/reorder native sub-issues through structured Pi tools, with an optional IssueMe-only creator processing scope; native dependency/blocker links are documented as unsupported until GitHub exposes a stable API.
 
 ## 3. Users and use cases

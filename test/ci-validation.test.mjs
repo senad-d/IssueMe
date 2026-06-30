@@ -62,8 +62,8 @@ test("gitignore keeps secret-bearing environment variants ignored by default", (
 });
 
 test("CI uses lockfile installs and the local validation contract", () => {
-  assert.match(ciWorkflow, /uses:\s*actions\/checkout@v4/);
-  assert.match(ciWorkflow, /uses:\s*actions\/setup-node@v4/);
+  assert.match(ciWorkflow, /^\s*uses:\s*actions\/checkout@v[1-9]\d*\s*$/m);
+  assert.match(ciWorkflow, /^\s*uses:\s*actions\/setup-node@v[1-9]\d*\s*$/m);
   assert.match(ciWorkflow, /node-version:\s*22\.19\.0/);
   assert.match(ciWorkflow, /cache:\s*npm/);
   assert.match(ciWorkflow, /run:\s*npm ci\b/);

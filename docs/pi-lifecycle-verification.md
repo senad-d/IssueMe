@@ -44,7 +44,7 @@ Manual check:
 2. From that project, launch IssueMe as the only extension:
 
    ```bash
-   PI_OFFLINE=1 PI_TUI_WRITE_LOG=/tmp/issueme-tui.log env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY pi --no-extensions -e /absolute/path/to/issueme --offline --approve --no-skills --no-prompt-templates --no-themes --no-context-files
+   PI_OFFLINE=1 PI_TUI_WRITE_LOG=/tmp/issueme-tui.log env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY pi --no-extensions -e /absolute/path/to/IssueMe --offline --approve --no-skills --no-prompt-templates --no-themes --no-context-files
    ```
 
 3. Run `/issueme info` and confirm it reports project trust, repository status, `Token: missing`, `.pi/agent/issueme.json`, and registered `issueme_*` tools without exposing environment values.

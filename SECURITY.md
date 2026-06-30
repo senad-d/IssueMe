@@ -8,7 +8,7 @@ Pi packages and extensions run with the full local permissions of the user accou
 
 ```bash
 pi install npm:@senad-d/issueme@<version>
-pi install git:https://github.com/senad-d/issueme@<tag>
+pi install git:https://github.com/senad-d/IssueMe@<tag>
 ```
 
 IssueMe honors project-local `.env`, local Git config, `.pi/agent/issueme.json`, and issue cache files only when Pi reports the project as trusted through `ctx.isProjectTrusted()`. Help/status commands may report process-token or `GITHUB_REPOSITORY` status without reading project-local files; IssueMe tools require project trust before cache/config operations. In untrusted projects, `/issueme` refuses config editing, `/issueme start [skill-path]` refuses project-local config/default-skill reads and skill-path validation, and `/issueme info` uses default config/cache values instead of local files. In trusted projects, `/issueme start` validates real paths for traversal/symlink safety but sends the agent a project-relative `@path` skill reference rather than an absolute local filesystem path. The optional `allowedIssueCreator` config setting is an IssueMe processing scope only: it can make IssueMe ignore/refuse issues created by other users, but it does not change GitHub repository permissions and does not stop public users from opening issues on GitHub.
@@ -73,7 +73,7 @@ Please report suspected security vulnerabilities privately by email: <senad.dizd
 
 For non-sensitive issues, use the repository issue tracker:
 
-<https://github.com/senad-d/issueme/issues>
+<https://github.com/senad-d/IssueMe/issues>
 
 Do not open public issues for security-sensitive reports that include exploit details, private repository contents, secrets, credentials, or private issue content.
 
