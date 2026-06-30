@@ -6,7 +6,7 @@ This guide covers non-secret project config, GitHub token resolution, project tr
 
 - pi with Node.js 22.19.0 or newer.
 - A trusted project checkout.
-- `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access.
+- `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access. Copy `.env.example` to `.env` for safe local placeholders.
 - Additional GitHub permissions/features for Projects v2, native sub-issues, and linked-development GraphQL inspection when those tools are used.
 
 ## Config file
@@ -69,6 +69,8 @@ Keyboard controls:
 The UI shows **Allowed issue creator** under **Cache**. Leave it as `all` to process all repository issues, or set one GitHub login to make IssueMe list, sync, read, mutate, and cache only issues created by that user. Matching is case-insensitive. This setting does not moderate GitHub and does not stop public users from opening issues.
 
 ## Authentication
+
+Use the root `.env.example` as the starting template for local authentication values; it contains only safe placeholders and documents optional repository override configuration.
 
 GitHub tokens are read, never written, from this precedence order:
 

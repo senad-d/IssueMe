@@ -64,13 +64,14 @@ pi install npm:@senad-d/issueme
 cd /path/to/your/github/repo
 ```
 
-Provide a token with repository issue access:
+Create a local `.env` from the example and provide a token with repository issue access:
 
-```dotenv
-GH_TOKEN=github_pat_...
-# Optional when local Git metadata is unavailable:
-# GITHUB_REPOSITORY=owner/repo
+```bash
+cp .env.example .env
+$EDITOR .env
 ```
+
+`.env.example` documents the supported variables (`GH_TOKEN` or `GITHUB_TOKEN`, plus optional `GITHUB_REPOSITORY`) with safe placeholders.
 
 Start pi and open IssueMe:
 
