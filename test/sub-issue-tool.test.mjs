@@ -725,3 +725,44 @@ test("issueme_create_sub_issue reports unsupported native attachment as retry-sa
 	assert.equal(child.title, "Unsupported Child");
 	assert.equal(child.parent_issue, undefined);
 });
+
+test("issueme_reorder_sub_issues reports an already-in-order native child list as a no-op", async () => {
+	const projectRoot = await tempProject();
+	const children = [githubIssue(2, "First Child"), githubIssue(3, "Second Child")];
+	const mock = makeSubIssueFetch({
+		issues: children,
+		childrenByParent: [[1, [2, 3]]],
+		parentByChild: children.map((issue) => [issue.number, 1]),
+	});
+	const tools = registerInjectedTools(mock.fetchFn);
+
+	const result = await execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [2, 3] });
+
+	assert.equal(result.details.result, "success");
+	assert.equal(result.details.status, "reorder_sub_issues_noop");
+	assert.deepEqual(result.details.issue.subIssues.map((issue) => issue.number), [2, 3]);
+	assert.equal(result.details.counts.mutations, 0);
+	assert.deepEqual(result.details.changedFields, []);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body.operationName === "IssueMeReprioritizeSubIssue"), false);
+	assert.match(result.content[0].text, /already matched the requested order/i);
+});
+
+test("issueme_remove_sub_issue handles an already-detached child without inventing body references", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({
+		parentByChild: [],
+		childrenByParent: [],
+	});
+	const tools = registerInjectedTools(mock.fetchFn);
+
+	const result = await execute(tools.get("issueme_remove_sub_issue"), projectRoot, { parentNumber: 1, childNumber: 2 });
+
+	assert.equal(result.details.result, "success");
+	assert.equal(result.details.cacheUpdated, true);
+	assert.deepEqual(result.details.changedFields, ["sub_issues"]);
+	assert.equal(mock.childrenByParent.get(1)?.length ?? 0, 0);
+	const child = await readJson(join(projectRoot, "issues", "2-existing-child.json"));
+	assert.equal(child.parent_issue, null);
+	assert.doesNotMatch(child.body, /#1|Parent/);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /removeSubIssue/.test(call.body.query)), true);
+});

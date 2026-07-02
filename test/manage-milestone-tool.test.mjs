@@ -214,3 +214,68 @@ test("issueme_manage_milestone surfaces unexpected permission and API failures s
 		},
 	);
 });
+
+test("issueme_manage_milestone covers cleared due dates, blank descriptions, and offset timestamps", async () => {
+	const calls = [];
+	const tool = registerTool(async (url, init) => {
+		const requestUrl = new URL(url.toString());
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method: init.method, path: requestUrl.pathname, body });
+		if (requestUrl.pathname === "/repos/owner/repo/milestones" && init.method === "POST") {
+			return jsonResponse(milestone(2, body.title, { due_on: body.due_on, description: body.description }));
+		}
+		if (requestUrl.pathname === "/repos/owner/repo/milestones/2" && init.method === "PATCH") {
+			return jsonResponse(milestone(2, "v2.0", { due_on: null, description: "" }));
+		}
+		throw new Error(`Unexpected milestone clearing request ${init.method} ${requestUrl.pathname}`);
+	});
+	const ctx = { cwd: await tempProject(), isProjectTrusted: () => true };
+
+	const created = await tool.execute("call", { action: "create", title: "v2.0", dueOn: "2026-08-15T12:30:00+02:00" }, undefined, undefined, ctx);
+	const cleared = await tool.execute("call", { action: "update", number: 2, description: "", clearDueOn: true }, undefined, undefined, ctx);
+
+	assert.equal(created.details.result, "success");
+	assert.equal(calls[0].body.due_on, "2026-08-15T12:30:00+02:00");
+	assert.equal(cleared.details.result, "success");
+	assert.deepEqual(calls[1].body, { description: "", due_on: null });
+	assert.deepEqual(cleared.details.changedFields, ["description", "due_on"]);
+	assert.equal(cleared.details.milestones[0].description, "");
+	assert.equal(cleared.details.milestones[0].due_on, undefined);
+	assert.match(cleared.content[0].text, /due date cleared/);
+	assert.match(cleared.content[0].text, /description cleared/);
+	assertNoToken({ created, cleared });
+});
+
+test("issueme_manage_milestone covers update conflicts and validation edge cases", async () => {
+	const updateConflict = await executeManageMilestoneTool(async () => jsonResponse({ message: `validation failed ${TOKEN}` }, { status: 422, statusText: "Unprocessable Entity" }), {
+		action: "reopen",
+		number: 4,
+	});
+	assert.equal(updateConflict.details.result, "error");
+	assert.equal(updateConflict.details.status, "milestone_update_conflict");
+	assert.deepEqual(updateConflict.details.changedFields, ["state"]);
+	assert.doesNotMatch(updateConflict.details.error.message, new RegExp(TOKEN));
+	assertNoToken(updateConflict);
+
+	let calls = 0;
+	const fetchFn = async () => {
+		calls += 1;
+		return jsonResponse(milestone(1, "unexpected"));
+	};
+	for (const params of [
+		{ action: "unknown", title: "v1" },
+		{ action: "create", title: "v1", clearDueOn: true },
+		{ action: "create", title: "v1\nnext" },
+		{ action: "create", title: `${"x".repeat(257)}` },
+		{ action: "update", number: 1, description: `${"x".repeat(1001)}` },
+		{ action: "update", number: 1, description: "bad\0description" },
+		{ action: "update", number: 1, dueOn: "" },
+	]) {
+		await assert.rejects(
+			() => executeManageMilestoneTool(fetchFn, params),
+			(error) => error?.code === ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`expected milestone validation failure for ${JSON.stringify(params)}`,
+		);
+	}
+	assert.equal(calls, 0);
+});

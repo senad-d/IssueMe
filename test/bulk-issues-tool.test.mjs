@@ -524,16 +524,166 @@ test("issueme_bulk_update_issues rejects unsafe bulk shapes before runtime resol
 	});
 	const projectRoot = await tempProject();
 
-	await assert.rejects(
-		() => executeBulk(tool, projectRoot, { issueNumbers: Array.from({ length: 51 }, (_, index) => index + 1), action: "add_labels", labels: ["bug"] }),
-		(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === "issueNumbers",
-	);
-	await assert.rejects(
-		() => executeBulk(tool, projectRoot, { issueNumbers: [1, 1], action: "add_labels", labels: ["bug"] }),
-		(error) => error?.code === "invalid_tool_input" && /duplicates/.test(error.message),
-	);
-	await assert.rejects(
-		() => executeBulk(tool, projectRoot, { issueNumbers: [1], action: "close", labels: ["bug"] }),
-		(error) => error?.code === "invalid_tool_input" && /do not apply/.test(error.message),
-	);
+	for (const params of [
+		{ issueNumbers: [], action: "add_labels", labels: ["bug"] },
+		{ issueNumbers: Array.from({ length: 51 }, (_, index) => index + 1), action: "add_labels", labels: ["bug"] },
+		{ issueNumbers: [0], action: "add_labels", labels: ["bug"] },
+		{ issueNumbers: [1, 1], action: "add_labels", labels: ["bug"] },
+		{ issueNumbers: [1], action: "add_labels", labels: [" "] },
+		{ issueNumbers: [1], action: "assign", assignees: ["bad login"] },
+		{ issueNumbers: [1], action: "set_milestone", milestoneNumber: 0 },
+		{ issueNumbers: [1], action: "add_to_project" },
+		{ issueNumbers: [1], action: "close", labels: ["bug"] },
+		{ issueNumbers: [1], action: "close", reason: "duplicate" },
+		{ issueNumbers: [1], action: "unknown", labels: ["bug"] },
+	]) {
+		await assert.rejects(
+			() => executeBulk(tool, projectRoot, params),
+			(error) => error?.code === "invalid_tool_input",
+			`expected invalid bulk input for ${JSON.stringify(params)}`,
+		);
+	}
+});
+
+test("issueme_bulk_update_issues de-duplicates labels and reports missing repository labels", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([[1, githubIssue(1, "Label Matrix")]]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(issues.get(1));
+		if (["/repos/owner/repo/labels/triage", "/repos/owner/repo/labels/bug"].includes(url.pathname) && method === "GET") return jsonResponse({ name: decodeURIComponent(url.pathname.split("/").at(-1)) });
+		if (url.pathname === "/repos/owner/repo/labels/missing" && method === "GET") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+		if (url.pathname === "/repos/owner/repo/issues/1/labels" && method === "POST") {
+			issues.set(1, githubIssue(1, "Label Matrix", { labels: body.labels }));
+			return jsonResponse(body.labels.map((name) => ({ name })));
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments" && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected bulk label matrix request: ${method} ${url.pathname}`);
+	});
+
+	const success = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "add_labels", labels: [" triage ", "triage", "bug"] });
+
+	assert.equal(success.details.result, "success");
+	assert.deepEqual(calls.filter((call) => call.path.includes("/labels/")).map((call) => call.path), [
+		"/repos/owner/repo/labels/triage",
+		"/repos/owner/repo/labels/bug",
+	]);
+	assert.deepEqual(calls.find((call) => call.method === "POST" && call.path.endsWith("/labels")).body.labels, ["triage", "bug"]);
+	assert.deepEqual(success.details.issues[0].labels, ["triage", "bug"]);
+
+	calls.length = 0;
+	const missing = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["missing"] });
+	assert.equal(missing.details.result, "error");
+	assert.deepEqual(missing.details.counts, { requested: 2, succeeded: 0, partial: 0, failed: 1, skipped: 1 });
+	assert.equal(missing.details.bulkResults[0].error.code, "invalid_tool_input");
+	assert.deepEqual(missing.details.bulkResults.map((item) => item.status), ["failed", "skipped"]);
+	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/issues/1/labels"), false);
+	assertNoToken({ success, missing });
+});
+
+test("issueme_bulk_update_issues validates assignable users before bulk assignee mutation", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([[1, githubIssue(1, "Assignee Matrix")]]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(issues.get(1));
+		if (["/repos/owner/repo/assignees/octocat", "/repos/owner/repo/assignees/hubot"].includes(url.pathname) && method === "GET") return noContentResponse();
+		if (url.pathname === "/repos/owner/repo/assignees/ghost" && method === "GET") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
+		if (url.pathname === "/repos/owner/repo/issues/1/assignees" && method === "POST") {
+			const updated = githubIssue(1, "Assignee Matrix", { assignees: body.assignees });
+			issues.set(1, updated);
+			return jsonResponse(updated);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments" && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected bulk assignee matrix request: ${method} ${url.pathname}`);
+	});
+
+	const success = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "assign", assignees: ["octocat", "octocat", "hubot"] });
+
+	assert.equal(success.details.result, "success");
+	assert.deepEqual(calls.filter((call) => call.path.includes("/assignees/")).map((call) => call.path), [
+		"/repos/owner/repo/assignees/octocat",
+		"/repos/owner/repo/assignees/hubot",
+	]);
+	assert.deepEqual(calls.find((call) => call.method === "POST" && call.path.endsWith("/assignees")).body.assignees, ["octocat", "hubot"]);
+
+	calls.length = 0;
+	const invalid = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "assign", assignees: ["ghost"] });
+	assert.equal(invalid.details.result, "error");
+	assert.equal(invalid.details.bulkResults[0].error.code, "invalid_tool_input");
+	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/issues/1/assignees"), false);
+	assertNoToken({ success, invalid });
+});
+
+test("issueme_bulk_update_issues reports Projects v2 validation failures without adding items", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issue = githubIssue(7, "Project Validation Target");
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		if (url.pathname === "/repos/owner/repo/issues/7" && method === "GET") return jsonResponse(issue);
+		if (url.pathname === "/graphql" && method === "POST" && body.operationName === "IssueMeValidateProjectV2ForAdd") {
+			return jsonResponse({
+				data: {
+					node: {
+						id: "PVT_closed",
+						title: "Closed roadmap",
+						number: 2,
+						url: "https://github.com/users/owner/projects/2",
+						closed: true,
+						public: false,
+						owner: { __typename: "User", login: "owner" },
+					},
+				},
+			});
+		}
+		throw new Error(`Unexpected bulk project validation request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [7], action: "add_to_project", projectId: "PVT_closed" });
+
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.bulkResults[0].error.code, "invalid_tool_input");
+	assert.match(result.details.bulkResults[0].error.message, /closed GitHub Projects v2 board/);
+	assert.equal(calls.some((call) => call.body?.operationName === "IssueMeAddIssueToProjectV2"), false);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues closes issues with default reason and cleans matching cache", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		if (url.pathname === "/repos/owner/repo/issues/8" && method === "GET") return jsonResponse(githubIssue(8, "Default Close"));
+		if (url.pathname === "/repos/owner/repo/issues/8" && method === "PATCH") return jsonResponse(githubIssue(8, "Default Close", { state: "closed", closed_at: "2026-06-27T01:00:00Z" }));
+		throw new Error(`Unexpected bulk default close request: ${method} ${url.pathname}`);
+	});
+
+	await writeIssueRecord(projectRoot, config, issueRecord(8, "Default Close"));
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [8], action: "close" });
+
+	assert.equal(result.details.result, "success");
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/8",
+		"GET /repos/owner/repo/issues/8",
+		"PATCH /repos/owner/repo/issues/8",
+	]);
+	assert.deepEqual(calls[2].body, { state: "closed" });
+	assert.deepEqual(result.details.bulkResults[0].changedFields, ["state"]);
+	assert.deepEqual(result.details.removedPaths, ["issues/8-default-close.json"]);
+	assertNoToken(result);
 });

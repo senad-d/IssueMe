@@ -186,3 +186,63 @@ test("issueme_manage_label surfaces unexpected API failures safely", async () =>
 		},
 	);
 });
+
+test("issueme_manage_label covers description clearing, no-op rename text, and update conflicts", async () => {
+	const calls = [];
+	const cleared = await executeManageLabelTool(async (url, init) => {
+		const requestUrl = new URL(url.toString());
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method: init.method, path: requestUrl.pathname, body });
+		assert.equal(requestUrl.pathname, "/repos/owner/repo/labels/triage");
+		assert.equal(init.method, "PATCH");
+		return jsonResponse(label("triage", { description: "", color: body.color }));
+	}, {
+		action: "update",
+		name: "triage",
+		newName: "triage",
+		color: "#0E8A16",
+		description: "",
+	});
+
+	assert.equal(cleared.details.result, "success");
+	assert.deepEqual(cleared.details.changedFields, ["name", "color", "description"]);
+	assert.equal(cleared.details.labels[0].name, "triage");
+	assert.equal(cleared.details.labels[0].description, undefined);
+	assert.deepEqual(calls[0].body, { new_name: "triage", color: "0e8a16", description: "" });
+	assert.match(cleared.content[0].text, /description cleared/);
+	assert.doesNotMatch(cleared.content[0].text, /renamed from/);
+	assertNoToken(cleared);
+
+	const conflict = await executeManageLabelTool(async () => jsonResponse({ message: `duplicate target ${TOKEN}` }, { status: 422, statusText: "Unprocessable Entity" }), {
+		action: "update",
+		name: "triage",
+		newName: "bug",
+	});
+	assert.equal(conflict.details.result, "error");
+	assert.equal(conflict.details.status, "label_update_conflict");
+	assert.deepEqual(conflict.details.labels[0], { name: "bug" });
+	assert.doesNotMatch(conflict.details.error.message, new RegExp(TOKEN));
+	assertNoToken(conflict);
+});
+
+test("issueme_manage_label rejects action-specific field, length, and control-character edge cases", async () => {
+	let calls = 0;
+	const fetchFn = async () => {
+		calls += 1;
+		return jsonResponse(label("unexpected"));
+	};
+	for (const params of [
+		{ action: "update", name: "bug", color: "0e8a16", confirmDelete: true },
+		{ action: "create", name: `${"x".repeat(51)}`, color: "0e8a16" },
+		{ action: "create", name: "bug\nnext", color: "0e8a16" },
+		{ action: "update", name: "bug", description: `${"x".repeat(101)}` },
+		{ action: "update", name: "bug", description: "bad\0description" },
+	]) {
+		await assert.rejects(
+			() => executeManageLabelTool(fetchFn, params),
+			(error) => error?.code === ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`expected label validation failure for ${JSON.stringify(params)}`,
+		);
+	}
+	assert.equal(calls, 0);
+});

@@ -688,3 +688,32 @@ test("/issueme config validates custom TUI results before saving", async () => {
 		(error) => error?.code === "ENOENT",
 	);
 });
+
+test("/issueme config reports unchanged custom TUI exits without saving", async () => {
+	const root = await tempProject();
+	const pi = fakePi();
+	registerIssueMeCommand(pi);
+	const notifications = [];
+	let customCalled = false;
+	await pi.commands.get("issueme").handler("", fakeCtx(root, {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			notify(message, level) { notifications.push({ message, level }); },
+			async custom(factory) {
+				customCalled = true;
+				const component = factory({ requestRender() {} }, { fg: (_role, text) => text, bold: (text) => text }, {}, () => {});
+				assert.match(component.render(20).join("\n"), /^Configuration/m);
+				return undefined;
+			},
+		},
+	}));
+
+	assert.equal(customCalled, true);
+	assert.deepEqual(notifications.at(-1), { message: "IssueMe config unchanged.", level: "info" });
+	assert.equal(pi.messages.length, 0);
+	await assert.rejects(
+		() => readFile(join(root, ".pi", "agent", "issueme.json"), "utf8"),
+		(error) => error?.code === "ENOENT",
+	);
+});

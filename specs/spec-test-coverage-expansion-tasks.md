@@ -360,7 +360,7 @@ Create or extend `test/issue-store-validation.test.mjs` with temporary directori
 
 ### 6. Add Native Sub-Issue and Development-Link Client Tests
 
-- [ ] Add focused tests for native sub-issue and development-link client helpers and tool branches not covered by existing tests.
+- [x] Add focused tests for native sub-issue and development-link client helpers and tool branches not covered by existing tests.
 
 #### Why
 
@@ -407,9 +407,16 @@ Add tests in a new file or extend existing sub-issue/development-link tests for:
   - `src/github/development-links-client.ts`,
   - `src/tools/sub-issue.ts`.
 
+#### Implementation log
+
+- Added `test/sub-issue-development-client-coverage.test.mjs` for sub-issue query builders, limit/reorder validation, mutation/result normalizers, reorder preflight failures, native summaries, development-link query/limit normalization, duplicate PR/commit merging, truncation, and malformed GraphQL shapes.
+- Extended `test/sub-issue-tool.test.mjs` for already-in-order reorder no-op behavior and already-detached child removal without body-reference fallback.
+- Validation: `npm run test -- test/sub-issue-development-client-coverage.test.mjs test/sub-issue-tool.test.mjs test/bulk-issues-tool.test.mjs test/config-tui-renderer.test.mjs test/command-and-tui.test.mjs` passed via the project test script with `297` tests.
+- Final coverage shows `src/tools/sub-issue.ts` at `31.23%` local line coverage, up from the spec baseline `31.05%`; all added tests remain fake-fetch/local-only.
+
 ### 7. Add Bulk Issue Operation Matrix Tests
 
-- [ ] Add missing matrix coverage for each bulk action and failure mode.
+- [x] Add missing matrix coverage for each bulk action and failure mode.
 
 #### Why
 
@@ -461,9 +468,16 @@ Create or extend `test/bulk-tool-coverage.test.mjs` with cases for:
 - Partial-success assertions verify `details.result`, `details.status`, per-issue statuses, and `needsSync` where applicable.
 - `npm run test:coverage` shows `src/tools/bulk-issues.ts` coverage improved.
 
+#### Implementation log
+
+- Extended `test/bulk-issues-tool.test.mjs` with validation matrix cases for empty/unsafe/duplicate issue lists, empty labels, invalid assignees, invalid milestones, missing project ID, invalid close reason, and unknown actions before runtime resolution.
+- Added bulk action cases for label de-duplication and missing repository labels, assignee de-duplication and unassignable users, Projects v2 validation failure before item mutation, and close default reason cache cleanup.
+- Existing bulk tests already covered completed/not-planned close reasons, already-closed cleanup, abort partial success, continue-on-error false skips, and continue-on-error true mixed statuses; the new cases fill action-specific matrix gaps.
+- Final coverage shows `src/tools/bulk-issues.ts` at `27.00%` local line coverage, up from the spec baseline `26.40%`.
+
 ### 8. Add Command and Configuration TUI Branch Tests
 
-- [ ] Add coverage for remaining command and TUI rendering/input branches.
+- [x] Add coverage for remaining command and TUI rendering/input branches.
 
 #### Why
 
@@ -513,9 +527,16 @@ Extend existing TUI and command tests for:
 - Tests preserve existing artifact expectations in `test/tui-artifacts.test.mjs`.
 - `npm run test:coverage` shows command/TUI coverage improved.
 
+#### Implementation log
+
+- Extended `test/config-tui-renderer.test.mjs` with deterministic, width-bounded snapshots for status, validation-error, editing, Workflow-category, and width-1 rendering branches.
+- Added interaction coverage for search delete, Ctrl-U edit clearing, list-setting de-duplication, explicit save, and no-change finish paths without a real terminal.
+- Extended `test/command-and-tui.test.mjs` for the TUI custom component returning `undefined`, verifying unchanged notifications and no config file write.
+- `npm run test:coverage` remained affected by V8/TypeScript line-accounting caveats for `src/commands/config-tui.ts`, but the added tests exercise the requested command/TUI public branches and preserved `test/tui-artifacts.test.mjs` expectations in the full suite.
+
 ### 9. Add Remaining Tool Branch Tests by Coverage Re-rank
 
-- [ ] After tasks 2-8, re-rank coverage and add a final targeted batch for the next highest meaningful tool hotspots.
+- [x] After tasks 2-8, re-rank coverage and add a final targeted batch for the next highest meaningful tool hotspots.
 
 #### Why
 
@@ -564,9 +585,17 @@ For each selected file, add at least one of each meaningful branch type where mi
 - Each added test asserts public tool result contracts, not private implementation details.
 - Coverage improves for every file selected in this task, unless the uncovered lines are confirmed to be type-only or non-executable under V8 coverage.
 
+#### Implementation log
+
+- Re-rank after tasks 6-8: `npm run test:coverage` passed with `297` tests; local summary was lines `33.19%`, branches `85.69%`, functions `56.58%`.
+- Selected `src/tools/manage-label.ts` and `src/tools/manage-milestone.ts` from the remaining tool hotspots because they still had large meaningful validation/handled-error surfaces despite existing CRUD tests.
+- Extended `test/manage-label-tool.test.mjs` for description clearing, same-name update text, update conflict handling, action-specific field validation, length validation, and control-character validation.
+- Extended `test/manage-milestone-tool.test.mjs` for clear-due-date and blank-description output, offset ISO timestamp normalization, update conflict handling, unexpected action/field validation, length validation, control-character validation, and empty due-date validation.
+- Final coverage improved selected files: `src/tools/manage-label.ts` `36.44%` local line / `86.61%` branch, and `src/tools/manage-milestone.ts` `38.14%` local line / `90.37%` branch.
+
 ### 10. Validate, Compare, and Document Coverage Gains
 
-- [ ] Run final validation and record before/after coverage results.
+- [x] Run final validation and record before/after coverage results.
 
 #### Why
 
@@ -593,6 +622,17 @@ The goal is not just passing tests; the repository needs measurable coverage imp
 - Local coverage improves from the task-1 baseline.
 - Sonar coverage improves from `42.9` once the new coverage report is scanned, or the PR notes explain why Sonar has not updated yet.
 - No production behavior changes are included unless explicitly approved during implementation.
+
+#### Implementation log
+
+- Final `npm run test`: passed with `301` tests.
+- Final `npm run test:coverage`: passed with `301` tests and regenerated `coverage/lcov.info`.
+- Final local coverage summary: lines `33.23%`, branches `86.07%`, functions `56.58%`.
+- Compared to the task-1 baseline (`33.21%` lines, `81.05%` branches, `55.93%` functions), local coverage changed by `+0.02` line points, `+5.02` branch points, and `+0.65` function points. V8 line coverage remains strongly affected by TypeScript source-map/object-literal/type-declaration accounting noted in this spec.
+- Final `npm run lint`: passed (`typecheck`, ESLint, format check, and script syntax checks).
+- Final `npm run check:pack`: passed; package dry-run contains `68` published files and the source publication check covers `52` source TypeScript files.
+- Sonar was not re-queried locally; Sonar coverage is expected to update after CI/Sonar scans the regenerated `coverage/lcov.info`.
+- Production source behavior was not changed; this pass added/updated tests and task documentation only.
 
 ## Testing Strategy
 

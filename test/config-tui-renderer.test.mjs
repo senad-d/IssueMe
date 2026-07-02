@@ -301,3 +301,56 @@ test("configuration TUI edits and validates the allowed issue creator cache sett
 	invalid.handleInput("q");
 	assert.equal(invalidSaved.at(-1), undefined);
 });
+
+test("configuration TUI renderer exposes status, validation, editing, and selected category branches", () => {
+	const config = sampleConfig({
+		defaultLabels: ["bug", "agent-ready"],
+		defaultAssignees: ["octocat"],
+		defaultSkillPath: "skills/really/deep/path/to/SKILL.md",
+	});
+	const states = [
+		{ focus: "settings", selectedCategory: 1, selectedSettingByCategory: [0, 0, 0], status: "Setting updated" },
+		{ focus: "settings", selectedCategory: 1, selectedSettingByCategory: [0, 1, 0], validationError: "Invalid draft value" },
+		{ focus: "settings", selectedCategory: 2, selectedSettingByCategory: [0, 0, 0], editing: true, editBuffer: "skills/next/SKILL.md", editBufferSelected: true },
+		{ focus: "categories", selectedCategory: 2, selectedSettingByCategory: [0, 0, 0] },
+	];
+	for (const state of states) {
+		const lines = renderConfigTuiSnapshot("/tmp/issueme-project", config, 64, state);
+		assertVisibleLineBounds(lines, 64);
+	}
+	assert.match(renderConfigTuiSnapshot("/tmp/issueme-project", config, 64, states[0]).join("\n"), /Setting updated/);
+	assert.match(renderConfigTuiSnapshot("/tmp/issueme-project", config, 64, states[1]).join("\n"), /Invalid draft value/);
+	assert.match(renderConfigTuiSnapshot("/tmp/issueme-project", config, 64, states[2]).join("\n"), /Editing skills\/next\/SKILL\.md/);
+	assert.match(renderConfigTuiSnapshot("/tmp/issueme-project", config, 64, states[3]).join("\n"), /Workflow/);
+	assertVisibleLineBounds(renderConfigTuiSnapshot("/tmp/issueme-project", config, 1, { focus: "settings" }), 1);
+});
+
+test("configuration TUI list editing supports clear, search delete, explicit save, and no-change finish", async () => {
+	const root = await mkdtemp(join(tmpdir(), "issueme-config-tui-list-"));
+	const saved = [];
+	let renderRequests = 0;
+	const component = new IssueMeConfigTui(root, sampleConfig(), plainTheme, (result) => saved.push(result), () => { renderRequests += 1; }, {
+		focus: "settings",
+		selectedCategory: 1,
+		selectedSettingByCategory: [0, 0, 0],
+	});
+
+	component.handleInput("/");
+	for (const char of "labelx") component.handleInput(char);
+	component.handleInput("\x7f");
+	assert.match(component.render(80).join("\n"), /SEARCH LABEL/);
+	component.handleInput("\u001b");
+	component.handleInput("\r");
+	component.handleInput("\u0015");
+	component.handleInput("bug, bug, agent-ready");
+	component.handleInput("\r");
+	component.handleInput("s");
+
+	assert.deepEqual(saved.at(-1).defaultLabels, ["bug", "agent-ready"]);
+	assert.ok(renderRequests > 0);
+
+	const unchanged = [];
+	const unchangedComponent = new IssueMeConfigTui(root, sampleConfig(), plainTheme, (result) => unchanged.push(result), () => {}, { focus: "settings" });
+	unchangedComponent.handleInput("q");
+	assert.equal(unchanged.at(-1), undefined);
+});
