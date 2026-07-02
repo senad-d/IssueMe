@@ -206,6 +206,8 @@ function bulkResultSummary(index) {
 function oversizedToolDetails() {
 	const labels = Array.from({ length: MAX_TOOL_LABELS + 2 }, (_, index) => labelSummary(index));
 	const assignees = Array.from({ length: MAX_TOOL_ASSIGNEES + 2 }, (_, index) => assigneeSummary(index));
+	const issueLabels = Array.from({ length: MAX_TOOL_LABELS + 2 }, (_, index) => `label-${index}`);
+	const issueAssignees = Array.from({ length: MAX_TOOL_ASSIGNEES + 2 }, (_, index) => `user-${index}`);
 	const subIssues = Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => relationship(index + 10, { title: longText("Sub issue", 560) }));
 	return {
 		status: "oversized",
@@ -214,9 +216,9 @@ function oversizedToolDetails() {
 		removedPaths: Array.from({ length: MAX_TOOL_PATHS + 2 }, (_, index) => `issues/removed-${index}.json`),
 		changedFields: Array.from({ length: MAX_TOOL_CHANGED_FIELDS + 2 }, (_, index) => `changed-${index}`),
 		invalidFiles: Array.from({ length: MAX_TOOL_PATHS + 2 }, (_, index) => ({ path: `issues/invalid-${index}.json`, fileName: `invalid-${index}.json`, reason: "issue_file_invalid" })),
-		issue: issueSummary(1, { labels, assignees, parentIssue: relationship(99, { title: longText("Parent", 560) }), subIssues, subIssuesCount: subIssues.length + 10 }),
+		issue: issueSummary(1, { labels: issueLabels, assignees: issueAssignees, parentIssue: relationship(99, { title: longText("Parent", 560) }), subIssues, subIssuesCount: subIssues.length + 10 }),
 		comment: { id: 123, html_url: longText("https://github.com/comment", 560), body: "private body should be dropped" },
-		issues: Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => issueSummary(index + 1, { labels, assignees })),
+		issues: Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => issueSummary(index + 1, { labels: issueLabels, assignees: issueAssignees })),
 		labels,
 		milestones: Array.from({ length: MAX_TOOL_MILESTONES + 2 }, (_, index) => milestoneSummary(index + 1)),
 		assignees,
@@ -226,7 +228,7 @@ function oversizedToolDetails() {
 		projectItem: { id: longText("item", 560), type: longText("ISSUE", 160), project: projectSummary(2), issue: relationship(2, { title: longText("Issue item", 560) }) },
 		developmentLinks: Array.from({ length: MAX_TOOL_DEVELOPMENT_LINKS + 2 }, (_, index) => developmentLinkSummary(index + 1)),
 		bulkResults: Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => bulkResultSummary(index + 1)),
-		fileActions: Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => ({ action: "updated", path: `issues/${index}.json`, issue: issueSummary(index + 1, { labels, assignees }) })),
+		fileActions: Array.from({ length: MAX_TOOL_ISSUES + 2 }, (_, index) => ({ action: "updated", path: `issues/${index}.json`, issue: issueSummary(index + 1, { labels: issueLabels, assignees: issueAssignees }) })),
 		error: { code: "bad code!", message: `boom ${TOKEN}`, recoveryHint: `retry ${TOKEN}`, details: { token: TOKEN, password: TOKEN, body: "secret body", visible: longText("visible", 560) } },
 	};
 }
@@ -350,7 +352,7 @@ test("runtime tool text and detail bounding truncate all public detail collectio
 	assert.equal(bounded.projectFields[0].options.length, MAX_TOOL_PROJECT_FIELD_OPTIONS);
 	assert.equal(bounded.projectFields[0].iterations.length, MAX_TOOL_PROJECT_ITERATIONS);
 	assert.equal(bounded.projectFields[0].completedIterations.length, MAX_TOOL_PROJECT_ITERATIONS);
-	assert.equal(bounded.bulkResults[1].status, "failed");
+	assert.equal(bounded.bulkResults[0].status, "failed");
 	assert.equal(bounded.bulkResults[0].paths.length, MAX_TOOL_PATHS);
 	assert.equal(bounded.bulkResults[0].changedFields.length, MAX_TOOL_CHANGED_FIELDS);
 	assert.equal(bounded.error.details.token, "[REDACTED]");

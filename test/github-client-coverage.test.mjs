@@ -274,7 +274,7 @@ test("GitHubClient maps aborts, malformed responses, missing resources, and vali
 	const client = clientWith(async (input, init = {}) => {
 		const { url } = captureCall(calls, input, init);
 		if (url.pathname === "/repos/owner/repo/labels/missing" && init.method === "GET") return jsonResponse({ message: `not found ${TOKEN}` }, { status: 404, statusText: "Not Found" });
-		if (url.pathname === "/repos/owner/repo/labels/missing" && init.method === "DELETE") return jsonResponse({ message: `not found ${TOKEN}` }, { status: 404, statusText: "Not Found" });
+		if (url.pathname === "/repos/owner/repo/issues/1/labels/missing" && init.method === "DELETE") return jsonResponse({ message: `not found ${TOKEN}` }, { status: 404, statusText: "Not Found" });
 		if (url.pathname === "/repos/owner/repo/assignees/nobody" && init.method === "GET") return jsonResponse({ message: `not found ${TOKEN}` }, { status: 404, statusText: "Not Found" });
 		if (url.pathname === "/repos/owner/repo/issues/1" && init.method === "GET") return jsonResponse(issue(1));
 		throw new Error(`Unexpected request ${init.method} ${url.pathname}`);

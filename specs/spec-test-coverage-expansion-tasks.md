@@ -4,7 +4,7 @@
 
 Create an ordered backlog of test-only implementation tasks to increase IssueMe repository coverage from the current Sonar-reported baseline of about `42.9%` coverage. This plan is investigative and implementation-oriented: it identifies what tests to add, where to add them, and how to validate coverage gains without changing production behavior yet.
 
-Task type: chore  
+Task type: chore
 Complexity: complex
 
 ## Objective
@@ -128,7 +128,7 @@ IMPORTANT: Execute every step in order, top to bottom. Mark each task with `x` o
 
 ### 1. Confirm and Record the Coverage Baseline
 
-- [ ] Re-run the current test suite with coverage before adding tests.
+- [x] Re-run the current test suite with coverage before adding tests.
 
 #### Why
 
@@ -156,9 +156,17 @@ A fresh baseline prevents measuring against stale local coverage and helps ident
   - top 10 files by missing lines,
   - Sonar coverage if available.
 
+#### Implementation log
+
+- Baseline command: `npm run test:coverage` passed before new tests with `264` tests passing.
+- Local baseline summary: lines `33.21%`, branches `81.05%`, functions `55.93%`.
+- Baseline top 10 missing-line files: `src/tools/runtime.ts` (`1018`), `src/github/client.ts` (`735`), `src/commands/config-tui.ts` (`666`), `src/issues/store.ts` (`562`), `src/github/projects-client.ts` (`559`), `src/tools/sub-issue.ts` (`504`), `src/tools/bulk-issues.ts` (`368`), `src/tools/manage-milestone.ts` (`330`), `src/commands/issueme-command.ts` (`308`), `src/tools/projects.ts` (`296`).
+- Sonar was not re-queried during this local pass; the latest known spec baseline remains `42.9`.
+- After tasks 2-5, `npm run test:coverage` passed with `283` tests. Local summary: lines `33.15%`, branches `84.18%`, functions `56.38%`. Targeted branch/function coverage increased; V8 TypeScript line accounting shifted line totals for some files.
+
 ### 2. Add Runtime Helper and Truncation Tests
 
-- [ ] Add focused tests for runtime result normalization, truncation, safe errors, and creator-scope behavior.
+- [x] Add focused tests for runtime result normalization, truncation, safe errors, and creator-scope behavior.
 
 #### Why
 
@@ -218,7 +226,7 @@ Create or extend `test/runtime-coverage.test.mjs` with cases for:
 
 ### 3. Add Projects v2 Client Normalizer Tests
 
-- [ ] Add direct unit tests for Projects v2 query builders, validators, limit normalizers, and field value normalization.
+- [x] Add direct unit tests for Projects v2 query builders, validators, limit normalizers, and field value normalization.
 
 #### Why
 
@@ -263,7 +271,7 @@ Create or extend `test/projects-client-normalizers.test.mjs` with cases for:
 
 ### 4. Add Direct GitHub Client Method Tests
 
-- [ ] Add fake-fetch tests for GitHub client methods that remain weakly covered through tool-level tests.
+- [x] Add fake-fetch tests for GitHub client methods that remain weakly covered through tool-level tests.
 
 #### Why
 
@@ -307,7 +315,7 @@ Create or extend `test/github-client-coverage.test.mjs` with a reusable fake-fet
 
 ### 5. Add Issue Store Validation and Format Tests
 
-- [ ] Add filesystem-backed tests for local cache validation, invalid records, duplicate lookups, relationship metadata, and safe cleanup.
+- [x] Add filesystem-backed tests for local cache validation, invalid records, duplicate lookups, relationship metadata, and safe cleanup.
 
 #### Why
 
