@@ -456,6 +456,13 @@ interface IssueValidationFailure {
 function validateIssueRecord(value: unknown): IssueValidationFailure | undefined {
 	if (!isObject(value)) return validationFailure("issue_file_schema_invalid", "root");
 	const record = value as Partial<IssueRecord>;
+	return validateIssueRecordCore(record)
+		?? validateIssueRecordRelationships(record)
+		?? validateIssueRecordComments(record)
+		?? validateIssueRecordUrlsAndTimestamps(record);
+}
+
+function validateIssueRecordCore(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
 	if (record.schemaVersion !== 1) return validationFailure("issue_file_schema_version_invalid", "schemaVersion");
 	if (!isRepositoryName(record.repository)) return validationFailure("issue_file_repository_invalid", "repository");
 	if (typeof record.number !== "number" || !Number.isSafeInteger(record.number) || record.number <= 0) return validationFailure("issue_file_number_invalid", "number");
@@ -466,20 +473,38 @@ function validateIssueRecord(value: unknown): IssueValidationFailure | undefined
 	if (!isLabelList(record.labels)) return validationFailure("issue_file_labels_invalid", "labels");
 	if (!isAssigneeList(record.assignees)) return validationFailure("issue_file_assignees_invalid", "assignees");
 	if (record.milestone !== null && !isNonEmptySafeString(record.milestone)) return validationFailure("issue_file_milestone_invalid", "milestone");
+	return undefined;
+}
+
+function validateIssueRecordRelationships(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
 	if (record.parent_issue !== undefined && record.parent_issue !== null && !isIssueRelationshipSummary(record.parent_issue)) return validationFailure("issue_file_relationship_invalid", "parent_issue");
 	if (record.sub_issues !== undefined && !isIssueRelationshipSummaryList(record.sub_issues)) return validationFailure("issue_file_relationship_invalid", "sub_issues");
 	if (record.sub_issues_count !== undefined && !isNonNegativeSafeInteger(record.sub_issues_count)) return validationFailure("issue_file_relationship_invalid", "sub_issues_count");
 	if (typeof record.sub_issues_count === "number" && record.sub_issues !== undefined && record.sub_issues_count < record.sub_issues.length) return validationFailure("issue_file_relationship_invalid", "sub_issues_count");
+	return undefined;
+}
+
+function validateIssueRecordComments(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
 	if (!Array.isArray(record.comments)) return validationFailure("issue_file_comments_invalid", "comments");
+	const metadataFailure = validateIssueRecordCommentMetadata(record);
+	if (metadataFailure) return metadataFailure;
+	for (let index = 0; index < record.comments.length; index += 1) {
+		const commentFailure = validateIssueCommentRecord(record.comments[index], record.repository ?? "", record.number ?? 0, index);
+		if (commentFailure) return commentFailure;
+	}
+	return undefined;
+}
+
+function validateIssueRecordCommentMetadata(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
 	if (record.comments_truncated !== undefined && typeof record.comments_truncated !== "boolean") return validationFailure("issue_file_comments_metadata_invalid", "comments_truncated");
 	if (record.comments_count !== undefined && !isNonNegativeSafeInteger(record.comments_count)) return validationFailure("issue_file_comments_metadata_invalid", "comments_count");
 	if (record.comments_fetch_limit !== undefined && !isNonNegativeSafeInteger(record.comments_fetch_limit)) return validationFailure("issue_file_comments_metadata_invalid", "comments_fetch_limit");
-	if (typeof record.comments_count === "number" && record.comments_count < record.comments.length) return validationFailure("issue_file_comments_metadata_invalid", "comments_count");
-	for (let index = 0; index < record.comments.length; index += 1) {
-		const commentFailure = validateIssueCommentRecord(record.comments[index], record.repository, record.number, index);
-		if (commentFailure) return commentFailure;
-	}
-	if (!isGitHubIssueUrl(record.html_url, record.repository, record.number)) return validationFailure("issue_file_url_invalid", "html_url");
+	if (typeof record.comments_count === "number" && record.comments && record.comments_count < record.comments.length) return validationFailure("issue_file_comments_metadata_invalid", "comments_count");
+	return undefined;
+}
+
+function validateIssueRecordUrlsAndTimestamps(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
+	if (!isGitHubIssueUrl(record.html_url, record.repository ?? "", record.number ?? 0)) return validationFailure("issue_file_url_invalid", "html_url");
 	if (!isIsoTimestamp(record.created_at)) return validationFailure("issue_file_timestamp_invalid", "created_at");
 	if (!isIsoTimestamp(record.updated_at)) return validationFailure("issue_file_timestamp_invalid", "updated_at");
 	if (record.closed_at !== null && !isIsoTimestamp(record.closed_at)) return validationFailure("issue_file_timestamp_invalid", "closed_at");
@@ -590,28 +615,29 @@ function ownerRepoMatches(repository: string, owner: string | undefined, repo: s
 }
 
 function orderIssueRecord(record: IssueRecord): IssueRecord {
-	return {
+	const ordered: Partial<IssueRecord> = {
 		schemaVersion: 1,
 		repository: record.repository,
 		number: record.number,
 		title: record.title,
 		state: record.state,
-		...(record.creator !== undefined ? { creator: record.creator } : {}),
-		body: record.body,
-		labels: record.labels,
-		assignees: record.assignees,
-		milestone: record.milestone,
-		...(record.parent_issue !== undefined ? { parent_issue: record.parent_issue } : {}),
-		...(record.sub_issues !== undefined ? { sub_issues: record.sub_issues } : {}),
-		...(record.sub_issues_count !== undefined ? { sub_issues_count: record.sub_issues_count } : {}),
-		comments: record.comments,
-		...(record.comments_truncated !== undefined ? { comments_truncated: record.comments_truncated } : {}),
-		...(record.comments_count !== undefined ? { comments_count: record.comments_count } : {}),
-		...(record.comments_fetch_limit !== undefined ? { comments_fetch_limit: record.comments_fetch_limit } : {}),
-		html_url: record.html_url,
-		created_at: record.created_at,
-		updated_at: record.updated_at,
-		closed_at: record.closed_at,
-		synced_at: record.synced_at,
 	};
+	if (record.creator !== undefined) ordered.creator = record.creator;
+	ordered.body = record.body;
+	ordered.labels = record.labels;
+	ordered.assignees = record.assignees;
+	ordered.milestone = record.milestone;
+	if (record.parent_issue !== undefined) ordered.parent_issue = record.parent_issue;
+	if (record.sub_issues !== undefined) ordered.sub_issues = record.sub_issues;
+	if (record.sub_issues_count !== undefined) ordered.sub_issues_count = record.sub_issues_count;
+	ordered.comments = record.comments;
+	if (record.comments_truncated !== undefined) ordered.comments_truncated = record.comments_truncated;
+	if (record.comments_count !== undefined) ordered.comments_count = record.comments_count;
+	if (record.comments_fetch_limit !== undefined) ordered.comments_fetch_limit = record.comments_fetch_limit;
+	ordered.html_url = record.html_url;
+	ordered.created_at = record.created_at;
+	ordered.updated_at = record.updated_at;
+	ordered.closed_at = record.closed_at;
+	ordered.synced_at = record.synced_at;
+	return ordered as IssueRecord;
 }

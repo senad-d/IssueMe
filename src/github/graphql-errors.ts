@@ -4,29 +4,40 @@ import { isObject } from "./shared.ts";
 import type { GitHubGraphQLErrorContext } from "./transport.ts";
 
 export function mapGitHubGraphQLError(context: GitHubGraphQLErrorContext): GitHubApiError | undefined {
-	if (context.status === 403) {
-		if (isSubIssueOperation(context.operationName)) return subIssuePermissionError(context.operationName, context.detail);
-		if (isProjectV2Operation(context.operationName)) return projectV2PermissionError(context.operationName, context.detail);
-		if (isDevelopmentLinkOperation(context.operationName)) return developmentLinksPermissionError(context.detail);
-		return undefined;
-	}
+	if (context.status === 403) return mapForbiddenGraphQLStatusError(context);
+	return mapGraphQLErrorDetails(context, context.errors ?? []);
+}
 
-	const errors = context.errors ?? [];
-	if (isSubIssueOperation(context.operationName) && errors.some(isForbiddenGraphQLError)) {
-		return subIssuePermissionError(context.operationName, context.detail);
-	}
-	if (isSubIssueOperation(context.operationName) && errors.some(isUnsupportedSubIssueGraphQLError)) {
-		return subIssueUnsupportedError(context.operationName, context.detail);
-	}
-	if (isProjectV2Operation(context.operationName) && errors.some(isForbiddenGraphQLError)) {
-		return projectV2PermissionError(context.operationName, context.detail);
-	}
-	if (isDevelopmentLinkOperation(context.operationName) && errors.some(isForbiddenGraphQLError)) {
-		return developmentLinksPermissionError(context.detail);
-	}
-	if (isDevelopmentLinkOperation(context.operationName) && errors.some(isUnsupportedDevelopmentLinksGraphQLError)) {
-		return developmentLinksUnsupportedError(context.detail);
-	}
+function mapForbiddenGraphQLStatusError(context: GitHubGraphQLErrorContext): GitHubApiError | undefined {
+	const operationName = context.operationName;
+	if (isSubIssueOperation(operationName)) return subIssuePermissionError(operationName, context.detail);
+	if (isProjectV2Operation(operationName)) return projectV2PermissionError(operationName, context.detail);
+	if (isDevelopmentLinkOperation(operationName)) return developmentLinksPermissionError(context.detail);
+	return undefined;
+}
+
+function mapGraphQLErrorDetails(context: GitHubGraphQLErrorContext, errors: unknown[]): GitHubApiError | undefined {
+	const operationName = context.operationName;
+	if (isSubIssueOperation(operationName)) return mapSubIssueGraphQLError(operationName, context.detail, errors);
+	if (isProjectV2Operation(operationName)) return mapProjectV2GraphQLError(operationName, context.detail, errors);
+	if (isDevelopmentLinkOperation(operationName)) return mapDevelopmentLinkGraphQLError(context.detail, errors);
+	return undefined;
+}
+
+function mapSubIssueGraphQLError(operationName: string, detail: string, errors: unknown[]): GitHubApiError | undefined {
+	if (errors.some(isForbiddenGraphQLError)) return subIssuePermissionError(operationName, detail);
+	if (errors.some(isUnsupportedSubIssueGraphQLError)) return subIssueUnsupportedError(operationName, detail);
+	return undefined;
+}
+
+function mapProjectV2GraphQLError(operationName: string, detail: string, errors: unknown[]): GitHubApiError | undefined {
+	if (errors.some(isForbiddenGraphQLError)) return projectV2PermissionError(operationName, detail);
+	return undefined;
+}
+
+function mapDevelopmentLinkGraphQLError(detail: string, errors: unknown[]): GitHubApiError | undefined {
+	if (errors.some(isForbiddenGraphQLError)) return developmentLinksPermissionError(detail);
+	if (errors.some(isUnsupportedDevelopmentLinksGraphQLError)) return developmentLinksUnsupportedError(detail);
 	return undefined;
 }
 
@@ -51,14 +62,15 @@ function isDevelopmentLinkOperation(operationName: string): boolean {
 	return operationName === "IssueMeListIssueDevelopmentLinks";
 }
 
+function subIssueOperationActionName(operationName: string): string {
+	if (operationName === "IssueMeAddSubIssue") return "AddSubIssue";
+	if (operationName === "IssueMeRemoveSubIssue") return "RemoveSubIssue";
+	if (operationName === "IssueMeReprioritizeSubIssue") return "ReprioritizeSubIssue";
+	return "ListSubIssues";
+}
+
 function subIssuePermissionError(operationName: string, detail: string): GitHubApiError {
-	const actionName = operationName === "IssueMeAddSubIssue"
-		? "AddSubIssue"
-		: operationName === "IssueMeRemoveSubIssue"
-			? "RemoveSubIssue"
-			: operationName === "IssueMeReprioritizeSubIssue"
-				? "ReprioritizeSubIssue"
-				: "ListSubIssues";
+	const actionName = subIssueOperationActionName(operationName);
 	return new GitHubApiError(
 		`GitHub GraphQL ${actionName} was forbidden. The GH_TOKEN/GITHUB_TOKEN user or app lacks permission for native sub-issues on this repository. IssueMe did not fall back to body-only references. GitHub detail: ${detail}`,
 		{
@@ -81,13 +93,20 @@ function subIssueUnsupportedError(operationName: string, detail: string): GitHub
 	);
 }
 
+function projectV2PermissionAction(operationName: string): string {
+	if (operationName === "IssueMeListProjectsV2") return "project discovery";
+	if (operationName === "IssueMeGetProjectV2FieldsById" || operationName === "IssueMeGetProjectV2FieldsByNumber") return "project field discovery";
+	return "project item management";
+}
+
+function projectV2PermissionRequirement(action: string): string {
+	if (action === "project item management") return "read/write permission";
+	return "read permission";
+}
+
 function projectV2PermissionError(operationName: string, detail: string): GitHubApiError {
-	const action = operationName === "IssueMeListProjectsV2"
-		? "project discovery"
-		: operationName === "IssueMeGetProjectV2FieldsById" || operationName === "IssueMeGetProjectV2FieldsByNumber"
-			? "project field discovery"
-			: "project item management";
-	const permission = action === "project item management" ? "read/write permission" : "read permission";
+	const action = projectV2PermissionAction(operationName);
+	const permission = projectV2PermissionRequirement(action);
 	return new GitHubApiError(
 		`GitHub GraphQL Projects v2 ${action} was forbidden. The GH_TOKEN/GITHUB_TOKEN user or app lacks access to the requested repository, organization, or user project scope, or lacks ${permission} for GitHub Projects. GitHub detail: ${detail}`,
 		{

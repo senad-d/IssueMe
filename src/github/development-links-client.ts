@@ -150,26 +150,58 @@ function normalizeDevelopmentPullRequest(
 	referenceType: string,
 	metadata: { repository: string; willCloseTarget?: boolean; closedBy?: boolean },
 ): ToolIssueDevelopmentLinkSummary | undefined {
-	const number = typeof value.number === "number" && Number.isSafeInteger(value.number) && value.number > 0 ? value.number : undefined;
-	const title = typeof value.title === "string" && value.title.trim() ? value.title.trim() : undefined;
-	if (number === undefined || !title) return undefined;
-	const state = normalizeGraphQLPullRequestState(value.state, value.merged);
-	const url = typeof value.url === "string" && value.url.trim() ? value.url.trim() : `https://github.com/${metadata.repository}/pull/${number}`;
-	const branchName = typeof value.headRefName === "string" && value.headRefName.trim() ? value.headRefName.trim() : undefined;
-	const baseBranchName = typeof value.baseRefName === "string" && value.baseRefName.trim() ? value.baseRefName.trim() : undefined;
+	const summary = normalizeDevelopmentPullRequestBase(value, referenceType, metadata.repository);
+	if (!summary) return undefined;
+	applyDevelopmentPullRequestFields(summary, value, metadata);
+	return summary;
+}
+
+function normalizeDevelopmentPullRequestBase(
+	value: Record<string, unknown>,
+	referenceType: string,
+	repository: string,
+): ToolIssueDevelopmentLinkSummary | undefined {
+	const number = normalizePositiveSafeInteger(value.number);
+	const title = normalizeNonBlankText(value.title);
+	if (number === undefined || title === undefined) return undefined;
 	return {
 		type: "pull_request",
 		referenceTypes: [referenceType],
 		number,
 		title,
-		...(state ? { state } : {}),
-		html_url: url,
-		...(branchName ? { branchName } : {}),
-		...(baseBranchName ? { baseBranchName } : {}),
-		...(typeof value.isDraft === "boolean" ? { isDraft: value.isDraft } : {}),
-		...(metadata.willCloseTarget !== undefined ? { willCloseTarget: metadata.willCloseTarget } : {}),
-		...(metadata.closedBy !== undefined ? { closedBy: metadata.closedBy } : {}),
+		html_url: normalizeNonBlankText(value.url) ?? `https://github.com/${repository}/pull/${number}`,
 	};
+}
+
+function applyDevelopmentPullRequestFields(
+	summary: ToolIssueDevelopmentLinkSummary,
+	value: Record<string, unknown>,
+	metadata: { willCloseTarget?: boolean; closedBy?: boolean },
+): void {
+	const state = normalizeGraphQLPullRequestState(value.state, value.merged);
+	const branchName = normalizeNonBlankText(value.headRefName);
+	const baseBranchName = normalizeNonBlankText(value.baseRefName);
+	if (state) summary.state = state;
+	if (branchName) summary.branchName = branchName;
+	if (baseBranchName) summary.baseBranchName = baseBranchName;
+	if (typeof value.isDraft === "boolean") summary.isDraft = value.isDraft;
+	applyIssueDevelopmentMetadata(summary, metadata);
+}
+
+function applyIssueDevelopmentMetadata(
+	summary: ToolIssueDevelopmentLinkSummary,
+	metadata: { willCloseTarget?: boolean; closedBy?: boolean },
+): void {
+	if (typeof metadata.willCloseTarget === "boolean") summary.willCloseTarget = metadata.willCloseTarget;
+	if (typeof metadata.closedBy === "boolean") summary.closedBy = metadata.closedBy;
+}
+
+function normalizePositiveSafeInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function normalizeNonBlankText(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function normalizeDevelopmentCommit(
@@ -181,15 +213,15 @@ function normalizeDevelopmentCommit(
 	const url = typeof value.url === "string" && value.url.trim() ? value.url.trim() : undefined;
 	if (!oid && !url) return undefined;
 	const message = typeof value.messageHeadline === "string" && value.messageHeadline.trim() ? value.messageHeadline.trim() : undefined;
-	return {
+	const summary: ToolIssueDevelopmentLinkSummary = {
 		type: "commit",
 		referenceTypes: [referenceType],
-		...(url ? { html_url: url } : {}),
-		...(oid ? { commitOid: oid } : {}),
-		...(message ? { message } : {}),
-		...(metadata.willCloseTarget !== undefined ? { willCloseTarget: metadata.willCloseTarget } : {}),
-		...(metadata.closedBy !== undefined ? { closedBy: metadata.closedBy } : {}),
 	};
+	if (url) summary.html_url = url;
+	if (oid) summary.commitOid = oid;
+	if (message) summary.message = message;
+	applyIssueDevelopmentMetadata(summary, metadata);
+	return summary;
 }
 
 function mergeIssueDevelopmentLink(links: Map<string, ToolIssueDevelopmentLinkSummary>, link: ToolIssueDevelopmentLinkSummary): void {

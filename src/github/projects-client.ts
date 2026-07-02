@@ -5,7 +5,8 @@ import { isValidIsoDateOnly } from "../utils/date.ts";
 import { normalizeBoundedInteger, normalizeOptionalGitHubOpaqueId, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 import { normalizeGraphQLIssueState } from "./graphql-normalizers.ts";
 import type { GitHubProjectV2AddIssueInput, GitHubProjectV2FieldValueInput, GitHubProjectV2ItemMutationResult, GitHubProjectV2Scope } from "./client.ts";
-import { connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject } from "./shared.ts";
+import { isObject } from "./shared.ts";
+export { connectionEndCursor, connectionHasNextPage, extractConnectionNodes } from "./shared.ts";
 
 interface ProjectV2ConnectionData {
 	repository?: unknown;
@@ -41,6 +42,20 @@ interface ProjectV2AddValidationPolicy {
 interface ProjectV2FieldLimits {
 	optionLimit: number;
 	iterationLimit: number;
+}
+
+interface ProjectV2FieldBase {
+	id: string;
+	name: string;
+	dataType: string;
+}
+
+interface ProjectV2FieldCollections {
+	shownOptions?: ToolProjectFieldOptionSummary[];
+	shownIterations?: ToolProjectIterationSummary[];
+	shownCompletedIterations?: ToolProjectIterationSummary[];
+	truncated: boolean;
+	truncation: Record<string, unknown>;
 }
 
 // Bound Projects v2 discovery work while still allowing closed-board filtering to scan later pages.
@@ -210,7 +225,7 @@ function projectV2ItemSummaryFragment(): string {
 }
 
 export function extractProjectV2Connection(data: ProjectV2ConnectionData, scope: GitHubProjectV2Scope): unknown {
-	const ownerNode = scope === "repository" ? data.repository : scope === "organization" ? data.organization : data.user;
+	const ownerNode = projectV2OwnerNode(data, scope);
 	if (!isObject(ownerNode)) {
 		throw new GitHubApiError("GitHub GraphQL Projects v2 query returned an inaccessible owner or unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
@@ -219,11 +234,17 @@ export function extractProjectV2Connection(data: ProjectV2ConnectionData, scope:
 
 export function extractProjectV2FieldProject(data: ProjectV2FieldsData, input: { projectId?: string; scope: GitHubProjectV2Scope }): unknown {
 	if (input.projectId) return data.node;
-	const ownerNode = input.scope === "repository" ? data.repository : input.scope === "organization" ? data.organization : data.user;
+	const ownerNode = projectV2OwnerNode(data, input.scope);
 	if (!isObject(ownerNode)) {
 		throw new GitHubApiError("GitHub GraphQL Projects v2 field query returned an inaccessible owner or unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
 	return ownerNode.projectV2;
+}
+
+function projectV2OwnerNode(data: ProjectV2ConnectionData | ProjectV2FieldsData, scope: GitHubProjectV2Scope): unknown {
+	if (scope === "repository") return data.repository;
+	if (scope === "organization") return data.organization;
+	return data.user;
 }
 
 export function normalizeProjectV2OutputId(value: unknown, field: string): string | undefined {
@@ -274,32 +295,83 @@ function normalizeProjectV2OwnerSummary(value: unknown): { owner: string; ownerT
 
 export function normalizeProjectV2FieldSummary(value: unknown, limits: ProjectV2FieldLimits): ToolProjectFieldSummary | undefined {
 	if (!isObject(value)) return undefined;
+	const base = normalizeProjectV2FieldBase(value);
+	if (!base) return undefined;
+	const collections = normalizeProjectV2FieldCollections(value, limits);
+	return buildProjectV2FieldSummary(value, base, collections);
+}
+
+function normalizeProjectV2FieldBase(value: Record<string, unknown>): ProjectV2FieldBase | undefined {
 	const id = normalizeProjectV2OutputId(value.id, "fieldId") ?? "";
 	const name = typeof value.name === "string" ? value.name.trim() : "";
 	const dataType = typeof value.dataType === "string" ? value.dataType.trim() : "";
 	if (!id || !name || !dataType) return undefined;
-	const options = Array.isArray(value.options) ? value.options.map(normalizeProjectV2FieldOption).filter((option): option is ToolProjectFieldOptionSummary => option !== undefined) : undefined;
+	return { id, name, dataType };
+}
+
+function normalizeProjectV2FieldCollections(value: Record<string, unknown>, limits: ProjectV2FieldLimits): ProjectV2FieldCollections {
+	const options = normalizeProjectV2FieldOptions(value.options);
 	const configuration = isObject(value.configuration) ? value.configuration : undefined;
-	const iterations = Array.isArray(configuration?.iterations) ? configuration.iterations.map(normalizeProjectV2Iteration).filter((iteration): iteration is ToolProjectIterationSummary => iteration !== undefined) : undefined;
-	const completedIterations = Array.isArray(configuration?.completedIterations) ? configuration.completedIterations.map(normalizeProjectV2Iteration).filter((iteration): iteration is ToolProjectIterationSummary => iteration !== undefined) : undefined;
+	const iterations = normalizeProjectV2Iterations(configuration?.iterations);
+	const completedIterations = normalizeProjectV2Iterations(configuration?.completedIterations);
 	const shownOptions = options?.slice(0, limits.optionLimit);
 	const shownIterations = iterations?.slice(0, limits.iterationLimit);
 	const shownCompletedIterations = completedIterations?.slice(0, limits.iterationLimit);
+	const truncation = projectV2FieldTruncation(options, iterations, completedIterations, shownOptions, shownIterations, shownCompletedIterations, limits);
+	return { shownOptions, shownIterations, shownCompletedIterations, truncated: Object.keys(truncation).length > 0, truncation };
+}
+
+function normalizeProjectV2FieldOptions(value: unknown): ToolProjectFieldOptionSummary[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	return value.map(normalizeProjectV2FieldOption).filter((option): option is ToolProjectFieldOptionSummary => option !== undefined);
+}
+
+function normalizeProjectV2Iterations(value: unknown): ToolProjectIterationSummary[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	return value.map(normalizeProjectV2Iteration).filter((iteration): iteration is ToolProjectIterationSummary => iteration !== undefined);
+}
+
+function projectV2FieldTruncation(
+	options: ToolProjectFieldOptionSummary[] | undefined,
+	iterations: ToolProjectIterationSummary[] | undefined,
+	completedIterations: ToolProjectIterationSummary[] | undefined,
+	shownOptions: ToolProjectFieldOptionSummary[] | undefined,
+	shownIterations: ToolProjectIterationSummary[] | undefined,
+	shownCompletedIterations: ToolProjectIterationSummary[] | undefined,
+	limits: ProjectV2FieldLimits,
+): Record<string, unknown> {
 	const truncation: Record<string, unknown> = {};
-	if (options && options.length > limits.optionLimit) truncation.options = { shown: shownOptions?.length ?? 0, total: options.length, max: limits.optionLimit };
-	if (iterations && iterations.length > limits.iterationLimit) truncation.iterations = { shown: shownIterations?.length ?? 0, total: iterations.length, max: limits.iterationLimit };
-	if (completedIterations && completedIterations.length > limits.iterationLimit) truncation.completedIterations = { shown: shownCompletedIterations?.length ?? 0, total: completedIterations.length, max: limits.iterationLimit };
-	const truncated = Object.keys(truncation).length > 0;
-	return {
-		id,
-		name,
-		dataType,
-		...(typeof value.__typename === "string" ? { type: value.__typename } : {}),
-		...(shownOptions ? { options: shownOptions } : {}),
-		...(shownIterations ? { iterations: shownIterations } : {}),
-		...(shownCompletedIterations ? { completedIterations: shownCompletedIterations } : {}),
-		...(truncated ? { truncated: true, truncation } : {}),
-	};
+	addProjectV2FieldTruncation(truncation, "options", options, shownOptions, limits.optionLimit);
+	addProjectV2FieldTruncation(truncation, "iterations", iterations, shownIterations, limits.iterationLimit);
+	addProjectV2FieldTruncation(truncation, "completedIterations", completedIterations, shownCompletedIterations, limits.iterationLimit);
+	return truncation;
+}
+
+function addProjectV2FieldTruncation(
+	truncation: Record<string, unknown>,
+	key: string,
+	values: unknown[] | undefined,
+	shownValues: unknown[] | undefined,
+	limit: number,
+): void {
+	if (values && values.length > limit) truncation[key] = { shown: shownValues?.length ?? 0, total: values.length, max: limit };
+}
+
+function buildProjectV2FieldSummary(value: Record<string, unknown>, base: ProjectV2FieldBase, collections: ProjectV2FieldCollections): ToolProjectFieldSummary {
+	const summary: ToolProjectFieldSummary = { ...base };
+	if (typeof value.__typename === "string") summary.type = value.__typename;
+	applyProjectV2FieldCollections(summary, collections);
+	return summary;
+}
+
+function applyProjectV2FieldCollections(summary: ToolProjectFieldSummary, collections: ProjectV2FieldCollections): void {
+	if (collections.shownOptions !== undefined) summary.options = collections.shownOptions;
+	if (collections.shownIterations !== undefined) summary.iterations = collections.shownIterations;
+	if (collections.shownCompletedIterations !== undefined) summary.completedIterations = collections.shownCompletedIterations;
+	if (collections.truncated) {
+		summary.truncated = true;
+		summary.truncation = collections.truncation;
+	}
 }
 
 export function normalizeProjectV2ItemMutationResult(data: ProjectV2ItemMutationData, field: "addProjectV2ItemById" | "updateProjectV2ItemFieldValue", repository: string): GitHubProjectV2ItemMutationResult {
@@ -400,36 +472,57 @@ export function assertProjectV2ItemTargetsIssue(
 	repository: string,
 ): void {
 	const item = data.node;
-	if (!isObject(item)) {
-		throw new IssueMeError(
-			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
-			"itemId must resolve to an accessible GitHub Projects v2 item before IssueMe updates a project field.",
-			{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber },
-		);
-	}
+	if (!isObject(item)) throw inaccessibleProjectV2ItemError(input);
+	const actualProjectId = requireProjectV2ItemProjectId(item);
+	if (actualProjectId !== input.projectId) throw projectV2ItemProjectMismatchError(input, actualProjectId);
+	const content = requireProjectV2ItemIssueContent(item, input);
+	const issue = normalizeProjectV2ItemIssueValidation(content);
+	if (issue.actualRepository.toLowerCase() !== repository.toLowerCase()) throw projectV2ItemRepositoryMismatchError(input, repository, issue.actualRepository);
+	if (issue.actualIssueNumber !== input.issueNumber) throw projectV2ItemIssueNumberMismatchError(input, issue.actualIssueNumber);
+	if (issue.state !== "open") throw new ClosedIssueMutationError(issue.actualIssueNumber, issue.state, projectV2ItemContentToSafeSummary(repository, content, issue.actualIssueNumber, issue.state));
+}
 
+function inaccessibleProjectV2ItemError(input: { projectId: string; itemId: string; issueNumber: number }): IssueMeError {
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId must resolve to an accessible GitHub Projects v2 item before IssueMe updates a project field.",
+		{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber },
+	);
+}
+
+function requireProjectV2ItemProjectId(item: Record<string, unknown>): string {
 	const project = isObject(item.project) ? item.project : undefined;
 	const actualProjectId = normalizeProjectV2OutputId(project?.id, "projectId");
 	if (!actualProjectId) {
 		throw new GitHubApiError("GitHub GraphQL ProjectV2 item validation returned incomplete project data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
-	if (actualProjectId !== input.projectId) {
-		throw new IssueMeError(
-			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
-			"itemId must belong to projectId before IssueMe updates a project field.",
-			{ itemId: input.itemId, projectId: input.projectId, actualProjectId, issueNumber: input.issueNumber },
-		);
-	}
+	return actualProjectId;
+}
 
+function projectV2ItemProjectMismatchError(input: { projectId: string; itemId: string; issueNumber: number }, actualProjectId: string): IssueMeError {
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId must belong to projectId before IssueMe updates a project field.",
+		{ itemId: input.itemId, projectId: input.projectId, actualProjectId, issueNumber: input.issueNumber },
+	);
+}
+
+function requireProjectV2ItemIssueContent(item: Record<string, unknown>, input: { projectId: string; itemId: string; issueNumber: number }): Record<string, unknown> {
 	const content = item.content;
-	if (!isObject(content) || content.__typename !== "Issue") {
-		throw new IssueMeError(
-			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
-			"itemId must represent an issue item before IssueMe updates a project field.",
-			{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, contentType: isObject(content) && typeof content.__typename === "string" ? content.__typename : "unknown" },
-		);
-	}
+	if (isObject(content) && content.__typename === "Issue") return content;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId must represent an issue item before IssueMe updates a project field.",
+		{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, contentType: projectV2ItemContentType(content) },
+	);
+}
 
+function projectV2ItemContentType(content: unknown): string {
+	if (isObject(content) && typeof content.__typename === "string") return content.__typename;
+	return "unknown";
+}
+
+function normalizeProjectV2ItemIssueValidation(content: Record<string, unknown>): { actualRepository: string; actualIssueNumber: number; state: "open" | "closed" } {
 	const repositoryNode = isObject(content.repository) ? content.repository : undefined;
 	const actualRepository = typeof repositoryNode?.nameWithOwner === "string" ? repositoryNode.nameWithOwner.trim() : undefined;
 	const actualIssueNumber = typeof content.number === "number" && Number.isSafeInteger(content.number) && content.number > 0 ? content.number : undefined;
@@ -437,23 +530,23 @@ export function assertProjectV2ItemTargetsIssue(
 	if (!actualRepository || actualIssueNumber === undefined || !state) {
 		throw new GitHubApiError("GitHub GraphQL ProjectV2 item validation returned incomplete issue data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
-	if (actualRepository.toLowerCase() !== repository.toLowerCase()) {
-		throw new IssueMeError(
-			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
-			"itemId must represent an issue in the resolved current repository before IssueMe updates a project field.",
-			{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, repository, actualRepository },
-		);
-	}
-	if (actualIssueNumber !== input.issueNumber) {
-		throw new IssueMeError(
-			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
-			"itemId must represent the requested issueNumber before IssueMe updates a project field.",
-			{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, actualIssueNumber },
-		);
-	}
-	if (state !== "open") {
-		throw new ClosedIssueMutationError(actualIssueNumber, state, projectV2ItemContentToSafeSummary(repository, content, actualIssueNumber, state));
-	}
+	return { actualRepository, actualIssueNumber, state };
+}
+
+function projectV2ItemRepositoryMismatchError(input: { projectId: string; itemId: string; issueNumber: number }, repository: string, actualRepository: string): IssueMeError {
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId must represent an issue in the resolved current repository before IssueMe updates a project field.",
+		{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, repository, actualRepository },
+	);
+}
+
+function projectV2ItemIssueNumberMismatchError(input: { projectId: string; itemId: string; issueNumber: number }, actualIssueNumber: number): IssueMeError {
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId must represent the requested issueNumber before IssueMe updates a project field.",
+		{ itemId: input.itemId, projectId: input.projectId, issueNumber: input.issueNumber, actualIssueNumber },
+	);
 }
 
 function isDefaultAllowedProjectV2AddOwner(project: ToolProjectSummary, repository: GitHubRepository): boolean {
@@ -516,7 +609,10 @@ function normalizeProjectV2Iteration(value: unknown): ToolProjectIterationSummar
 	if (!id || !title) return undefined;
 	const startDate = typeof value.startDate === "string" && value.startDate.trim() ? value.startDate.trim() : undefined;
 	const duration = typeof value.duration === "number" && Number.isSafeInteger(value.duration) && value.duration > 0 ? value.duration : undefined;
-	return { id, title, ...(startDate ? { startDate } : {}), ...(duration !== undefined ? { duration } : {}) };
+	const summary: ToolProjectIterationSummary = { id, title };
+	if (startDate) summary.startDate = startDate;
+	if (duration !== undefined) summary.duration = duration;
+	return summary;
 }
 
 export function normalizeProjectV2Query(value: string | undefined): string | undefined {
@@ -633,5 +729,3 @@ function normalizePaginationLimit(limit: number | undefined): number | undefined
 	if (limit === undefined) return undefined;
 	return normalizePositiveSafeInteger(limit, "limit", { message: "Issue list limit must be a positive integer." });
 }
-
-export { connectionEndCursor, connectionHasNextPage, extractConnectionNodes };

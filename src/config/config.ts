@@ -219,7 +219,7 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 }
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
-	return Object.prototype.hasOwnProperty.call(value, key);
+	return Object.hasOwn(value, key);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -104,9 +104,9 @@ interface NormalizedAddIssueToProjectParams {
 }
 
 type UpdateProjectItemToolParams = Static<typeof UpdateProjectItemParams>;
-type UpdateProjectItemValueField = Exclude<keyof UpdateProjectItemToolParams, "projectId" | "itemId" | "fieldId" | "issueNumber" | "valueType"> & string;
+type UpdateProjectItemValueField = Exclude<keyof UpdateProjectItemToolParams, "projectId" | "itemId" | "fieldId" | "issueNumber" | "valueType">;
 
-export const UPDATE_PROJECT_ITEM_COMMON_FIELDS = ["projectId", "itemId", "issueNumber", "fieldId", "valueType"] as const satisfies readonly (keyof UpdateProjectItemToolParams & string)[];
+export const UPDATE_PROJECT_ITEM_COMMON_FIELDS = ["projectId", "itemId", "issueNumber", "fieldId", "valueType"] as const satisfies readonly (keyof UpdateProjectItemToolParams)[];
 export const UPDATE_PROJECT_ITEM_VALUE_FIELDS = {
 	single_select: ["singleSelectOptionId"],
 	iteration: ["iterationId"],

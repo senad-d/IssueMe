@@ -2,7 +2,8 @@ import { GITHUB_API_BASE_URL, MAX_TOOL_ISSUES } from "../constants.ts";
 import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
 import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
 import { normalizeGraphQLIssueCreator, normalizeGraphQLIssueState } from "./graphql-normalizers.ts";
-import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueReorderResult, NativeSubIssueSummary } from "./client.ts";
+import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueSummary } from "./client.ts";
+export type { NativeSubIssueReorderResult } from "./client.ts";
 import { connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
 
 interface SubIssueMutationData {
@@ -251,5 +252,3 @@ function normalizeBoundedInteger(value: number | undefined, field: string, optio
 	}
 	return value;
 }
-
-export type { NativeSubIssueReorderResult };

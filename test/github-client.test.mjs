@@ -217,6 +217,30 @@ test("GitHub client searches issues with enforced repository and issue qualifier
 	assert.equal(calls[0].url.searchParams.get("order"), "desc");
 });
 
+test("GitHub client escapes search qualifier quotes and backslashes", async () => {
+	const calls = [];
+	const backslash = String.raw`\\`.charAt(0);
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			calls.push({ url: new URL(url.toString()), init });
+			return jsonResponse({ total_count: 0, incomplete_results: false, items: [] });
+		},
+	});
+
+	await client.searchIssues({
+		labels: [`path${backslash}label`, `quote "label"`],
+		milestone: `release "v1"`,
+		limit: 10,
+	});
+
+	const q = calls[0].url.searchParams.get("q");
+	assert.match(q, /label:path\\\\label/);
+	assert.match(q, /label:"quote \\"label\\""/);
+	assert.match(q, /milestone:"release \\"v1\\""/);
+});
+
 test("GitHub client rejects ambiguous since filters before request", async () => {
 	let calls = 0;
 	const client = new GitHubClient({

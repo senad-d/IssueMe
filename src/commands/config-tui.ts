@@ -150,52 +150,80 @@ export class IssueMeConfigTui {
 			return;
 		}
 
-		if (data === "q" || data === "\u0003") {
-			this.closeWithAutoSave();
-			return;
-		}
-		if (this.state.searchActive && (isBackspace(data) || isDelete(data))) {
+		if (this.handleQuitInput(data)) return;
+		if (this.handleSearchInput(data)) return;
+		if (this.handleCommandInput(data)) return;
+		this.handleMoveInput(data);
+	}
+
+	private handleQuitInput(data: string): boolean {
+		if (data !== "q" && data !== "\u0003") return false;
+		this.closeWithAutoSave();
+		return true;
+	}
+
+	private handleSearchInput(data: string): boolean {
+		if (!this.state.searchActive) return false;
+		if (isBackspace(data) || isDelete(data)) {
 			this.state.search = dropLastGrapheme(this.state.search);
 			this.invalidateAndRender();
-			return;
+			return true;
 		}
 		const printable = printableInput(data);
-		if (this.state.searchActive && printable !== undefined && printable !== "/") {
-			this.state.search += printable;
-			this.invalidateAndRender();
-			return;
-		}
+		if (printable === undefined || printable === "/") return false;
+		this.state.search += printable;
+		this.invalidateAndRender();
+		return true;
+	}
+
+	private handleCommandInput(data: string): boolean {
 		if (data === "s") {
 			this.saveNow();
-			return;
+			return true;
 		}
 		if (data === "\t") {
 			this.state.focus = this.state.focus === "categories" ? "settings" : "categories";
 			this.invalidateAndRender();
-			return;
+			return true;
 		}
 		if (isEnter(data)) {
-			if (this.state.focus === "categories") this.state.focus = "settings";
-			else this.startEditing();
-			this.invalidateAndRender();
-			return;
+			this.handleEnterInput();
+			return true;
 		}
 		if (isEscape(data)) {
-			if (this.state.searchActive) {
-				this.state.searchActive = false;
-				this.state.search = "";
-				this.invalidateAndRender();
-			} else {
-				this.closeWithAutoSave();
-			}
-			return;
+			this.handleEscapeInput();
+			return true;
 		}
 		if (data === "/") {
-			this.state.searchActive = true;
-			this.state.focus = "settings";
-			this.invalidateAndRender();
+			this.startSearch();
+			return true;
+		}
+		return false;
+	}
+
+	private handleEnterInput(): void {
+		if (this.state.focus === "categories") this.state.focus = "settings";
+		else this.startEditing();
+		this.invalidateAndRender();
+	}
+
+	private handleEscapeInput(): void {
+		if (!this.state.searchActive) {
+			this.closeWithAutoSave();
 			return;
 		}
+		this.state.searchActive = false;
+		this.state.search = "";
+		this.invalidateAndRender();
+	}
+
+	private startSearch(): void {
+		this.state.searchActive = true;
+		this.state.focus = "settings";
+		this.invalidateAndRender();
+	}
+
+	private handleMoveInput(data: string): void {
 		if (isUp(data)) this.move(-1);
 		else if (isDown(data)) this.move(1);
 	}
@@ -341,16 +369,17 @@ export class IssueMeConfigTui {
 
 	private footerText(): string {
 		if (this.state.validationError) return `${this.warning(this.state.validationError)} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
-		if (this.state.editing) {
-			const editText = this.state.editBuffer
-				? `Editing ${this.state.editBuffer}${this.state.editBufferSelected ? " (type to replace)" : ""}`
-				: "Type value";
-			return `${this.selectionCounter()} • ${editText} • Enter update • Esc cancel`;
-		}
+		if (this.state.editing) return `${this.selectionCounter()} • ${this.editingFooterText()} • Enter update • Esc cancel`;
 		if (this.state.status) return `${this.state.status} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.state.searchActive) return `${this.state.search ? `Search: ${this.state.search}` : "Search: type to filter all settings"} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.hasChanges()) return `Modified • saves automatically on exit • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		return `${this.selectionCounter()} • ${this.selectedDescription()}`;
+	}
+
+	private editingFooterText(): string {
+		if (!this.state.editBuffer) return "Type value";
+		const replacementHint = this.state.editBufferSelected ? " (type to replace)" : "";
+		return `Editing ${this.state.editBuffer}${replacementHint}`;
 	}
 
 	private selectedDescription(): string {
@@ -797,26 +826,31 @@ function isEscape(data: string): boolean {
 	return data === "\u001b" || isPlainKittyKey(data, 27) || isPlainModifyOtherKeysKey(data, 27);
 }
 
+const PLAIN_KITTY_KEY_PATTERN = /^\u001b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+const PLAIN_CSI_ARROW_PATTERN = /^\u001b\[1;(\d+)(?::\d+)?([AB])$/;
+const PLAIN_CSI_TILDE_PATTERN = /^\u001b\[(\d+)(?:;(\d+))?(?::\d+)?~$/;
+const PLAIN_MODIFY_OTHER_KEYS_PATTERN = /^\u001b\[27;(\d+);(\d+)~$/;
+
 function isPlainKittyKey(data: string, codepoint: number): boolean {
-	const match = data.match(/^\u001b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
+	const match = PLAIN_KITTY_KEY_PATTERN.exec(data);
 	if (!match) return false;
 	return Number.parseInt(match[1] ?? "", 10) === codepoint && isPlainModifier(match[4]);
 }
 
 function isPlainCsiArrow(data: string, final: "A" | "B"): boolean {
-	const match = data.match(/^\u001b\[1;(\d+)(?::\d+)?([AB])$/);
+	const match = PLAIN_CSI_ARROW_PATTERN.exec(data);
 	if (!match) return false;
 	return match[2] === final && isPlainModifier(match[1]);
 }
 
 function isPlainCsiTilde(data: string, keyNumber: number): boolean {
-	const match = data.match(/^\u001b\[(\d+)(?:;(\d+))?(?::\d+)?~$/);
+	const match = PLAIN_CSI_TILDE_PATTERN.exec(data);
 	if (!match) return false;
 	return Number.parseInt(match[1] ?? "", 10) === keyNumber && isPlainModifier(match[2]);
 }
 
 function isPlainModifyOtherKeysKey(data: string, codepoint: number): boolean {
-	const match = data.match(/^\u001b\[27;(\d+);(\d+)~$/);
+	const match = PLAIN_MODIFY_OTHER_KEYS_PATTERN.exec(data);
 	if (!match) return false;
 	return Number.parseInt(match[2] ?? "", 10) === codepoint && isPlainModifier(match[1]);
 }
@@ -849,7 +883,7 @@ function isPrintable(data: string): boolean {
 }
 
 function decodePlainKittyPrintable(data: string): string | undefined {
-	const match = data.match(/^\u001b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
+	const match = PLAIN_KITTY_KEY_PATTERN.exec(data);
 	if (!match || !isPlainOrShiftModifier(match[4])) return undefined;
 	const primaryCodepoint = Number.parseInt(match[1] ?? "", 10);
 	const shiftedCodepoint = match[2] ? Number.parseInt(match[2], 10) : undefined;

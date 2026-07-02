@@ -25,9 +25,9 @@ const ManageLabelParams = Type.Object(
 
 type ManageLabelToolParams = Static<typeof ManageLabelParams>;
 type LabelManagementAction = ManageLabelToolParams["action"];
-type LabelActionSpecificField = Exclude<keyof ManageLabelToolParams, "action" | "name"> & string;
+type LabelActionSpecificField = Exclude<keyof ManageLabelToolParams, "action" | "name">;
 
-export const MANAGE_LABEL_COMMON_FIELDS = ["action", "name"] as const satisfies readonly (keyof ManageLabelToolParams & string)[];
+export const MANAGE_LABEL_COMMON_FIELDS = ["action", "name"] as const satisfies readonly (keyof ManageLabelToolParams)[];
 export const MANAGE_LABEL_ACTION_FIELDS = {
 	create: ["color", "description"],
 	update: ["newName", "color", "description"],
@@ -140,7 +140,7 @@ function normalizeAction(value: LabelManagementAction | undefined): LabelManagem
 
 function assertManageLabelActionFields(params: ManageLabelToolParams, action: LabelManagementAction): void {
 	const allowed = new Set([...MANAGE_LABEL_COMMON_FIELDS, ...MANAGE_LABEL_ACTION_FIELDS[action]]);
-	const actionFields = Object.values(MANAGE_LABEL_ACTION_FIELDS).flatMap((fields) => fields);
+	const actionFields = Object.values(MANAGE_LABEL_ACTION_FIELDS).flat();
 	const unexpected = actionFields.filter((field) => !allowed.has(field) && params[field] !== undefined);
 	if (unexpected.length > 0) {
 		throw new IssueMeError(

@@ -51,9 +51,9 @@ const BulkIssueParams = Type.Object(
 
 type BulkIssueToolParams = Static<typeof BulkIssueParams>;
 type BulkIssueActionName = BulkIssueToolParams["action"];
-type ActionSpecificField = Exclude<keyof BulkIssueToolParams, "issueNumbers" | "action" | "continueOnError"> & string;
+type ActionSpecificField = Exclude<keyof BulkIssueToolParams, "issueNumbers" | "action" | "continueOnError">;
 
-export const BULK_ISSUE_COMMON_FIELDS = ["issueNumbers", "action", "continueOnError"] as const satisfies readonly (keyof BulkIssueToolParams & string)[];
+export const BULK_ISSUE_COMMON_FIELDS = ["issueNumbers", "action", "continueOnError"] as const satisfies readonly (keyof BulkIssueToolParams)[];
 export const BULK_ISSUE_ACTION_FIELDS = {
 	add_labels: ["labels"],
 	assign: ["assignees"],
@@ -437,7 +437,7 @@ function normalizeIssueNumbers(values: number[] | undefined): number[] {
 }
 
 function assertNoUnexpectedActionFields(params: BulkIssueToolParams, allowed: readonly ActionSpecificField[]): void {
-	const actionFields = Object.values(BULK_ISSUE_ACTION_FIELDS).flatMap((fields) => fields);
+	const actionFields = Object.values(BULK_ISSUE_ACTION_FIELDS).flat();
 	const unexpected = actionFields.filter((field) => !allowed.includes(field) && params[field] !== undefined);
 	if (unexpected.length > 0) {
 		throw new IssueMeError(

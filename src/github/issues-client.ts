@@ -18,6 +18,11 @@ export interface NormalizedIssueSearchResponse {
 	items: GitHubIssueResponse[];
 }
 
+const SEARCH_QUALIFIER_ESCAPED_BACKSLASH = String.raw`\\`;
+const SEARCH_QUALIFIER_ESCAPED_DOUBLE_QUOTE = String.raw`\"`;
+const SEARCH_QUALIFIER_BACKSLASH = SEARCH_QUALIFIER_ESCAPED_BACKSLASH.charAt(0);
+const SEARCH_QUALIFIER_DOUBLE_QUOTE = String.raw`"`;
+
 export function buildIssueListQuery(filters: GitHubIssueListFilters, limit: number | undefined): Record<string, string> {
 	const state = normalizeIssueListState(filters.state);
 	return compactQuery({
@@ -169,7 +174,9 @@ function normalizeSearchText(value: string): string | undefined {
 }
 
 function quoteSearchQualifierValue(value: string): string {
-	const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+	const escaped = value
+		.replaceAll(SEARCH_QUALIFIER_BACKSLASH, SEARCH_QUALIFIER_ESCAPED_BACKSLASH)
+		.replaceAll(SEARCH_QUALIFIER_DOUBLE_QUOTE, SEARCH_QUALIFIER_ESCAPED_DOUBLE_QUOTE);
 	return /[\s:]/.test(escaped) ? `"${escaped}"` : escaped;
 }
 

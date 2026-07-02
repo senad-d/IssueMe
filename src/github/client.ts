@@ -213,6 +213,18 @@ export interface NativeSubIssueReorderResult {
 	mutations: NativeSubIssueMutationResult[];
 }
 
+interface ReprioritizeSubIssueStepResult {
+	currentOrder: NativeSubIssueSummary[];
+	mutation?: NativeSubIssueMutationResult;
+}
+
+type IssueSearchPage = ReturnType<typeof normalizeIssueSearchResponse>;
+
+interface IssueSearchPageReadResult {
+	page: IssueSearchPage;
+	nextUrl?: string;
+}
+
 export interface GitHubIssueDevelopmentLinksResult {
 	issue: NativeSubIssueSummary;
 	links: import("../types.ts").ToolIssueDevelopmentLinkSummary[];
@@ -559,29 +571,72 @@ export class GitHubClient {
 		let currentOrder = [...relationship.subIssues];
 		const mutations: NativeSubIssueMutationResult[] = [];
 		for (let index = 0; index < desiredNumbers.length; index++) {
-			const childNumber = desiredNumbers[index];
-			const child = issueByNumber.get(childNumber);
-			if (!child) continue;
-			if (index === 0) {
-				if (currentOrder[0]?.number === childNumber) continue;
-				const before = currentOrder.find((issue) => issue.number !== childNumber);
-				if (!before) continue;
-				mutations.push(await this.reprioritizeSubIssue(parentIssueId, child, { beforeId: before.id }, signal));
-				currentOrder = moveNativeSubIssue(currentOrder, childNumber, { beforeNumber: before.number });
-				continue;
-			}
-			const previousNumber = desiredNumbers[index - 1];
-			const previous = issueByNumber.get(previousNumber);
-			if (!previous) continue;
-			const previousIndex = currentOrder.findIndex((issue) => issue.number === previousNumber);
-			if (previousIndex >= 0 && currentOrder[previousIndex + 1]?.number === childNumber) continue;
-			mutations.push(await this.reprioritizeSubIssue(parentIssueId, child, { afterId: previous.id }, signal));
-			currentOrder = moveNativeSubIssue(currentOrder, childNumber, { afterNumber: previousNumber });
+			const result = await this.reprioritizeDesiredSubIssue(parentIssueId, desiredNumbers, index, issueByNumber, currentOrder, signal);
+			currentOrder = result.currentOrder;
+			if (result.mutation) mutations.push(result.mutation);
 		}
-		const refreshed = mutations.length > 0
-			? await this.listSubIssueRelationships(normalizedParentNumber, { limit: MAX_TOOL_ISSUES }, signal)
-			: relationship;
+		const refreshed = await this.refreshSubIssueRelationshipAfterReorder(normalizedParentNumber, relationship, mutations, signal);
 		return { relationship: refreshed, mutations };
+	}
+
+	private async reprioritizeDesiredSubIssue(
+		parentIssueId: string,
+		desiredNumbers: number[],
+		index: number,
+		issueByNumber: Map<number, NativeSubIssueSummary>,
+		currentOrder: NativeSubIssueSummary[],
+		signal?: AbortSignal,
+	): Promise<ReprioritizeSubIssueStepResult> {
+		const childNumber = desiredNumbers[index];
+		const child = issueByNumber.get(childNumber);
+		if (!child) return { currentOrder };
+		if (index === 0) return this.reprioritizeFirstDesiredSubIssue(parentIssueId, child, currentOrder, signal);
+		return this.reprioritizeFollowingDesiredSubIssue(parentIssueId, child, desiredNumbers[index - 1], issueByNumber, currentOrder, signal);
+	}
+
+	private async reprioritizeFirstDesiredSubIssue(
+		parentIssueId: string,
+		child: NativeSubIssueSummary,
+		currentOrder: NativeSubIssueSummary[],
+		signal?: AbortSignal,
+	): Promise<ReprioritizeSubIssueStepResult> {
+		if (currentOrder[0]?.number === child.number) return { currentOrder };
+		const before = currentOrder.find((issue) => issue.number !== child.number);
+		if (!before) return { currentOrder };
+		const mutation = await this.reprioritizeSubIssue(parentIssueId, child, { beforeId: before.id }, signal);
+		return {
+			currentOrder: moveNativeSubIssue(currentOrder, child.number, { beforeNumber: before.number }),
+			mutation,
+		};
+	}
+
+	private async reprioritizeFollowingDesiredSubIssue(
+		parentIssueId: string,
+		child: NativeSubIssueSummary,
+		previousNumber: number,
+		issueByNumber: Map<number, NativeSubIssueSummary>,
+		currentOrder: NativeSubIssueSummary[],
+		signal?: AbortSignal,
+	): Promise<ReprioritizeSubIssueStepResult> {
+		const previous = issueByNumber.get(previousNumber);
+		if (!previous) return { currentOrder };
+		const previousIndex = currentOrder.findIndex((issue) => issue.number === previousNumber);
+		if (previousIndex >= 0 && currentOrder[previousIndex + 1]?.number === child.number) return { currentOrder };
+		const mutation = await this.reprioritizeSubIssue(parentIssueId, child, { afterId: previous.id }, signal);
+		return {
+			currentOrder: moveNativeSubIssue(currentOrder, child.number, { afterNumber: previousNumber }),
+			mutation,
+		};
+	}
+
+	private async refreshSubIssueRelationshipAfterReorder(
+		parentNumber: number,
+		relationship: NativeSubIssueRelationshipResult,
+		mutations: NativeSubIssueMutationResult[],
+		signal?: AbortSignal,
+	): Promise<NativeSubIssueRelationshipResult> {
+		if (mutations.length === 0) return relationship;
+		return this.listSubIssueRelationships(parentNumber, { limit: MAX_TOOL_ISSUES }, signal);
 	}
 
 	async listSubIssueRelationships(issueNumber: number, options: PaginationOptions = {}, signal?: AbortSignal): Promise<NativeSubIssueRelationshipResult> {
@@ -903,46 +958,35 @@ export class GitHubClient {
 		options: PaginationOptions = {},
 	): Promise<{ items: GitHubIssueResponse[]; truncated: boolean; totalCount?: number; incompleteResults?: boolean }> {
 		const values: GitHubIssueResponse[] = [];
-		let truncated = false;
 		let totalCount: number | undefined;
 		let incompleteResults: boolean | undefined;
 		let nextUrl: string | undefined = this.transport.buildUrl("/search/issues", query).toString();
 		while (nextUrl) {
-			this.transport.assertAllowedPaginationUrl(nextUrl);
-			const response = await this.requestWithHeaders<unknown>("GET", nextUrl, {
-				signal,
-				alreadyAbsolute: true,
-				validate: isIssueSearchResponse,
-			});
-			if (!isIssueSearchResponse(response.data)) {
-				throw new GitHubApiError("GitHub issue search returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID });
+			const result = await this.readIssueSearchPage(nextUrl, signal);
+			totalCount ??= result.page.totalCount;
+			incompleteResults ??= result.page.incompleteResults;
+			const pageTruncated = appendIssueSearchPageItems(values, result.page.items, options.limit);
+			if (pageTruncated || isIssueSearchNextPageLimited(values.length, options.limit, result.nextUrl)) {
+				return issueSearchPaginationResult(values, true, totalCount, incompleteResults);
 			}
-			const page = normalizeIssueSearchResponse(response.data);
-			totalCount ??= page.totalCount;
-			incompleteResults ??= page.incompleteResults;
-			const next = parseNextLink(response.headers.get("link"));
-			for (const item of page.items) {
-				if (isPullRequestIssueResponse(item)) continue;
-				if (options.limit !== undefined && values.length >= options.limit) {
-					truncated = true;
-					break;
-				}
-				values.push(item);
-			}
-			if (truncated) break;
-			if (options.limit !== undefined && values.length >= options.limit && next) {
-				truncated = true;
-				break;
-			}
-			nextUrl = next;
-			if (nextUrl) this.transport.assertAllowedPaginationUrl(nextUrl);
+			nextUrl = result.nextUrl;
 		}
-		if (options.limit !== undefined && totalCount !== undefined && totalCount > values.length) truncated = true;
+		return issueSearchPaginationResult(values, isIssueSearchTotalTruncated(values.length, options.limit, totalCount), totalCount, incompleteResults);
+	}
+
+	private async readIssueSearchPage(nextUrl: string, signal?: AbortSignal): Promise<IssueSearchPageReadResult> {
+		this.transport.assertAllowedPaginationUrl(nextUrl);
+		const response = await this.requestWithHeaders<unknown>("GET", nextUrl, {
+			signal,
+			alreadyAbsolute: true,
+			validate: isIssueSearchResponse,
+		});
+		if (!isIssueSearchResponse(response.data)) {
+			throw new GitHubApiError("GitHub issue search returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID });
+		}
 		return {
-			items: values,
-			truncated,
-			...(totalCount !== undefined ? { totalCount } : {}),
-			...(incompleteResults !== undefined ? { incompleteResults } : {}),
+			page: normalizeIssueSearchResponse(response.data),
+			nextUrl: parseNextLink(response.headers.get("link")),
 		};
 	}
 
@@ -961,4 +1005,35 @@ export class GitHubClient {
 	): Promise<{ data: T; headers: Headers }> {
 		return this.transport.requestWithHeaders<T>(method, pathOrUrl, options);
 	}
+}
+
+function appendIssueSearchPageItems(values: GitHubIssueResponse[], items: GitHubIssueResponse[], limit: number | undefined): boolean {
+	for (const item of items) {
+		if (isPullRequestIssueResponse(item)) continue;
+		if (limit !== undefined && values.length >= limit) return true;
+		values.push(item);
+	}
+	return false;
+}
+
+function isIssueSearchNextPageLimited(valuesLength: number, limit: number | undefined, nextUrl: string | undefined): boolean {
+	return limit !== undefined && valuesLength >= limit && nextUrl !== undefined;
+}
+
+function isIssueSearchTotalTruncated(valuesLength: number, limit: number | undefined, totalCount: number | undefined): boolean {
+	return limit !== undefined && totalCount !== undefined && totalCount > valuesLength;
+}
+
+function issueSearchPaginationResult(
+	items: GitHubIssueResponse[],
+	truncated: boolean,
+	totalCount: number | undefined,
+	incompleteResults: boolean | undefined,
+): { items: GitHubIssueResponse[]; truncated: boolean; totalCount?: number; incompleteResults?: boolean } {
+	return {
+		items,
+		truncated,
+		...(totalCount !== undefined ? { totalCount } : {}),
+		...(incompleteResults !== undefined ? { incompleteResults } : {}),
+	};
 }

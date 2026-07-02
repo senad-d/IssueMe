@@ -39,6 +39,8 @@ type RequestOptions = {
 	validate?: (value: unknown) => boolean;
 };
 
+type PaginationFilterOptions<T> = PaginationOptions & { filter?: (item: T) => boolean };
+
 export class GitHubTransport {
 	readonly repository: GitHubRepository;
 	private readonly token: string;
@@ -109,36 +111,29 @@ export class GitHubTransport {
 		path: string,
 		query: Record<string, string>,
 		signal?: AbortSignal,
-		options: PaginationOptions & { filter?: (item: T) => boolean } = {},
+		options: PaginationFilterOptions<T> = {},
 	): Promise<{ items: T[]; truncated: boolean }> {
 		const values: T[] = [];
-		let truncated = false;
 		let nextUrl: string | undefined = this.buildUrl(path, query).toString();
 		while (nextUrl) {
-			this.assertAllowedPaginationUrl(nextUrl);
-			const response = await this.requestWithHeaders<T[]>("GET", nextUrl, {
-				signal,
-				alreadyAbsolute: true,
-				validate: Array.isArray,
-			});
+			const response = await this.fetchPaginationPage<T>(nextUrl, signal);
 			const next = parseNextLink(response.headers.get("link"));
-			for (const item of response.data) {
-				if (options.filter && !options.filter(item)) continue;
-				if (options.limit !== undefined && values.length >= options.limit) {
-					truncated = true;
-					break;
-				}
-				values.push(item);
-			}
-			if (truncated) break;
-			if (options.limit !== undefined && values.length >= options.limit && next) {
-				truncated = true;
-				break;
-			}
+			const page = collectFilteredPaginationItems(response.data, values.length, options);
+			values.push(...page.items);
+			if (page.truncated || hasAdditionalPageBeyondLimit(options.limit, values.length, next)) return { items: values, truncated: true };
 			nextUrl = next;
 			if (nextUrl) this.assertAllowedPaginationUrl(nextUrl);
 		}
-		return { items: values, truncated };
+		return { items: values, truncated: false };
+	}
+
+	private async fetchPaginationPage<T>(nextUrl: string, signal?: AbortSignal): Promise<{ data: T[]; headers: Headers }> {
+		this.assertAllowedPaginationUrl(nextUrl);
+		return this.requestWithHeaders<T[]>("GET", nextUrl, {
+			signal,
+			alreadyAbsolute: true,
+			validate: Array.isArray,
+		});
 	}
 
 	async request<T>(
@@ -156,60 +151,33 @@ export class GitHubTransport {
 	): Promise<{ data: T; headers: Headers }> {
 		const url = this.buildRequestUrl(pathOrUrl, options.alreadyAbsolute);
 		this.assertAllowedRequestUrl(url, "GitHub REST API URL");
-		const headers: Record<string, string> = {
-			Accept: "application/vnd.github+json",
-			Authorization: `Bearer ${this.token}`,
-			"User-Agent": this.userAgent,
-			"X-GitHub-Api-Version": GITHUB_API_VERSION,
-		};
-		if (url.pathname === "/graphql") headers["GraphQL-Features"] = "sub_issues";
-		if (options.body !== undefined) headers["Content-Type"] = "application/json";
-		if (options.signal?.aborted) {
-			throw new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
-		}
-
-		let response: Response;
-		try {
-			response = await this.fetchFn(url, {
-				method,
-				headers,
-				body: options.body === undefined ? undefined : JSON.stringify(options.body),
-				signal: options.signal,
-			});
-		} catch (error) {
-			if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
-				throw new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
-			}
-			const message = error instanceof Error ? error.message : String(error);
-			throw new GitHubApiError(redactSecrets(`GitHub network request failed: ${message}`, [this.token, ...collectRequestStringValues(options.body)]), {
-				code: ISSUEME_ERROR_CODES.GITHUB_NETWORK_ERROR,
-				path: safePath(url),
-			});
-		}
-
-		const text = response.status === 204 ? "" : await response.text();
-		if (!response.ok) {
-			const rateLimit = readRateLimit(response.headers);
-			throw new GitHubApiError(this.formatError(response, text, options.body), {
-				code: rateLimit.limited ? ISSUEME_ERROR_CODES.GITHUB_RATE_LIMIT : ISSUEME_ERROR_CODES.GITHUB_API_ERROR,
-				status: response.status,
-				path: safePath(url),
-				rateLimit,
-			});
-		}
-
-		let data: unknown = undefined;
-		if (text) {
-			try {
-				data = JSON.parse(text) as unknown;
-			} catch {
-				throw new GitHubApiError("GitHub REST API returned invalid JSON.", { code: ISSUEME_ERROR_CODES.GITHUB_INVALID_JSON, status: response.status, path: safePath(url) });
-			}
-		}
-		if (options.validate && !options.validate(data)) {
-			throw new GitHubApiError("GitHub REST API returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, status: response.status, path: safePath(url) });
-		}
+		assertGitHubRequestNotAborted(options.signal, url);
+		const body = serializeRequestBody(options.body);
+		const headers = buildGitHubRequestHeaders(url, this.token, this.userAgent, body !== undefined);
+		const response = await this.fetchGitHubResponse(url, method, headers, body, options);
+		const text = await readResponseText(response);
+		if (!response.ok) throw this.buildHttpError(response, text, url, options.body);
+		const data = parseGitHubResponseData(response, text, url);
+		validateGitHubResponseData(data, response.status, url, options.validate);
 		return { data: data as T, headers: response.headers };
+	}
+
+	private async fetchGitHubResponse(url: URL, method: string, headers: Record<string, string>, body: string | undefined, options: RequestOptions): Promise<Response> {
+		try {
+			return await this.fetchFn(url, { method, headers, body, signal: options.signal });
+		} catch (error) {
+			throw gitHubNetworkError(error, options.signal, url, this.token, options.body);
+		}
+	}
+
+	private buildHttpError(response: Response, text: string, url: URL, requestBody?: unknown): GitHubApiError {
+		const rateLimit = readRateLimit(response.headers);
+		return new GitHubApiError(this.formatError(response, text, requestBody), {
+			code: rateLimit.limited ? ISSUEME_ERROR_CODES.GITHUB_RATE_LIMIT : ISSUEME_ERROR_CODES.GITHUB_API_ERROR,
+			status: response.status,
+			path: safePath(url),
+			rateLimit,
+		});
 	}
 
 	private buildRequestUrl(pathOrUrl: string, alreadyAbsolute = false): URL {
@@ -278,10 +246,80 @@ export class GitHubTransport {
 	}
 }
 
+function serializeRequestBody(body: unknown): string | undefined {
+	return body === undefined ? undefined : JSON.stringify(body);
+}
+
+function buildGitHubRequestHeaders(url: URL, token: string, userAgent: string, hasBody: boolean): Record<string, string> {
+	const headers: Record<string, string> = {
+		Accept: "application/vnd.github+json",
+		Authorization: `Bearer ${token}`,
+		"User-Agent": userAgent,
+		"X-GitHub-Api-Version": GITHUB_API_VERSION,
+	};
+	if (url.pathname === "/graphql") headers["GraphQL-Features"] = "sub_issues";
+	if (hasBody) headers["Content-Type"] = "application/json";
+	return headers;
+}
+
+function assertGitHubRequestNotAborted(signal: AbortSignal | undefined, url: URL): void {
+	if (signal?.aborted) throw new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
+}
+
+function gitHubNetworkError(error: unknown, signal: AbortSignal | undefined, url: URL, token: string, requestBody: unknown): GitHubApiError {
+	if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+		return new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return new GitHubApiError(redactSecrets(`GitHub network request failed: ${message}`, [token, ...collectRequestStringValues(requestBody)]), {
+		code: ISSUEME_ERROR_CODES.GITHUB_NETWORK_ERROR,
+		path: safePath(url),
+	});
+}
+
+async function readResponseText(response: Response): Promise<string> {
+	return response.status === 204 ? "" : await response.text();
+}
+
+function parseGitHubResponseData(response: Response, text: string, url: URL): unknown {
+	if (!text) return undefined;
+	try {
+		return JSON.parse(text) as unknown;
+	} catch {
+		throw new GitHubApiError("GitHub REST API returned invalid JSON.", { code: ISSUEME_ERROR_CODES.GITHUB_INVALID_JSON, status: response.status, path: safePath(url) });
+	}
+}
+
+function validateGitHubResponseData(data: unknown, status: number, url: URL, validate: ((value: unknown) => boolean) | undefined): void {
+	if (validate && !validate(data)) {
+		throw new GitHubApiError("GitHub REST API returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, status, path: safePath(url) });
+	}
+}
+
+function collectFilteredPaginationItems<T>(items: T[], currentCount: number, options: PaginationFilterOptions<T>): { items: T[]; truncated: boolean } {
+	const values: T[] = [];
+	for (const item of items) {
+		if (options.filter && !options.filter(item)) continue;
+		if (hasReachedPaginationLimit(options.limit, currentCount + values.length)) return { items: values, truncated: true };
+		values.push(item);
+	}
+	return { items: values, truncated: false };
+}
+
+function hasAdditionalPageBeyondLimit(limit: number | undefined, count: number, nextUrl: string | undefined): boolean {
+	return nextUrl !== undefined && hasReachedPaginationLimit(limit, count);
+}
+
+function hasReachedPaginationLimit(limit: number | undefined, count: number): boolean {
+	return limit !== undefined && count >= limit;
+}
+
+const NEXT_LINK_PATTERN = /<([^<>]+)>;\s*rel="next"/u;
+
 export function parseNextLink(linkHeader: string | null): string | undefined {
 	if (!linkHeader) return undefined;
 	for (const part of linkHeader.split(",")) {
-		const match = part.match(/<([^>]+)>;\s*rel="next"/);
+		const match = NEXT_LINK_PATTERN.exec(part);
 		if (match) return match[1];
 	}
 	return undefined;

@@ -28,9 +28,9 @@ const ManageMilestoneParams = Type.Object(
 type ManageMilestoneToolParams = Static<typeof ManageMilestoneParams>;
 type MilestoneManagementAction = ManageMilestoneToolParams["action"];
 type MilestoneState = "open" | "closed";
-type MilestoneActionSpecificField = Exclude<keyof ManageMilestoneToolParams, "action"> & string;
+type MilestoneActionSpecificField = Exclude<keyof ManageMilestoneToolParams, "action">;
 
-export const MANAGE_MILESTONE_COMMON_FIELDS = ["action"] as const satisfies readonly (keyof ManageMilestoneToolParams & string)[];
+export const MANAGE_MILESTONE_COMMON_FIELDS = ["action"] as const satisfies readonly (keyof ManageMilestoneToolParams)[];
 export const MANAGE_MILESTONE_ACTION_FIELDS = {
 	create: ["title", "description", "dueOn"],
 	update: ["number", "title", "description", "dueOn", "clearDueOn"],
@@ -174,7 +174,7 @@ function normalizeAction(value: MilestoneManagementAction | undefined): Mileston
 
 function assertManageMilestoneActionFields(params: ManageMilestoneToolParams, action: MilestoneManagementAction): void {
 	const allowed = new Set([...MANAGE_MILESTONE_COMMON_FIELDS, ...MANAGE_MILESTONE_ACTION_FIELDS[action]]);
-	const actionFields = Object.values(MANAGE_MILESTONE_ACTION_FIELDS).flatMap((fields) => fields);
+	const actionFields = Object.values(MANAGE_MILESTONE_ACTION_FIELDS).flat();
 	const unexpected = actionFields.filter((field) => !allowed.has(field) && params[field] !== undefined);
 	if (unexpected.length > 0) {
 		throw new IssueMeError(

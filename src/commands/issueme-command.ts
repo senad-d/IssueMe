@@ -104,35 +104,23 @@ async function openConfig(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promi
 
 async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?: string): Promise<void> {
 	const trusted = ctx.isProjectTrusted();
-	const projectRoot = trusted ? (await resolveIssueMeProjectRoot(ctx.cwd)).root : resolve(ctx.cwd);
-	const { config, configError } = trusted ? await loadInfoConfig(projectRoot) : { config: DEFAULT_ISSUEME_CONFIG, configError: undefined };
+	const projectRoot = await resolveInfoProjectRoot(ctx, trusted);
+	const { config, configError } = await loadInfoConfigForTrust(projectRoot, trusted);
 	const tokenStatus = await getGitHubTokenStatus(projectRoot, process.env, { readProjectEnv: trusted });
-	let repositoryStatus: string;
-	try {
-		const repository = await resolveCurrentRepository(projectRoot, process.env, { allowGitConfig: trusted });
-		repositoryStatus = repository.fullName;
-	} catch (error) {
-		repositoryStatus = error instanceof Error ? error.message : String(error);
-	}
-
-	const configUnavailable = "unavailable until config is fixed";
-	const cacheResult = trusted && !configError ? await listIssueFileEntries(projectRoot, config) : { files: [], invalidFiles: [] };
-	const displayedIssueDirectory = configError ? configUnavailable : config.issueDirectory;
-	const displayedAllowedIssueCreator = configError ? configUnavailable : config.allowedIssueCreator;
-	const displayedDefaultSkillPath = configError ? configUnavailable : config.defaultSkillPath;
-	const combinedWarning = [warning, configError ? `IssueMe config error: ${configError.message}` : undefined]
-		.filter((line): line is string => line !== undefined && line.length > 0)
-		.join("\n") || undefined;
+	const repositoryStatus = await resolveInfoRepositoryStatus(projectRoot, trusted);
+	const cacheResult = await listInfoCache(projectRoot, config, trusted, configError);
+	const display = configDisplayValues(config, configError);
+	const combinedWarning = combineInfoWarnings(warning, configError);
 	const text = renderIssueMeInfo({
 		warning: combinedWarning,
 		trusted,
 		repositoryStatus,
-		tokenStatus: tokenStatus.present ? `present (${tokenStatus.source})` : tokenStatus.error ? `error (${tokenStatus.message})` : "missing",
+		tokenStatus: formatGitHubTokenStatus(tokenStatus),
 		configPath: DEFAULT_CONFIG_PATH,
 		configStatus: configError ? `error (${configError.message})` : undefined,
-		issueDirectory: displayedIssueDirectory,
-		allowedIssueCreator: displayedAllowedIssueCreator,
-		defaultSkillPath: displayedDefaultSkillPath,
+		issueDirectory: display.issueDirectory,
+		allowedIssueCreator: display.allowedIssueCreator,
+		defaultSkillPath: display.defaultSkillPath,
 		cachedIssues: cacheResult.files.length,
 		invalidCacheFiles: cacheResult.invalidFiles.length,
 	});
@@ -148,15 +136,67 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 			configPath: DEFAULT_CONFIG_PATH,
 			configStatus: configError ? "error" : "ok",
 			...(configError ? { configError: safeConfigErrorDetails(configError) } : {}),
-			issueDirectory: displayedIssueDirectory,
-			allowedIssueCreator: displayedAllowedIssueCreator,
-			defaultSkillPath: displayedDefaultSkillPath,
+			issueDirectory: display.issueDirectory,
+			allowedIssueCreator: display.allowedIssueCreator,
+			defaultSkillPath: display.defaultSkillPath,
 			cachedIssues: cacheResult.files.length,
 			invalidCacheFiles: cacheResult.invalidFiles.length,
 			tools: [...ISSUEME_TOOL_NAMES],
 		},
 	});
 }
+
+async function resolveInfoProjectRoot(ctx: ExtensionCommandContext, trusted: boolean): Promise<string> {
+	return trusted ? (await resolveIssueMeProjectRoot(ctx.cwd)).root : resolve(ctx.cwd);
+}
+
+async function loadInfoConfigForTrust(projectRoot: string, trusted: boolean): Promise<{ config: IssueMeConfig; configError?: IssueMeError }> {
+	if (!trusted) return { config: DEFAULT_ISSUEME_CONFIG, configError: undefined };
+	return loadInfoConfig(projectRoot);
+}
+
+async function resolveInfoRepositoryStatus(projectRoot: string, trusted: boolean): Promise<string> {
+	try {
+		const repository = await resolveCurrentRepository(projectRoot, process.env, { allowGitConfig: trusted });
+		return repository.fullName;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+async function listInfoCache(projectRoot: string, config: IssueMeConfig, trusted: boolean, configError: IssueMeError | undefined): ReturnType<typeof listIssueFileEntries> {
+	if (!trusted || configError) return { files: [], invalidFiles: [] };
+	return listIssueFileEntries(projectRoot, config);
+}
+
+function configDisplayValues(config: IssueMeConfig, configError: IssueMeError | undefined): { issueDirectory: string; allowedIssueCreator: string; defaultSkillPath: string | null } {
+	if (configError) {
+		return {
+			issueDirectory: INFO_CONFIG_UNAVAILABLE,
+			allowedIssueCreator: INFO_CONFIG_UNAVAILABLE,
+			defaultSkillPath: INFO_CONFIG_UNAVAILABLE,
+		};
+	}
+	return {
+		issueDirectory: config.issueDirectory,
+		allowedIssueCreator: config.allowedIssueCreator,
+		defaultSkillPath: config.defaultSkillPath,
+	};
+}
+
+function combineInfoWarnings(warning: string | undefined, configError: IssueMeError | undefined): string | undefined {
+	return [warning, configError ? `IssueMe config error: ${configError.message}` : undefined]
+		.filter((line): line is string => line !== undefined && line.length > 0)
+		.join("\n") || undefined;
+}
+
+function formatGitHubTokenStatus(tokenStatus: Awaited<ReturnType<typeof getGitHubTokenStatus>>): string {
+	if (tokenStatus.present) return `present (${tokenStatus.source})`;
+	if (tokenStatus.error) return `error (${tokenStatus.message})`;
+	return "missing";
+}
+
+const INFO_CONFIG_UNAVAILABLE = "unavailable until config is fixed";
 
 async function loadInfoConfig(projectRoot: string): Promise<{ config: IssueMeConfig; configError?: IssueMeError }> {
 	try {

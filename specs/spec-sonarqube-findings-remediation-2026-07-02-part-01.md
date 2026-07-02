@@ -8,7 +8,7 @@ Common acceptance criteria: fix the referenced rule without suppression, preserv
 
 ### 1. Remove redundant intersection type in src/tools/bulk-issues.ts:54
 
-- [ ] Resolve Sonar issue `AZ8ijgcxbki--Ps0teFx` (`typescript:S6571`) at `src/tools/bulk-issues.ts:54`: remove the redundant `string` intersection overridden by `reason`, `labels`, `assignees`, `milestoneNumber`, or `projectId`.
+- [x] Resolve Sonar issue `AZ8ijgcxbki--Ps0teFx` (`typescript:S6571`) at `src/tools/bulk-issues.ts:54`: remove the redundant `string` intersection overridden by `reason`, `labels`, `assignees`, `milestoneNumber`, or `projectId`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -32,7 +32,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 2. Remove redundant intersection type in src/tools/bulk-issues.ts:56
 
-- [ ] Resolve Sonar issue `AZ8ijgcxbki--Ps0teFy` (`typescript:S6571`) at `src/tools/bulk-issues.ts:56`: remove the redundant `string` intersection overridden by the explicit bulk issue input keys.
+- [x] Resolve Sonar issue `AZ8ijgcxbki--Ps0teFy` (`typescript:S6571`) at `src/tools/bulk-issues.ts:56`: remove the redundant `string` intersection overridden by the explicit bulk issue input keys.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -56,7 +56,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 3. Remove redundant intersection type in src/tools/manage-label.ts:28
 
-- [ ] Resolve Sonar issue `AZ8ijgbibki--Ps0teFv` (`typescript:S6571`) at `src/tools/manage-label.ts:28`: remove the redundant `string` intersection overridden by label-specific fields.
+- [x] Resolve Sonar issue `AZ8ijgbibki--Ps0teFv` (`typescript:S6571`) at `src/tools/manage-label.ts:28`: remove the redundant `string` intersection overridden by label-specific fields.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -80,7 +80,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 4. Remove redundant intersection type in src/tools/manage-label.ts:30
 
-- [ ] Resolve Sonar issue `AZ8ijgbibki--Ps0teFw` (`typescript:S6571`) at `src/tools/manage-label.ts:30`: remove the redundant `string` intersection overridden by manage-label input fields.
+- [x] Resolve Sonar issue `AZ8ijgbibki--Ps0teFw` (`typescript:S6571`) at `src/tools/manage-label.ts:30`: remove the redundant `string` intersection overridden by manage-label input fields.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -104,7 +104,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 5. Remove redundant intersection type in src/tools/manage-milestone.ts:31
 
-- [ ] Resolve Sonar issue `AZ8ijgXabki--Ps0teFr` (`typescript:S6571`) at `src/tools/manage-milestone.ts:31`: remove the redundant `string` intersection overridden by milestone-specific fields.
+- [x] Resolve Sonar issue `AZ8ijgXabki--Ps0teFr` (`typescript:S6571`) at `src/tools/manage-milestone.ts:31`: remove the redundant `string` intersection overridden by milestone-specific fields.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -128,7 +128,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 6. Remove redundant intersection type in src/tools/manage-milestone.ts:33
 
-- [ ] Resolve Sonar issue `AZ8ijgXabki--Ps0teFs` (`typescript:S6571`) at `src/tools/manage-milestone.ts:33`: remove the redundant `string` intersection overridden by manage-milestone input fields.
+- [x] Resolve Sonar issue `AZ8ijgXabki--Ps0teFs` (`typescript:S6571`) at `src/tools/manage-milestone.ts:33`: remove the redundant `string` intersection overridden by manage-milestone input fields.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -152,7 +152,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 7. Remove redundant intersection type in src/tools/projects.ts:107
 
-- [ ] Resolve Sonar issue `AZ8ijgarbki--Ps0teFt` (`typescript:S6571`) at `src/tools/projects.ts:107`: remove the redundant `string` intersection overridden by project field value keys.
+- [x] Resolve Sonar issue `AZ8ijgarbki--Ps0teFt` (`typescript:S6571`) at `src/tools/projects.ts:107`: remove the redundant `string` intersection overridden by project field value keys.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -176,7 +176,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 8. Remove redundant intersection type in src/tools/projects.ts:109
 
-- [ ] Resolve Sonar issue `AZ8ijgasbki--Ps0teFu` (`typescript:S6571`) at `src/tools/projects.ts:109`: remove the redundant `string` intersection overridden by project item update input fields.
+- [x] Resolve Sonar issue `AZ8ijgasbki--Ps0teFu` (`typescript:S6571`) at `src/tools/projects.ts:109`: remove the redundant `string` intersection overridden by project item update input fields.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. The broad `string` type member is overridden by explicit keys, so keeping it adds noise without useful type information.
@@ -200,7 +200,7 @@ Simplify the intersection or mapped type so the explicit fields define the shape
 
 ### 9. Reduce cognitive complexity in src/commands/config-tui.ts:147
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkV` (`typescript:S3776`) at `src/commands/config-tui.ts:147`: reduce cognitive complexity from 21 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkV` (`typescript:S3776`) at `src/commands/config-tui.ts:147`: reduce cognitive complexity from 21 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -224,7 +224,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 10. Use RegExp.exec in src/commands/config-tui.ts:807
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkg` (`typescript:S6594`) at `src/commands/config-tui.ts:807`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkg` (`typescript:S6594`) at `src/commands/config-tui.ts:807`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -248,7 +248,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 11. Use RegExp.exec in src/commands/config-tui.ts:813
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkh` (`typescript:S6594`) at `src/commands/config-tui.ts:813`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkh` (`typescript:S6594`) at `src/commands/config-tui.ts:813`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -272,7 +272,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 12. Use RegExp.exec in src/commands/config-tui.ts:852
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkj` (`typescript:S6594`) at `src/commands/config-tui.ts:852`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkj` (`typescript:S6594`) at `src/commands/config-tui.ts:852`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -296,7 +296,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 13. Extract nested ternary in src/commands/config-tui.ts:346
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFka` (`typescript:S3358`) at `src/commands/config-tui.ts:346`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFka` (`typescript:S3358`) at `src/commands/config-tui.ts:346`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -320,7 +320,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 14. Use RegExp.exec in src/commands/config-tui.ts:801
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkf` (`typescript:S6594`) at `src/commands/config-tui.ts:801`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkf` (`typescript:S6594`) at `src/commands/config-tui.ts:801`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -344,7 +344,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 15. Use RegExp.exec in src/commands/config-tui.ts:819
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFki` (`typescript:S6594`) at `src/commands/config-tui.ts:819`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFki` (`typescript:S6594`) at `src/commands/config-tui.ts:819`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -368,7 +368,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 16. Reduce cognitive complexity in src/commands/issueme-command.ts:105
 
-- [ ] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkS` (`typescript:S3776`) at `src/commands/issueme-command.ts:105`: reduce cognitive complexity from 17 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkS` (`typescript:S3776`) at `src/commands/issueme-command.ts:105`: reduce cognitive complexity from 17 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -392,7 +392,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 17. Use Object.hasOwn in src/config/config.ts:222
 
-- [ ] Resolve Sonar issue `AZ8dpx0AI5cC3g4vWFkR` (`typescript:S6653`) at `src/config/config.ts:222`: use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`.
+- [x] Resolve Sonar issue `AZ8dpx0AI5cC3g4vWFkR` (`typescript:S6653`) at `src/config/config.ts:222`: use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `Object.hasOwn()` is the modern, clearer standard-library API for own-property checks.
@@ -416,7 +416,7 @@ Replace `Object.prototype.hasOwnProperty.call(object, key)` with `Object.hasOwn(
 
 ### 18. Reduce cognitive complexity in src/github/client.ts:539
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjw` (`typescript:S3776`) at `src/github/client.ts:539`: reduce cognitive complexity from 19 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjw` (`typescript:S3776`) at `src/github/client.ts:539`: reduce cognitive complexity from 19 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -440,7 +440,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 19. Reduce cognitive complexity in src/github/client.ts:900
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjz` (`typescript:S3776`) at `src/github/client.ts:900`: reduce cognitive complexity from 23 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjz` (`typescript:S3776`) at `src/github/client.ts:900`: reduce cognitive complexity from 23 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -464,7 +464,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 20. Reduce cognitive complexity in src/github/development-links-client.ts:148
 
-- [ ] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkL` (`typescript:S3776`) at `src/github/development-links-client.ts:148`: reduce cognitive complexity from 17 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkL` (`typescript:S3776`) at `src/github/development-links-client.ts:148`: reduce cognitive complexity from 17 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -488,7 +488,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 21. Rewrite negated condition in src/github/development-links-client.ts:170
 
-- [ ] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkM` (`typescript:S7735`) at `src/github/development-links-client.ts:170`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkM` (`typescript:S7735`) at `src/github/development-links-client.ts:170`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -512,7 +512,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 22. Rewrite negated condition in src/github/development-links-client.ts:171
 
-- [ ] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkN` (`typescript:S7735`) at `src/github/development-links-client.ts:171`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkN` (`typescript:S7735`) at `src/github/development-links-client.ts:171`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -536,7 +536,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 23. Rewrite negated condition in src/github/development-links-client.ts:190
 
-- [ ] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkO` (`typescript:S7735`) at `src/github/development-links-client.ts:190`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkO` (`typescript:S7735`) at `src/github/development-links-client.ts:190`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -560,7 +560,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 24. Rewrite negated condition in src/github/development-links-client.ts:191
 
-- [ ] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkP` (`typescript:S7735`) at `src/github/development-links-client.ts:191`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxz3I5cC3g4vWFkP` (`typescript:S7735`) at `src/github/development-links-client.ts:191`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -584,7 +584,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 25. Reduce cognitive complexity in src/github/graphql-errors.ts:6
 
-- [ ] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjo` (`typescript:S3776`) at `src/github/graphql-errors.ts:6`: reduce cognitive complexity from 17 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjo` (`typescript:S3776`) at `src/github/graphql-errors.ts:6`: reduce cognitive complexity from 17 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -608,7 +608,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 26. Extract nested ternary in src/github/graphql-errors.ts:57
 
-- [ ] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjp` (`typescript:S3358`) at `src/github/graphql-errors.ts:57`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjp` (`typescript:S3358`) at `src/github/graphql-errors.ts:57`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -632,7 +632,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 27. Extract nested ternary in src/github/graphql-errors.ts:59
 
-- [ ] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjq` (`typescript:S3358`) at `src/github/graphql-errors.ts:59`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjq` (`typescript:S3358`) at `src/github/graphql-errors.ts:59`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -656,7 +656,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 28. Extract nested ternary in src/github/graphql-errors.ts:87
 
-- [ ] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjr` (`typescript:S3358`) at `src/github/graphql-errors.ts:87`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxy6I5cC3g4vWFjr` (`typescript:S3358`) at `src/github/graphql-errors.ts:87`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -680,7 +680,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 29. Use String.replaceAll in src/github/issues-client.ts:172
 
-- [ ] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkA` (`typescript:S7781`) at `src/github/issues-client.ts:172`: prefer `String#replaceAll()` over `String#replace()`.
+- [x] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkA` (`typescript:S7781`) at `src/github/issues-client.ts:172`: prefer `String#replaceAll()` over `String#replace()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `RELIABILITY:LOW, MAINTAINABILITY:LOW`. `String#replaceAll()` communicates all-occurrence replacement directly and avoids regex pitfalls.
@@ -704,7 +704,7 @@ Replace the global replacement with `replaceAll()` while preserving the exact re
 
 ### 30. Use String.replaceAll in src/github/issues-client.ts:172
 
-- [ ] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkB` (`typescript:S7781`) at `src/github/issues-client.ts:172`: prefer `String#replaceAll()` over `String#replace()`.
+- [x] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkB` (`typescript:S7781`) at `src/github/issues-client.ts:172`: prefer `String#replaceAll()` over `String#replace()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `RELIABILITY:LOW, MAINTAINABILITY:LOW`. `String#replaceAll()` communicates all-occurrence replacement directly and avoids regex pitfalls.
@@ -728,7 +728,7 @@ Replace the global replacement with `replaceAll()` while preserving the exact re
 
 ### 31. Use String.raw in src/github/issues-client.ts:172
 
-- [ ] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkC` (`typescript:S7780`) at `src/github/issues-client.ts:172`: use `String.raw` to avoid escaping backslashes.
+- [x] Resolve Sonar issue `AZ8dpxziI5cC3g4vWFkC` (`typescript:S7780`) at `src/github/issues-client.ts:172`: use `String.raw` to avoid escaping backslashes.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `String.raw` avoids double escaping and makes backslash-heavy strings easier to read.
@@ -752,7 +752,7 @@ Convert the flagged string literal to `String.raw` while preserving the exact ru
 
 ### 32. Extract nested ternary in src/github/projects-client.ts:213
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkD` (`typescript:S3358`) at `src/github/projects-client.ts:213`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkD` (`typescript:S3358`) at `src/github/projects-client.ts:213`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -776,7 +776,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 33. Extract nested ternary in src/github/projects-client.ts:222
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkE` (`typescript:S3358`) at `src/github/projects-client.ts:222`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkE` (`typescript:S3358`) at `src/github/projects-client.ts:222`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -800,7 +800,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 34. Reduce cognitive complexity in src/github/projects-client.ts:275
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkF` (`typescript:S3776`) at `src/github/projects-client.ts:275`: reduce cognitive complexity from 19 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkF` (`typescript:S3776`) at `src/github/projects-client.ts:275`: reduce cognitive complexity from 19 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -824,7 +824,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 35. Reduce cognitive complexity in src/github/projects-client.ts:397
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkG` (`typescript:S3776`) at `src/github/projects-client.ts:397`: reduce cognitive complexity from 16 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkG` (`typescript:S3776`) at `src/github/projects-client.ts:397`: reduce cognitive complexity from 16 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -848,7 +848,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 36. Rewrite negated condition in src/github/projects-client.ts:519
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkH` (`typescript:S7735`) at `src/github/projects-client.ts:519`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkH` (`typescript:S7735`) at `src/github/projects-client.ts:519`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -872,7 +872,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 37. Use direct re-export in src/github/projects-client.ts:637
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkI` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `connectionEndCursor`.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkI` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `connectionEndCursor`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Direct `export … from` syntax is clearer for pass-through re-exports.
@@ -896,7 +896,7 @@ Replace the import-then-export pattern with a direct re-export from the source m
 
 ### 38. Use direct re-export in src/github/projects-client.ts:637
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkJ` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `connectionHasNextPage`.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkJ` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `connectionHasNextPage`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Direct `export … from` syntax is clearer for pass-through re-exports.
@@ -920,7 +920,7 @@ Replace the import-then-export pattern with a direct re-export from the source m
 
 ### 39. Use direct re-export in src/github/projects-client.ts:637
 
-- [ ] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkK` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `extractConnectionNodes`.
+- [x] Resolve Sonar issue `AZ8dpxztI5cC3g4vWFkK` (`typescript:S7763`) at `src/github/projects-client.ts:637`: use `export … from` to re-export `extractConnectionNodes`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Direct `export … from` syntax is clearer for pass-through re-exports.
@@ -944,7 +944,7 @@ Replace the import-then-export pattern with a direct re-export from the source m
 
 ### 40. Use direct re-export in src/github/sub-issues-client.ts:255
 
-- [ ] Resolve Sonar issue `AZ8dpxyxI5cC3g4vWFjn` (`typescript:S7763`) at `src/github/sub-issues-client.ts:255`: use `export … from` to re-export `NativeSubIssueReorderResult`.
+- [x] Resolve Sonar issue `AZ8dpxyxI5cC3g4vWFjn` (`typescript:S7763`) at `src/github/sub-issues-client.ts:255`: use `export … from` to re-export `NativeSubIssueReorderResult`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Direct `export … from` syntax is clearer for pass-through re-exports.
@@ -968,7 +968,7 @@ Replace the import-then-export pattern with a direct re-export from the source m
 
 ### 41. Reduce cognitive complexity in src/github/transport.ts:108
 
-- [ ] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj7` (`typescript:S3776`) at `src/github/transport.ts:108`: reduce cognitive complexity from 18 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj7` (`typescript:S3776`) at `src/github/transport.ts:108`: reduce cognitive complexity from 18 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -992,7 +992,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 42. Reduce cognitive complexity in src/github/transport.ts:152
 
-- [ ] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj8` (`typescript:S3776`) at `src/github/transport.ts:152`: reduce cognitive complexity from 19 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj8` (`typescript:S3776`) at `src/github/transport.ts:152`: reduce cognitive complexity from 19 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -1016,7 +1016,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 43. Simplify backtracking regex in src/github/transport.ts:284
 
-- [ ] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj-` (`typescript:S8786`) at `src/github/transport.ts:284`: simplify the regex to avoid super-linear backtracking.
+- [x] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj-` (`typescript:S8786`) at `src/github/transport.ts:284`: simplify the regex to avoid super-linear backtracking.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `RELIABILITY:MEDIUM`. Super-linear regex backtracking can become a reliability or denial-of-service risk on crafted input.
@@ -1040,7 +1040,7 @@ Rewrite the regex to avoid ambiguous nested quantifiers or overlapping alternati
 
 ### 44. Use RegExp.exec in src/github/transport.ts:284
 
-- [ ] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj9` (`typescript:S6594`) at `src/github/transport.ts:284`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpxzZI5cC3g4vWFj9` (`typescript:S6594`) at `src/github/transport.ts:284`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -1064,7 +1064,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 45. Reduce cognitive complexity in src/issues/format.ts:116
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkw` (`typescript:S3776`) at `src/issues/format.ts:116`: reduce cognitive complexity from 24 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkw` (`typescript:S3776`) at `src/issues/format.ts:116`: reduce cognitive complexity from 24 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -1088,7 +1088,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 46. Reduce cognitive complexity in src/issues/store.ts:456
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk-` (`typescript:S3776`) at `src/issues/store.ts:456`: reduce cognitive complexity from 40 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk-` (`typescript:S3776`) at `src/issues/store.ts:456`: reduce cognitive complexity from 40 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -1112,7 +1112,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 47. Rewrite negated condition in src/issues/store.ts:599
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk_` (`typescript:S7735`) at `src/issues/store.ts:599`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk_` (`typescript:S7735`) at `src/issues/store.ts:599`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1136,7 +1136,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 48. Use Array.flat in src/tools/bulk-issues.ts:440
 
-- [ ] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjO` (`typescript:S7751`) at `src/tools/bulk-issues.ts:440`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
+- [x] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjO` (`typescript:S7751`) at `src/tools/bulk-issues.ts:440`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:MEDIUM`. `Array#flat()` expresses flatten-only operations more clearly than `flatMap()` with an identity callback.
@@ -1160,7 +1160,7 @@ Replace identity `flatMap()` usage with `flat()` at the equivalent depth and pre
 
 ### 49. Use Array.flat in src/tools/manage-label.ts:143
 
-- [ ] Resolve Sonar issue `AZ8dpxwiI5cC3g4vWFiR` (`typescript:S7751`) at `src/tools/manage-label.ts:143`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
+- [x] Resolve Sonar issue `AZ8dpxwiI5cC3g4vWFiR` (`typescript:S7751`) at `src/tools/manage-label.ts:143`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:MEDIUM`. `Array#flat()` expresses flatten-only operations more clearly than `flatMap()` with an identity callback.
@@ -1184,7 +1184,7 @@ Replace identity `flatMap()` usage with `flat()` at the equivalent depth and pre
 
 ### 50. Use Array.flat in src/tools/manage-milestone.ts:177
 
-- [ ] Resolve Sonar issue `AZ8dpxveI5cC3g4vWFhZ` (`typescript:S7751`) at `src/tools/manage-milestone.ts:177`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
+- [x] Resolve Sonar issue `AZ8dpxveI5cC3g4vWFhZ` (`typescript:S7751`) at `src/tools/manage-milestone.ts:177`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:MEDIUM`. `Array#flat()` expresses flatten-only operations more clearly than `flatMap()` with an identity callback.

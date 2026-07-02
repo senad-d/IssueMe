@@ -33,6 +33,17 @@ export interface CommentFetchMetadata {
 	totalCount?: number;
 }
 
+interface IssueSummaryLimits {
+	maxBodyChars: number;
+	maxComments: number;
+	maxCommentChars: number;
+}
+
+interface IssueSummaryBuildState {
+	truncated: boolean;
+	truncation: Record<string, unknown>;
+}
+
 export interface IssueRelationshipMetadata {
 	parent_issue?: IssueRelationshipSummary | null;
 	sub_issues?: IssueRelationshipSummary[];
@@ -114,25 +125,42 @@ export function applyIssueRelationshipMetadata(record: IssueRecord, relationship
 }
 
 export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFormatOptions = {}): FormattedIssueSummary {
-	const maxBodyChars = options.maxBodyChars ?? MAX_GET_BODY_CHARS;
-	const maxComments = options.maxComments ?? MAX_GET_COMMENTS;
-	const maxCommentChars = options.maxCommentChars ?? MAX_GET_COMMENT_CHARS;
-	let truncated = false;
-	const truncation: Record<string, unknown> = {};
+	const limits = issueSummaryLimits(options);
+	const state: IssueSummaryBuildState = { truncated: false, truncation: {} };
+	const bodySource = record.body || "(no body)";
+	const body = truncateText(bodySource, limits.maxBodyChars);
+	trackIssueBodyTruncation(state, body, bodySource, limits.maxBodyChars);
+	const comments = record.comments.slice(0, limits.maxComments);
+	trackIssueCommentListTruncation(state, comments.length, record.comments.length, limits.maxComments);
+	const lines = issueSummaryHeaderLines(record, body.text);
+	appendCachedCommentTruncation(lines, state, record);
+	appendIssueSummaryComments(lines, state, comments, record.comments.length, limits.maxCommentChars);
+	appendIssueSummaryTruncationNotice(lines, state.truncated);
+	return { text: lines.join("\n"), truncated: state.truncated, ...(state.truncated ? { truncation: state.truncation } : {}) };
+}
 
-	const body = truncateText(record.body || "(no body)", maxBodyChars);
-	if (body.truncated) {
-		truncated = true;
-		truncation.body = { maxChars: maxBodyChars, originalChars: (record.body || "(no body)").length, shownChars: body.text.length };
-	}
+function issueSummaryLimits(options: IssueSummaryFormatOptions): IssueSummaryLimits {
+	return {
+		maxBodyChars: options.maxBodyChars ?? MAX_GET_BODY_CHARS,
+		maxComments: options.maxComments ?? MAX_GET_COMMENTS,
+		maxCommentChars: options.maxCommentChars ?? MAX_GET_COMMENT_CHARS,
+	};
+}
 
-	const comments = record.comments.slice(0, maxComments);
-	if (comments.length < record.comments.length) {
-		truncated = true;
-		truncation.comments = { shown: comments.length, total: record.comments.length, max: maxComments };
-	}
+function trackIssueBodyTruncation(state: IssueSummaryBuildState, body: { text: string; truncated: boolean }, bodySource: string, maxBodyChars: number): void {
+	if (!body.truncated) return;
+	state.truncated = true;
+	state.truncation.body = { maxChars: maxBodyChars, originalChars: bodySource.length, shownChars: body.text.length };
+}
 
-	const lines = [
+function trackIssueCommentListTruncation(state: IssueSummaryBuildState, shown: number, total: number, maxComments: number): void {
+	if (shown >= total) return;
+	state.truncated = true;
+	state.truncation.comments = { shown, total, max: maxComments };
+}
+
+function issueSummaryHeaderLines(record: IssueRecord, bodyText: string): string[] {
+	return [
 		`#${record.number} ${record.title}`,
 		`Repository: ${record.repository}`,
 		`State: ${record.state}`,
@@ -145,40 +173,46 @@ export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFor
 		`Updated: ${record.updated_at}`,
 		"",
 		"Body:",
-		body.text,
+		bodyText,
 	];
+}
 
-	if (record.comments_truncated) {
-		truncated = true;
-		truncation.cacheComments = {
-			shown: record.comments.length,
-			...(record.comments_count !== undefined ? { total: record.comments_count } : {}),
-			limit: record.comments_fetch_limit ?? record.comments.length,
-		};
-		lines.push(
-			"",
-			`Comments fetched: ${record.comments.length}${record.comments_count !== undefined ? ` of ${record.comments_count}` : ""} (limit ${record.comments_fetch_limit ?? record.comments.length}; truncated).`,
-		);
-	}
+function appendCachedCommentTruncation(lines: string[], state: IssueSummaryBuildState, record: IssueRecord): void {
+	if (!record.comments_truncated) return;
+	state.truncated = true;
+	state.truncation.cacheComments = {
+		shown: record.comments.length,
+		...(record.comments_count !== undefined ? { total: record.comments_count } : {}),
+		limit: record.comments_fetch_limit ?? record.comments.length,
+	};
+	lines.push(
+		"",
+		`Comments fetched: ${record.comments.length}${record.comments_count !== undefined ? ` of ${record.comments_count}` : ""} (limit ${record.comments_fetch_limit ?? record.comments.length}; truncated).`,
+	);
+}
 
-	if (record.comments.length > 0) {
-		lines.push("", `Comments (${record.comments.length}):`);
-		let truncatedCommentBodies = 0;
-		for (const comment of comments) {
-			const commentBody = truncateText(comment.body, maxCommentChars);
-			if (commentBody.truncated) {
-				truncated = true;
-				truncatedCommentBodies += 1;
-			}
-			lines.push(`- ${comment.author} at ${comment.updated_at} (${comment.html_url})`, commentBody.text);
+function appendIssueSummaryComments(lines: string[], state: IssueSummaryBuildState, comments: IssueCommentRecord[], totalComments: number, maxCommentChars: number): void {
+	if (totalComments === 0) return;
+	lines.push("", `Comments (${totalComments}):`);
+	const truncatedCommentBodies = appendIssueSummaryCommentBodies(lines, state, comments, maxCommentChars);
+	if (truncatedCommentBodies > 0) state.truncation.commentBodies = { affected: truncatedCommentBodies, maxChars: maxCommentChars };
+}
+
+function appendIssueSummaryCommentBodies(lines: string[], state: IssueSummaryBuildState, comments: IssueCommentRecord[], maxCommentChars: number): number {
+	let truncatedCommentBodies = 0;
+	for (const comment of comments) {
+		const commentBody = truncateText(comment.body, maxCommentChars);
+		if (commentBody.truncated) {
+			state.truncated = true;
+			truncatedCommentBodies += 1;
 		}
-		if (truncatedCommentBodies > 0) {
-			truncation.commentBodies = { affected: truncatedCommentBodies, maxChars: maxCommentChars };
-		}
+		lines.push(`- ${comment.author} at ${comment.updated_at} (${comment.html_url})`, commentBody.text);
 	}
+	return truncatedCommentBodies;
+}
 
+function appendIssueSummaryTruncationNotice(lines: string[], truncated: boolean): void {
 	if (truncated) lines.push("", "[IssueMe output truncated; local issue JSON may contain more detail.]");
-	return { text: lines.join("\n"), truncated, ...(truncated ? { truncation } : {}) };
 }
 
 export function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
