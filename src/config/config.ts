@@ -207,7 +207,7 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 		if (trimmed.includes("\0")) {
 			throw new IssueMeError("config_tui_invalid_setting", `${fieldName} must not contain null bytes.`, { field: fieldName });
 		}
-		if (/\r|\n/.test(trimmed)) {
+		if (/[\r\n]/.test(trimmed)) {
 			throw new IssueMeError("config_tui_invalid_setting", `${fieldName} entries must fit on one line.`, { field: fieldName });
 		}
 		if (fieldName === "defaultAssignees" && !GITHUB_LOGIN_PATTERN.test(trimmed)) {

@@ -1,4 +1,4 @@
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, type Stats } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
@@ -290,36 +290,47 @@ async function startWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, ski
 
 async function assertReadableProjectSkillPath(projectRoot: string, skillPath: string): Promise<string> {
 	const relativePath = toProjectRelativePath(projectRoot, skillPath);
-	let skillStat: Awaited<ReturnType<typeof stat>>;
+	await assertSkillPathIsFile(skillPath, relativePath);
+	const [realProjectRoot, realSkillPath] = await resolveRealSkillPaths(projectRoot, skillPath, relativePath);
+	await assertSkillPathReadable(realSkillPath, relativePath);
+	return toProjectRelativePath(realProjectRoot, realSkillPath);
+}
+
+async function assertSkillPathIsFile(skillPath: string, relativePath: string): Promise<void> {
+	const skillStat = await statSkillPath(skillPath, relativePath);
+	if (!skillStat.isFile()) {
+		throw new IssueMeError("skill_path_not_file", `Skill path must be a readable file, not a directory or special file: ${relativePath}`);
+	}
+}
+
+async function statSkillPath(skillPath: string, relativePath: string): Promise<Stats> {
 	try {
-		skillStat = await stat(skillPath);
+		return await stat(skillPath);
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") {
 			throw new IssueMeError("skill_path_not_found", `Skill path does not exist: ${relativePath}`);
 		}
 		throw new IssueMeError("skill_path_unreadable", `Skill path could not be inspected safely: ${relativePath}`);
 	}
+}
 
-	if (!skillStat.isFile()) {
-		throw new IssueMeError("skill_path_not_file", `Skill path must be a readable file, not a directory or special file: ${relativePath}`);
-	}
-
-	let realProjectRoot: string;
-	let realSkillPath: string;
+async function resolveRealSkillPaths(projectRoot: string, skillPath: string, relativePath: string): Promise<[string, string]> {
 	try {
-		[realProjectRoot, realSkillPath] = await Promise.all([realpath(projectRoot), realpath(skillPath)]);
-		assertSkillPathInsideProject(realProjectRoot, realSkillPath);
+		const paths: [string, string] = await Promise.all([realpath(projectRoot), realpath(skillPath)]);
+		assertSkillPathInsideProject(paths[0], paths[1]);
+		return paths;
 	} catch (error) {
 		if (error instanceof IssueMeError) throw error;
 		throw new IssueMeError("skill_path_unreadable", `Skill path could not be resolved safely: ${relativePath}`);
 	}
+}
 
+async function assertSkillPathReadable(realSkillPath: string, relativePath: string): Promise<void> {
 	try {
 		await access(realSkillPath, fsConstants.R_OK);
 	} catch {
 		throw new IssueMeError("skill_path_unreadable", `Skill path is not readable: ${relativePath}`);
 	}
-	return toProjectRelativePath(realProjectRoot, realSkillPath);
 }
 
 function resolveSkillPath(projectRoot: string, rawPath: string): string {

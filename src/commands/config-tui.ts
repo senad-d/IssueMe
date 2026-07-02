@@ -248,9 +248,11 @@ export class IssueMeConfigTui {
 		for (let index = 0; index < bodyHeight; index += 1) {
 			lines.push(this.accent("│") + fit(categoryRows[index] ?? "", leftPaneWidth) + this.accent("│") + fit(settingsRows[index] ?? "", rightPaneWidth) + this.accent("│"));
 		}
-		lines.push(this.wideSeparator(width, leftPaneWidth, "bottom"));
-		lines.push(this.fullLine(width, this.footerText()));
-		lines.push(this.bottomBorder(width));
+		lines.push(
+			this.wideSeparator(width, leftPaneWidth, "bottom"),
+			this.fullLine(width, this.footerText()),
+			this.bottomBorder(width),
+		);
 		return lines;
 	}
 
@@ -265,9 +267,11 @@ export class IssueMeConfigTui {
 		];
 		const rows = settingsView ? this.renderSettingsRows(width - 2, bodyHeight) : this.renderCategoryRows(width - 2, bodyHeight);
 		for (const row of rows) lines.push(this.fullLine(width, row));
-		lines.push(this.narrowSeparator(width));
-		lines.push(this.fullLine(width, this.footerText()));
-		lines.push(this.bottomBorder(width));
+		lines.push(
+			this.narrowSeparator(width),
+			this.fullLine(width, this.footerText()),
+			this.bottomBorder(width),
+		);
 		return lines;
 	}
 
@@ -295,8 +299,8 @@ export class IssueMeConfigTui {
 				continue;
 			}
 			const selected = index === this.state.selectedCategory;
-			const prefix = selected ? this.selectedPrefix(this.state.focus === "categories") : "  ";
-			const label = selected ? this.selectedText(category.label, this.state.focus === "categories") : this.dim(category.label);
+			const prefix = selected ? this.categorySelectedPrefix() : "  ";
+			const label = selected ? this.categorySelectedText(category.label) : this.dim(category.label);
 			rows.push(fit(prefix + label, width));
 		}
 		return rows;
@@ -324,8 +328,8 @@ export class IssueMeConfigTui {
 	private settingRow(width: number, setting: ConfigTuiSetting, selected: boolean): string {
 		const valueWidth = Math.max(0, Math.min(28, Math.floor(width * 0.4)));
 		const labelWidth = Math.max(1, width - 2 - 1 - valueWidth);
-		const prefix = selected ? this.selectedPrefix(this.state.focus === "settings") : "  ";
-		const label = selected ? this.selectedText(setting.label, this.state.focus === "settings") : setting.label;
+		const prefix = selected ? this.settingsSelectedPrefix() : "  ";
+		const label = selected ? this.settingsSelectedText(setting.label) : setting.label;
 		const value = this.valueStyled(setting, valueWidth);
 		return fit(prefix + fit(label, labelWidth) + " " + fitLeft(value, valueWidth), width);
 	}
@@ -371,7 +375,10 @@ export class IssueMeConfigTui {
 		if (this.state.validationError) return `${this.warning(this.state.validationError)} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.state.editing) return `${this.selectionCounter()} • ${this.editingFooterText()} • Enter update • Esc cancel`;
 		if (this.state.status) return `${this.state.status} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
-		if (this.state.searchActive) return `${this.state.search ? `Search: ${this.state.search}` : "Search: type to filter all settings"} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
+		if (this.state.searchActive) {
+			const searchText = this.state.search ? `Search: ${this.state.search}` : "Search: type to filter all settings";
+			return `${searchText} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
+		}
 		if (this.hasChanges()) return `Modified • saves automatically on exit • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		return `${this.selectionCounter()} • ${this.selectedDescription()}`;
 	}
@@ -565,12 +572,36 @@ export class IssueMeConfigTui {
 		return this.theme.fg("warning", text);
 	}
 
-	private selectedPrefix(active: boolean): string {
-		return (active ? this.accent("▶") : this.theme.fg("muted", "▶")) + " ";
+	private categorySelectedPrefix(): string {
+		return this.state.focus === "categories" ? this.activeSelectedPrefix() : this.inactiveSelectedPrefix();
 	}
 
-	private selectedText(text: string, active: boolean): string {
-		return active ? this.accent(this.theme.bold(text)) : this.theme.fg("muted", text);
+	private settingsSelectedPrefix(): string {
+		return this.state.focus === "settings" ? this.activeSelectedPrefix() : this.inactiveSelectedPrefix();
+	}
+
+	private categorySelectedText(text: string): string {
+		return this.state.focus === "categories" ? this.activeSelectedText(text) : this.inactiveSelectedText(text);
+	}
+
+	private settingsSelectedText(text: string): string {
+		return this.state.focus === "settings" ? this.activeSelectedText(text) : this.inactiveSelectedText(text);
+	}
+
+	private activeSelectedPrefix(): string {
+		return this.accent("▶") + " ";
+	}
+
+	private inactiveSelectedPrefix(): string {
+		return this.theme.fg("muted", "▶") + " ";
+	}
+
+	private activeSelectedText(text: string): string {
+		return this.accent(this.theme.bold(text));
+	}
+
+	private inactiveSelectedText(text: string): string {
+		return this.theme.fg("muted", text);
 	}
 
 	private invalidateAndRender(): void {
@@ -683,7 +714,7 @@ function stripAnsi(value: string): string {
 
 function readAnsiAt(value: string, index: number): string | undefined {
 	if (value[index] !== "\u001b") return undefined;
-	return value.slice(index).match(ANSI_AT_START_PATTERN)?.[0];
+	return ANSI_AT_START_PATTERN.exec(value.slice(index))?.[0];
 }
 
 function updateAnsiActive(sequence: string, current: boolean): boolean {
@@ -694,7 +725,7 @@ function updateAnsiActive(sequence: string, current: boolean): boolean {
 	let active = current;
 	for (const code of codes) {
 		if (Number.isNaN(code)) continue;
-		active = code === 0 ? false : true;
+		active = code !== 0;
 	}
 	return active;
 }

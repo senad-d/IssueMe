@@ -8,7 +8,7 @@ Common acceptance criteria: fix the referenced rule without suppression, preserv
 
 ### 51. Use Array.flat in src/tools/projects.ts:340
 
-- [ ] Resolve Sonar issue `AZ8dpxvzI5cC3g4vWFhv` (`typescript:S7751`) at `src/tools/projects.ts:340`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
+- [x] Resolve Sonar issue `AZ8dpxvzI5cC3g4vWFhv` (`typescript:S7751`) at `src/tools/projects.ts:340`: prefer `Array#flat()` over `Array#flatMap()` when only flattening.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:MEDIUM`. `Array#flat()` expresses flatten-only operations more clearly than `flatMap()` with an identity callback.
@@ -32,7 +32,7 @@ Replace identity `flatMap()` usage with `flat()` at the equivalent depth and pre
 
 ### 52. Use Object.hasOwn in src/tools/runtime.ts:138
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFig` (`typescript:S6653`) at `src/tools/runtime.ts:138`: use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFig` (`typescript:S6653`) at `src/tools/runtime.ts:138`: use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `Object.hasOwn()` is the modern, clearer standard-library API for own-property checks.
@@ -56,7 +56,7 @@ Replace `Object.prototype.hasOwnProperty.call(object, key)` with `Object.hasOwn(
 
 ### 53. Rewrite negated condition in src/tools/runtime.ts:164
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFih` (`typescript:S7735`) at `src/tools/runtime.ts:164`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFih` (`typescript:S7735`) at `src/tools/runtime.ts:164`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -80,7 +80,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 54. Remove nested template literal in src/tools/runtime.ts:164
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFii` (`typescript:S4624`) at `src/tools/runtime.ts:164`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFii` (`typescript:S4624`) at `src/tools/runtime.ts:164`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -104,7 +104,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 55. Rewrite negated condition in src/tools/runtime.ts:168
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFij` (`typescript:S7735`) at `src/tools/runtime.ts:168`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFij` (`typescript:S7735`) at `src/tools/runtime.ts:168`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -128,7 +128,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 56. Reduce cognitive complexity in src/tools/sync-issues.ts:29
 
-- [ ] Resolve Sonar issue `AZ8dpxwYI5cC3g4vWFiC` (`typescript:S3776`) at `src/tools/sync-issues.ts:29`: reduce cognitive complexity from 21 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxwYI5cC3g4vWFiC` (`typescript:S3776`) at `src/tools/sync-issues.ts:29`: reduce cognitive complexity from 21 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -152,7 +152,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 57. Rewrite negated condition in src/tools/sync-issues.ts:35
 
-- [ ] Resolve Sonar issue `AZ8dpxwYI5cC3g4vWFiD` (`typescript:S7735`) at `src/tools/sync-issues.ts:35`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxwYI5cC3g4vWFiD` (`typescript:S7735`) at `src/tools/sync-issues.ts:35`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -176,7 +176,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 58. Use regex character class in src/utils/github-login.ts:30
 
-- [ ] Resolve Sonar issue `AZ8dpxyNI5cC3g4vWFja` (`typescript:S6035`) at `src/utils/github-login.ts:30`: replace the regex alternation with a character class.
+- [x] Resolve Sonar issue `AZ8dpxyNI5cC3g4vWFja` (`typescript:S6035`) at `src/utils/github-login.ts:30`: replace the regex alternation with a character class.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. A character class is clearer and cheaper than alternation when matching single-character alternatives.
@@ -200,7 +200,7 @@ Replace the single-character alternation with an equivalent character class and 
 
 ### 59. Iterate iterable directly in src/github/client.ts:845
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjx` (`typescript:S7747`) at `src/github/client.ts:845`: iterate directly with `for…of` instead of converting to an array.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjx` (`typescript:S7747`) at `src/github/client.ts:845`: iterate directly with `for…of` instead of converting to an array.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Converting an iterable to an array before `for…of` creates unnecessary allocation and obscures intent.
@@ -224,7 +224,7 @@ Iterate the original iterable directly with `for…of`, preserving iteration ord
 
 ### 60. Iterate iterable directly in src/github/client.ts:861
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjy` (`typescript:S7747`) at `src/github/client.ts:861`: iterate directly with `for…of` instead of converting to an array.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjy` (`typescript:S7747`) at `src/github/client.ts:861`: iterate directly with `for…of` instead of converting to an array.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Converting an iterable to an array before `for…of` creates unnecessary allocation and obscures intent.
@@ -248,7 +248,7 @@ Iterate the original iterable directly with `for…of`, preserving iteration ord
 
 ### 61. Rewrite negated condition in src/issues/store.ts:320
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk7` (`typescript:S7735`) at `src/issues/store.ts:320`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk7` (`typescript:S7735`) at `src/issues/store.ts:320`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -272,7 +272,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 62. Rewrite negated condition in src/issues/store.ts:321
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk8` (`typescript:S7735`) at `src/issues/store.ts:321`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk8` (`typescript:S7735`) at `src/issues/store.ts:321`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -296,7 +296,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 63. Reduce cognitive complexity in src/tools/close-issue.ts:31
 
-- [ ] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhG` (`typescript:S3776`) at `src/tools/close-issue.ts:31`: reduce cognitive complexity from 20 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhG` (`typescript:S3776`) at `src/tools/close-issue.ts:31`: reduce cognitive complexity from 20 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -320,7 +320,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 64. Rewrite negated condition in src/utils/safe-read.ts:77
 
-- [ ] Resolve Sonar issue `AZ8dpxyFI5cC3g4vWFjY` (`typescript:S7735`) at `src/utils/safe-read.ts:77`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxyFI5cC3g4vWFjY` (`typescript:S7735`) at `src/utils/safe-read.ts:77`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -344,7 +344,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 65. Rewrite negated condition in src/utils/safe-read.ts:78
 
-- [ ] Resolve Sonar issue `AZ8dpxyFI5cC3g4vWFjZ` (`typescript:S7735`) at `src/utils/safe-read.ts:78`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxyFI5cC3g4vWFjZ` (`typescript:S7735`) at `src/utils/safe-read.ts:78`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -368,7 +368,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 66. Remove useless empty object in src/utils/validation.ts:113
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjj` (`typescript:S7744`) at `src/utils/validation.ts:113`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjj` (`typescript:S7744`) at `src/utils/validation.ts:113`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -392,7 +392,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 67. Use RegExp.exec in src/utils/validation.ts:136
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjl` (`typescript:S6594`) at `src/utils/validation.ts:136`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjl` (`typescript:S6594`) at `src/utils/validation.ts:136`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -416,7 +416,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 68. Use RegExp.exec in src/commands/config-tui.ts:657
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkd` (`typescript:S6594`) at `src/commands/config-tui.ts:657`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkd` (`typescript:S6594`) at `src/commands/config-tui.ts:657`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -440,7 +440,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 69. Simplify boolean conditional in src/commands/config-tui.ts:668
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFke` (`typescript:S6644`) at `src/commands/config-tui.ts:668`: remove unnecessary boolean literals in the conditional expression.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFke` (`typescript:S6644`) at `src/commands/config-tui.ts:668`: remove unnecessary boolean literals in the conditional expression.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Boolean literals inside a conditional expression add noise and obscure the direct boolean expression.
@@ -464,7 +464,7 @@ Replace the conditional expression with the equivalent boolean expression while 
 
 ### 70. Remove useless empty object in src/tools/sub-issue.ts:647
 
-- [ ] Resolve Sonar issue `AZ8dpxtYI5cC3g4vWFhF` (`typescript:S7744`) at `src/tools/sub-issue.ts:647`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxtYI5cC3g4vWFhF` (`typescript:S7744`) at `src/tools/sub-issue.ts:647`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -488,7 +488,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 71. Remove useless empty object in src/utils/validation.ts:45
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFje` (`typescript:S7744`) at `src/utils/validation.ts:45`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFje` (`typescript:S7744`) at `src/utils/validation.ts:45`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -512,7 +512,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 72. Remove useless empty object in src/utils/validation.ts:56
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjf` (`typescript:S7744`) at `src/utils/validation.ts:56`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjf` (`typescript:S7744`) at `src/utils/validation.ts:56`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -536,7 +536,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 73. Remove useless empty object in src/utils/validation.ts:79
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjg` (`typescript:S7744`) at `src/utils/validation.ts:79`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjg` (`typescript:S7744`) at `src/utils/validation.ts:79`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -560,7 +560,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 74. Remove useless empty object in src/utils/validation.ts:83
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjh` (`typescript:S7744`) at `src/utils/validation.ts:83`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjh` (`typescript:S7744`) at `src/utils/validation.ts:83`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -584,7 +584,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 75. Use regex character class in src/utils/validation.ts:102
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFji` (`typescript:S6035`) at `src/utils/validation.ts:102`: replace the regex alternation with a character class.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFji` (`typescript:S6035`) at `src/utils/validation.ts:102`: replace the regex alternation with a character class.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. A character class is clearer and cheaper than alternation when matching single-character alternatives.
@@ -608,7 +608,7 @@ Replace the single-character alternation with an equivalent character class and 
 
 ### 76. Remove useless empty object in src/utils/validation.ts:121
 
-- [ ] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjk` (`typescript:S7744`) at `src/utils/validation.ts:121`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxyoI5cC3g4vWFjk` (`typescript:S7744`) at `src/utils/validation.ts:121`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -632,7 +632,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 77. Batch Array.push calls in src/commands/config-tui.ts:224
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkW` (`typescript:S7778`) at `src/commands/config-tui.ts:224`: avoid multiple `Array#push()` calls.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkW` (`typescript:S7778`) at `src/commands/config-tui.ts:224`: avoid multiple `Array#push()` calls.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Repeated adjacent `Array#push()` calls are noisier than pushing multiple values together.
@@ -656,7 +656,7 @@ Combine adjacent pushes into one `push(a, b, ...)` call or construct the array w
 
 ### 78. Batch Array.push calls in src/commands/config-tui.ts:225
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkX` (`typescript:S7778`) at `src/commands/config-tui.ts:225`: avoid multiple `Array#push()` calls.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkX` (`typescript:S7778`) at `src/commands/config-tui.ts:225`: avoid multiple `Array#push()` calls.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Repeated adjacent `Array#push()` calls are noisier than pushing multiple values together.
@@ -680,7 +680,7 @@ Combine adjacent pushes into one `push(a, b, ...)` call or construct the array w
 
 ### 79. Batch Array.push calls in src/commands/config-tui.ts:241
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkY` (`typescript:S7778`) at `src/commands/config-tui.ts:241`: avoid multiple `Array#push()` calls.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkY` (`typescript:S7778`) at `src/commands/config-tui.ts:241`: avoid multiple `Array#push()` calls.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Repeated adjacent `Array#push()` calls are noisier than pushing multiple values together.
@@ -704,7 +704,7 @@ Combine adjacent pushes into one `push(a, b, ...)` call or construct the array w
 
 ### 80. Batch Array.push calls in src/commands/config-tui.ts:242
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkZ` (`typescript:S7778`) at `src/commands/config-tui.ts:242`: avoid multiple `Array#push()` calls.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkZ` (`typescript:S7778`) at `src/commands/config-tui.ts:242`: avoid multiple `Array#push()` calls.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Repeated adjacent `Array#push()` calls are noisier than pushing multiple values together.
@@ -728,7 +728,7 @@ Combine adjacent pushes into one `push(a, b, ...)` call or construct the array w
 
 ### 81. Remove nested template literal in src/commands/config-tui.ts:351
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkb` (`typescript:S4624`) at `src/commands/config-tui.ts:351`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkb` (`typescript:S4624`) at `src/commands/config-tui.ts:351`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -752,7 +752,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 82. Replace flag-driven behavior in src/commands/config-tui.ts:544
 
-- [ ] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkc` (`typescript:S2301`) at `src/commands/config-tui.ts:544`: provide separate methods instead of using `active` to determine behavior.
+- [x] Resolve Sonar issue `AZ8dpx0VI5cC3g4vWFkc` (`typescript:S2301`) at `src/commands/config-tui.ts:544`: provide separate methods instead of using `active` to determine behavior.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Flag-driven methods make control flow harder to understand and evolve because one parameter selects multiple behaviors.
@@ -776,7 +776,7 @@ Split the active/inactive behavior into clearer methods or data-driven branches 
 
 ### 83. Extract nested ternary in src/commands/issueme-command.ts:130
 
-- [ ] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkT` (`typescript:S3358`) at `src/commands/issueme-command.ts:130`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkT` (`typescript:S3358`) at `src/commands/issueme-command.ts:130`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -800,7 +800,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 84. Reduce cognitive complexity in src/commands/issueme-command.ts:304
 
-- [ ] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkU` (`typescript:S3776`) at `src/commands/issueme-command.ts:304`: reduce cognitive complexity from 16 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0KI5cC3g4vWFkU` (`typescript:S3776`) at `src/commands/issueme-command.ts:304`: reduce cognitive complexity from 16 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -824,7 +824,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 85. Use regex character class in src/config/config.ts:210
 
-- [ ] Resolve Sonar issue `AZ8dpx0AI5cC3g4vWFkQ` (`typescript:S6035`) at `src/config/config.ts:210`: replace the regex alternation with a character class.
+- [x] Resolve Sonar issue `AZ8dpx0AI5cC3g4vWFkQ` (`typescript:S6035`) at `src/config/config.ts:210`: replace the regex alternation with a character class.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. A character class is clearer and cheaper than alternation when matching single-character alternatives.
@@ -848,7 +848,7 @@ Replace the single-character alternation with an equivalent character class and 
 
 ### 86. Remove useless empty object in src/errors.ts:423
 
-- [ ] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlH` (`typescript:S7744`) at `src/errors.ts:423`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlH` (`typescript:S7744`) at `src/errors.ts:423`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -872,7 +872,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 87. Use concise regex class in src/errors.ts:458
 
-- [ ] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlI` (`typescript:S6353`) at `src/errors.ts:458`: use concise `\w` character class syntax.
+- [x] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlI` (`typescript:S6353`) at `src/errors.ts:458`: use concise `\w` character class syntax.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Concise character class syntax improves regex readability without changing behavior.
@@ -896,7 +896,7 @@ Replace `[A-Za-z0-9_]` with an equivalent concise class such as `\w` where the s
 
 ### 88. Use concise regex class in src/errors.ts:459
 
-- [ ] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlJ` (`typescript:S6353`) at `src/errors.ts:459`: use concise `\w` character class syntax.
+- [x] Resolve Sonar issue `AZ8dpx03I5cC3g4vWFlJ` (`typescript:S6353`) at `src/errors.ts:459`: use concise `\w` character class syntax.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Concise character class syntax improves regex readability without changing behavior.
@@ -920,7 +920,7 @@ Replace `[A-Za-z0-9_]` with an equivalent concise class such as `\w` where the s
 
 ### 89. Rewrite negated condition in src/github/client.ts:253
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjt` (`typescript:S7735`) at `src/github/client.ts:253`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjt` (`typescript:S7735`) at `src/github/client.ts:253`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -944,7 +944,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 90. Rewrite negated condition in src/github/client.ts:254
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFju` (`typescript:S7735`) at `src/github/client.ts:254`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFju` (`typescript:S7735`) at `src/github/client.ts:254`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -968,7 +968,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 91. Extract nested ternary in src/github/client.ts:353
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjv` (`typescript:S3358`) at `src/github/client.ts:353`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFjv` (`typescript:S3358`) at `src/github/client.ts:353`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -992,7 +992,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 92. Rewrite negated condition in src/github/client.ts:944
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFj0` (`typescript:S7735`) at `src/github/client.ts:944`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFj0` (`typescript:S7735`) at `src/github/client.ts:944`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1016,7 +1016,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 93. Rewrite negated condition in src/github/client.ts:945
 
-- [ ] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFj1` (`typescript:S7735`) at `src/github/client.ts:945`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxzHI5cC3g4vWFj1` (`typescript:S7735`) at `src/github/client.ts:945`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1040,7 +1040,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 94. Use RegExp.exec in src/github/repository.ts:133
 
-- [ ] Resolve Sonar issue `AZ8dpxzQI5cC3g4vWFj5` (`typescript:S6594`) at `src/github/repository.ts:133`: use `RegExp.exec()` instead of `String#match()`.
+- [x] Resolve Sonar issue `AZ8dpxzQI5cC3g4vWFj5` (`typescript:S6594`) at `src/github/repository.ts:133`: use `RegExp.exec()` instead of `String#match()`.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. `RegExp.exec()` makes regex extraction intent explicit and avoids ambiguous `String#match()` behavior.
@@ -1064,7 +1064,7 @@ Move the regex to an expression or constant as needed, call `regex.exec(value)`,
 
 ### 95. Simplify backtracking regex in src/github/repository.ts:144
 
-- [ ] Resolve Sonar issue `AZ8dpxzQI5cC3g4vWFj6` (`typescript:S8786`) at `src/github/repository.ts:144`: simplify the regex to avoid super-linear backtracking.
+- [x] Resolve Sonar issue `AZ8dpxzQI5cC3g4vWFj6` (`typescript:S8786`) at `src/github/repository.ts:144`: simplify the regex to avoid super-linear backtracking.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `RELIABILITY:MEDIUM`. Super-linear regex backtracking can become a reliability or denial-of-service risk on crafted input.
@@ -1088,7 +1088,7 @@ Rewrite the regex to avoid ambiguous nested quantifiers or overlapping alternati
 
 ### 96. Rewrite negated condition in src/issues/format.ts:68
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkk` (`typescript:S7735`) at `src/issues/format.ts:68`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkk` (`typescript:S7735`) at `src/issues/format.ts:68`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1112,7 +1112,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 97. Rewrite negated condition in src/issues/format.ts:69
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkl` (`typescript:S7735`) at `src/issues/format.ts:69`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkl` (`typescript:S7735`) at `src/issues/format.ts:69`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1136,7 +1136,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 98. Rewrite negated condition in src/issues/format.ts:70
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkm` (`typescript:S7735`) at `src/issues/format.ts:70`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkm` (`typescript:S7735`) at `src/issues/format.ts:70`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1160,7 +1160,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 99. Rewrite negated condition in src/issues/format.ts:98
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkn` (`typescript:S7735`) at `src/issues/format.ts:98`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkn` (`typescript:S7735`) at `src/issues/format.ts:98`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1184,7 +1184,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 100. Rewrite negated condition in src/issues/format.ts:99
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFko` (`typescript:S7735`) at `src/issues/format.ts:99`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFko` (`typescript:S7735`) at `src/issues/format.ts:99`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.

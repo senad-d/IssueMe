@@ -130,7 +130,7 @@ function classifyRepositorySource(value: string): RepositorySourceClassification
 	const shorthand = parseOwnerRepo(input);
 	if (shorthand) return { kind: "github", repository: shorthand };
 
-	const scpLike = input.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/);
+	const scpLike = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(input);
 	if (scpLike && !input.includes("://")) {
 		const host = scpLike[1]?.toLowerCase();
 		if (host !== "github.com") return { kind: "non_github" };
@@ -141,7 +141,7 @@ function classifyRepositorySource(value: string): RepositorySourceClassification
 	try {
 		const url = new URL(input);
 		if (url.hostname.toLowerCase() !== "github.com") return { kind: "non_github" };
-		const pathParts = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+		const pathParts = trimPathSlashes(url.pathname).split("/");
 		if (pathParts.length !== 2) return { kind: "malformed" };
 		const owner = safeDecodeURIComponent(pathParts[0] ?? "");
 		const repo = safeDecodeURIComponent((pathParts[1] ?? "").replace(/\.git$/i, ""));
@@ -150,6 +150,14 @@ function classifyRepositorySource(value: string): RepositorySourceClassification
 	} catch {
 		return { kind: "malformed" };
 	}
+}
+
+function trimPathSlashes(pathname: string): string {
+	let start = 0;
+	let end = pathname.length;
+	while (start < end && pathname[start] === "/") start += 1;
+	while (end > start && pathname[end - 1] === "/") end -= 1;
+	return pathname.slice(start, end);
 }
 
 function parseOwnerRepo(value: string): GitHubRepository | undefined {

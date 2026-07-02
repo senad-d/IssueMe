@@ -21,7 +21,7 @@ import {
 } from "../utils/slug.ts";
 import { assertNotAborted } from "../utils/abort.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
-import { readTrustedTextFile } from "../utils/safe-read.ts";
+import { readTrustedTextFile, type TrustedTextFileReadOptions } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 
 export async function writeIssueRecord(projectRoot: string, config: IssueMeConfig, record: IssueRecord, signal?: AbortSignal): Promise<IssueWriteResult> {
@@ -316,14 +316,19 @@ export function relativeIssuePath(projectRoot: string, absolutePath: string | un
 }
 
 async function readTrustedIssueFileText(path: string, safeDirectory?: string, projectRoot?: string): Promise<string> {
-	return readTrustedTextFile(path, {
-		...(projectRoot !== undefined ? { projectRoot } : {}),
-		...(safeDirectory !== undefined ? { safeDirectory } : {}),
+	const options: TrustedTextFileReadOptions = {
 		unsafeCode: "unsafe_issue_file",
 		unsafeMessage: "IssueMe refuses to read or mutate symlinked issue files.",
 		notFileMessage: "Issue cache path exists but is not a regular file.",
 		raceSwapMessage: "Issue cache file changed while it was being opened for reading.",
-	});
+	};
+	assignTrustedTextFilePathOption(options, "projectRoot", projectRoot);
+	assignTrustedTextFilePathOption(options, "safeDirectory", safeDirectory);
+	return readTrustedTextFile(path, options);
+}
+
+function assignTrustedTextFilePathOption(options: TrustedTextFileReadOptions, field: "projectRoot" | "safeDirectory", value: string | undefined): void {
+	if (typeof value === "string") options[field] = value;
 }
 
 async function removeIssueFiles(projectRoot: string, config: IssueMeConfig, files: IssueFileMetadata[], signal?: AbortSignal): Promise<string[]> {

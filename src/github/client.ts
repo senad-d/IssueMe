@@ -258,13 +258,14 @@ export class GitHubClient {
 	async searchIssues(filters: GitHubIssueSearchFilters, signal?: AbortSignal): Promise<GitHubIssueListResult> {
 		const limit = normalizePaginationLimit(filters.limit);
 		const result = await this.paginateSearchIssues(buildIssueSearchRequestQuery(this.repository.fullName, filters, limit), signal, { limit });
-		return {
+		const searchResult: GitHubIssueListResult = {
 			mode: "search",
 			issues: result.items,
 			truncated: result.truncated,
-			...(result.totalCount !== undefined ? { totalCount: result.totalCount } : {}),
-			...(result.incompleteResults !== undefined ? { incompleteResults: result.incompleteResults } : {}),
 		};
+		if (typeof result.totalCount === "number") searchResult.totalCount = result.totalCount;
+		if (typeof result.incompleteResults === "boolean") searchResult.incompleteResults = result.incompleteResults;
+		return searchResult;
 	}
 
 	async listLabels(filters: GitHubRepositoryLabelListFilters = {}, signal?: AbortSignal): Promise<GitHubRepositoryLabelListResult> {
@@ -360,11 +361,14 @@ export class GitHubClient {
 		const owner = projectId ? this.repository.owner : normalizeProjectV2Owner(scope, filters.owner, this.repository);
 		const projectNumber = projectId ? undefined : normalizeProjectV2ProjectNumber(filters.projectNumber);
 		const operationName = projectId ? "IssueMeGetProjectV2FieldsById" : "IssueMeGetProjectV2FieldsByNumber";
-		const fieldVariables = projectId
-			? compactObject({ projectId, fieldsFirst: fieldLimit })
-			: scope === "repository"
-				? compactObject({ owner, repo: this.repository.repo, projectNumber, fieldsFirst: fieldLimit })
-				: compactObject({ owner, projectNumber, fieldsFirst: fieldLimit });
+		let fieldVariables: Record<string, unknown>;
+		if (projectId) {
+			fieldVariables = compactObject({ projectId, fieldsFirst: fieldLimit });
+		} else if (scope === "repository") {
+			fieldVariables = compactObject({ owner, repo: this.repository.repo, projectNumber, fieldsFirst: fieldLimit });
+		} else {
+			fieldVariables = compactObject({ owner, projectNumber, fieldsFirst: fieldLimit });
+		}
 		const data = await this.graphqlRequest<Record<string, unknown>>(
 			operationName,
 			projectId ? buildProjectV2FieldsByIdQuery() : buildProjectV2FieldsByNumberQuery(scope),
@@ -897,7 +901,7 @@ export class GitHubClient {
 
 	private async assertRepositoryLabelsExist(labels: string[], signal?: AbortSignal): Promise<void> {
 		const missing: string[] = [];
-		for (const label of [...new Set(labels)]) {
+		for (const label of new Set(labels)) {
 			const existing = await this.getRepositoryLabel(label, signal);
 			if (!existing) missing.push(label);
 		}
@@ -913,7 +917,7 @@ export class GitHubClient {
 
 	private async assertRepositoryAssigneesAssignable(assignees: string[], signal?: AbortSignal): Promise<void> {
 		const invalid: string[] = [];
-		for (const assignee of [...new Set(assignees)]) {
+		for (const assignee of new Set(assignees)) {
 			if (!await this.isRepositoryAssigneeAssignable(assignee, signal)) invalid.push(assignee);
 		}
 		if (invalid.length > 0) {
@@ -1030,10 +1034,8 @@ function issueSearchPaginationResult(
 	totalCount: number | undefined,
 	incompleteResults: boolean | undefined,
 ): { items: GitHubIssueResponse[]; truncated: boolean; totalCount?: number; incompleteResults?: boolean } {
-	return {
-		items,
-		truncated,
-		...(totalCount !== undefined ? { totalCount } : {}),
-		...(incompleteResults !== undefined ? { incompleteResults } : {}),
-	};
+	const result: { items: GitHubIssueResponse[]; truncated: boolean; totalCount?: number; incompleteResults?: boolean } = { items, truncated };
+	if (typeof totalCount === "number") result.totalCount = totalCount;
+	if (typeof incompleteResults === "boolean") result.incompleteResults = incompleteResults;
+	return result;
 }

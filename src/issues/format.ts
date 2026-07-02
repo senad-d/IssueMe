@@ -65,20 +65,16 @@ export function githubIssueToRecord(
 	const commentsFetchLimit = commentFetch.limit ?? normalizedComments.length;
 	const commentsTruncated = commentFetch.truncated ?? commentsCount > normalizedComments.length;
 	const relationships = normalizeIssueRelationships(issue);
-	return {
+	const record: IssueRecord = {
 		schemaVersion: ISSUE_SCHEMA_VERSION,
 		repository: repository.fullName,
 		number,
 		title,
 		state,
-		...(normalizeIssueCreator(issue.user) ? { creator: normalizeIssueCreator(issue.user) } : {}),
 		body: typeof issue.body === "string" ? issue.body : "",
 		labels: normalizeLabels(issue.labels),
 		assignees: normalizeAssignees(issue.assignees),
 		milestone: normalizeMilestone(issue.milestone),
-		...(relationships.parent_issue !== undefined ? { parent_issue: relationships.parent_issue } : {}),
-		...(relationships.sub_issues !== undefined ? { sub_issues: relationships.sub_issues } : {}),
-		...(relationships.sub_issues_count !== undefined ? { sub_issues_count: relationships.sub_issues_count } : {}),
 		comments: normalizedComments,
 		comments_truncated: commentsTruncated,
 		comments_count: commentsCount,
@@ -89,6 +85,12 @@ export function githubIssueToRecord(
 		closed_at: typeof issue.closed_at === "string" ? issue.closed_at : null,
 		synced_at: syncedAt,
 	};
+	const creator = normalizeIssueCreator(issue.user);
+	if (creator) record.creator = creator;
+	if (relationships.parent_issue !== undefined) record.parent_issue = relationships.parent_issue;
+	if (relationships.sub_issues !== undefined) record.sub_issues = relationships.sub_issues;
+	if (relationships.sub_issues_count !== undefined) record.sub_issues_count = relationships.sub_issues_count;
+	return record;
 }
 
 export function isPullRequestIssue(issue: GitHubIssueResponse): boolean {
@@ -96,23 +98,24 @@ export function isPullRequestIssue(issue: GitHubIssueResponse): boolean {
 }
 
 export function issueRecordToToolSummary(record: IssueRecord, localPath?: string): ToolIssueSummary {
-	return {
+	const summary: ToolIssueSummary = {
 		repository: record.repository,
 		number: record.number,
 		title: record.title,
 		state: record.state,
-		...(record.creator ? { creator: record.creator } : {}),
 		labels: [...record.labels],
 		assignees: [...record.assignees],
 		html_url: record.html_url,
-		...(localPath ? { localPath } : {}),
-		...(record.parent_issue !== undefined ? { parentIssue: record.parent_issue } : {}),
-		...(record.sub_issues !== undefined ? { subIssues: [...record.sub_issues] } : {}),
-		...(record.sub_issues_count !== undefined ? { subIssuesCount: record.sub_issues_count } : {}),
-		...(record.comments_truncated !== undefined ? { commentsTruncated: record.comments_truncated } : {}),
-		...(record.comments_count !== undefined ? { commentsCount: record.comments_count } : {}),
-		...(record.comments_fetch_limit !== undefined ? { commentsFetchLimit: record.comments_fetch_limit } : {}),
 	};
+	if (record.creator) summary.creator = record.creator;
+	if (localPath) summary.localPath = localPath;
+	if (record.parent_issue !== undefined) summary.parentIssue = record.parent_issue;
+	if (record.sub_issues !== undefined) summary.subIssues = [...record.sub_issues];
+	if (record.sub_issues_count !== undefined) summary.subIssuesCount = record.sub_issues_count;
+	if (record.comments_truncated !== undefined) summary.commentsTruncated = record.comments_truncated;
+	if (record.comments_count !== undefined) summary.commentsCount = record.comments_count;
+	if (record.comments_fetch_limit !== undefined) summary.commentsFetchLimit = record.comments_fetch_limit;
+	return summary;
 }
 
 export function applyIssueRelationshipMetadata(record: IssueRecord, relationships: IssueRelationshipMetadata): IssueRecord {

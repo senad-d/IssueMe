@@ -3,6 +3,8 @@ import { isValidIsoDateOnly } from "./date.ts";
 
 export const MAX_GITHUB_OPAQUE_ID_LENGTH = 512;
 
+const ISO_DATE_OR_TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+
 interface IntegerValidationOptions {
 	message?: string;
 	details?: Record<string, unknown>;
@@ -42,7 +44,7 @@ export function invalidToolInput(message: string, safeDetails: Record<string, un
 
 export function normalizePositiveSafeInteger(value: number | undefined, field: string, options: IntegerValidationOptions = {}): number {
 	if (Number.isSafeInteger(value) && value !== undefined && value > 0) return value;
-	throw invalidToolInput(options.message ?? `${field} must be a positive integer.`, { field, ...(options.details ?? {}) });
+	throw invalidToolInput(options.message ?? `${field} must be a positive integer.`, validationErrorDetails(field, options.details));
 }
 
 export function normalizeBoundedInteger(
@@ -53,7 +55,7 @@ export function normalizeBoundedInteger(
 	if (value === undefined && options.defaultValue !== undefined) return options.defaultValue;
 	const min = options.min ?? 1;
 	if (Number.isSafeInteger(value) && value !== undefined && value >= min && value <= options.max) return value;
-	throw invalidToolInput(options.message ?? `${field} must be an integer between ${min} and ${options.max}.`, { field, ...(options.details ?? {}) });
+	throw invalidToolInput(options.message ?? `${field} must be an integer between ${min} and ${options.max}.`, validationErrorDetails(field, options.details));
 }
 
 export function normalizeBoundedToolLimit(value: number | undefined, options: BoundedToolLimitOptions): number {
@@ -76,11 +78,11 @@ export function normalizeOptionalTrimmedText(value: string | undefined, field: s
 
 export function normalizeRequiredTrimmedText(value: string | undefined, field: string, options: TextValidationOptions = {}): string {
 	if (typeof value !== "string") {
-		throw invalidToolInput(options.requiredMessage ?? `${field} is required.`, { field, ...(options.details ?? {}) });
+		throw invalidToolInput(options.requiredMessage ?? `${field} is required.`, validationErrorDetails(field, options.details));
 	}
 	const trimmed = value.trim();
 	if (!trimmed) {
-		throw invalidToolInput(options.emptyMessage ?? `${field} must not be empty.`, { field, ...(options.details ?? {}) });
+		throw invalidToolInput(options.emptyMessage ?? `${field} must not be empty.`, validationErrorDetails(field, options.details));
 	}
 	assertValidatedText(trimmed, field, options);
 	return trimmed;
@@ -99,7 +101,7 @@ export function assertNoNullBytes(value: string, field: string, message = `${fie
 }
 
 export function assertOneLine(value: string, field: string, message = `${field} must fit on one line.`, details: Record<string, unknown> = {}): void {
-	if (/\r|\n/.test(value)) throw invalidToolInput(message, { field, ...details });
+	if (/[\r\n]/.test(value)) throw invalidToolInput(message, { field, ...details });
 }
 
 export function assertMaxLength(value: string, field: string, maxLength: number, message = `${field} must be ${maxLength} characters or fewer.`, details: Record<string, unknown> = {}): void {
@@ -110,7 +112,7 @@ export function normalizeOptionalIsoDateOrTimestamp(value: string | undefined, f
 	const normalized = normalizeOptionalTrimmedText(value, field, { ...options, oneLine: true, maxLength: options.maxLength ?? 64 });
 	if (!normalized) return undefined;
 	if (!isValidIsoDateOrTimestamp(normalized)) {
-		throw invalidToolInput(options.invalidMessage ?? `${field} must be a valid ISO YYYY-MM-DD date or ISO 8601 timestamp with timezone.`, { field, ...(options.details ?? {}) });
+		throw invalidToolInput(options.invalidMessage ?? `${field} must be a valid ISO YYYY-MM-DD date or ISO 8601 timestamp with timezone.`, validationErrorDetails(field, options.details));
 	}
 	return normalized;
 }
@@ -118,7 +120,7 @@ export function normalizeOptionalIsoDateOrTimestamp(value: string | undefined, f
 export function normalizeRequiredIsoDateOnly(value: string | undefined, field: string, options: TextValidationOptions & { invalidMessage?: string } = {}): string {
 	const date = normalizeRequiredTrimmedText(value, field, options);
 	if (!isValidIsoDateOnly(date)) {
-		throw invalidToolInput(options.invalidMessage ?? `${field} must be a valid YYYY-MM-DD date.`, { field, ...(options.details ?? {}) });
+		throw invalidToolInput(options.invalidMessage ?? `${field} must be a valid YYYY-MM-DD date.`, validationErrorDetails(field, options.details));
 	}
 	return date;
 }
@@ -133,7 +135,7 @@ export function normalizeRequiredGitHubOpaqueId(value: string | undefined, field
 
 export function isValidIsoDateOrTimestamp(value: string): boolean {
 	if (isValidIsoDateOnly(value)) return true;
-	const match = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/);
+	const match = ISO_DATE_OR_TIMESTAMP_PATTERN.exec(value);
 	if (!match) return false;
 	const [, date, rawHour, rawMinute, rawSecond, timezone] = match;
 	if (!isValidIsoDateOnly(date)) return false;
@@ -147,6 +149,11 @@ export function isValidIsoDateOrTimestamp(value: string): boolean {
 		if (offsetHour > 23 || offsetMinute > 59) return false;
 	}
 	return true;
+}
+
+function validationErrorDetails(field: string, details: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (details) return { field, ...details };
+	return { field };
 }
 
 function githubOpaqueIdTextOptions(field: string, options: GitHubOpaqueIdValidationOptions): TextValidationOptions {

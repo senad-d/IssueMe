@@ -419,11 +419,9 @@ function buildSafeDetails(
 	category: IssueMeErrorCategory,
 	recoveryHint: string,
 ): Record<string, unknown> {
-	return {
-		...(sanitizeSafeDetails(details) ?? {}),
-		category,
-		recoveryHint,
-	};
+	const safeDetails = sanitizeSafeDetails(details);
+	if (safeDetails === undefined) return { category, recoveryHint };
+	return { ...safeDetails, category, recoveryHint };
 }
 
 function sanitizeSafeDetails(value: unknown): Record<string, unknown> | undefined {
@@ -455,8 +453,8 @@ function isSensitiveDetailKey(key: string): boolean {
 
 function redactKnownSensitiveText(text: string): string {
 	return text
-		.replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED]")
-		.replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED]");
+		.replace(/github_pat_\w+/g, "[REDACTED]")
+		.replace(/gh[pousr]_\w+/g, "[REDACTED]");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

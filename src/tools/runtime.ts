@@ -135,7 +135,7 @@ export function isCreatorScopeRestricted(config: Partial<IssueMeConfig>): boolea
 }
 
 function hasAllowedIssueCreator(config: Partial<IssueMeConfig>): boolean {
-	return Object.prototype.hasOwnProperty.call(config, "allowedIssueCreator");
+	return Object.hasOwn(config, "allowedIssueCreator");
 }
 
 export function issueCreatorMatchesConfig(config: Partial<IssueMeConfig>, creator: unknown): boolean {
@@ -159,17 +159,39 @@ export function assertIssueCreatorAllowed(
 	if (creator && issueCreatorEquals(creator, allowed)) return;
 	const issueNumber = context.issueNumber ?? extractIssueNumber(issueOrRecord);
 	const creatorText = creator ?? "unknown";
+	const issueSubject = issueCreatorErrorSubject(issueNumber);
 	throw new IssueMeError(
 		ISSUEME_ERROR_CODES.ISSUE_CREATOR_NOT_ALLOWED,
-		`Issue${issueNumber !== undefined ? ` #${issueNumber}` : ""} was created by ${creatorText}; IssueMe is configured to process only issues created by ${allowed}.`,
-		{
-			allowedIssueCreator: allowed,
-			creator: creatorText,
-			...(issueNumber !== undefined ? { issueNumber } : {}),
-			...(context.repository ? { repository: context.repository } : {}),
-			...(context.operation ? { operation: context.operation } : {}),
-		},
+		`${issueSubject} was created by ${creatorText}; IssueMe is configured to process only issues created by ${allowed}.`,
+		issueCreatorErrorDetails(allowed, creatorText, issueNumber, context),
 	);
+}
+
+function issueCreatorErrorSubject(issueNumber: number | undefined): string {
+	if (issueNumber === undefined) return "Issue";
+	return `Issue #${issueNumber}`;
+}
+
+function issueCreatorErrorDetails(
+	allowedIssueCreator: string,
+	creator: string,
+	issueNumber: number | undefined,
+	context: { repository?: string; operation?: string },
+): Record<string, unknown> {
+	const details: Record<string, unknown> = { allowedIssueCreator, creator };
+	assignDefinedDetail(details, "issueNumber", issueNumber);
+	assignOptionalTextDetail(details, "repository", context.repository);
+	assignOptionalTextDetail(details, "operation", context.operation);
+	return details;
+}
+
+function assignDefinedDetail(details: Record<string, unknown>, field: string, value: number | undefined): void {
+	if (value === undefined) return;
+	details[field] = value;
+}
+
+function assignOptionalTextDetail(details: Record<string, unknown>, field: string, value: string | undefined): void {
+	if (value) details[field] = value;
 }
 
 export async function assertExistingIssueCreatorAllowed(

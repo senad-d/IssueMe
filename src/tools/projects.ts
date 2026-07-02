@@ -337,7 +337,7 @@ function normalizeProjectFieldValueType(value: GitHubProjectV2FieldValueType | u
 }
 
 function normalizeProjectFieldValue(params: UpdateProjectItemToolParams, valueType: GitHubProjectV2FieldValueType): GitHubProjectV2FieldValueInput {
-	const valueFields = Object.values(UPDATE_PROJECT_ITEM_VALUE_FIELDS).flatMap((fields) => fields);
+	const valueFields = Object.values(UPDATE_PROJECT_ITEM_VALUE_FIELDS).flat();
 	const expectedField = UPDATE_PROJECT_ITEM_VALUE_FIELDS[valueType][0];
 	const providedFields = valueFields.filter((field) => params[field] !== undefined);
 	if (providedFields.length !== 1 || providedFields[0] !== expectedField) {

@@ -73,14 +73,19 @@ async function validateOpenedFile(path: string, handle: FileHandle, options: Saf
 }
 
 function normalizeOptions(options: TrustedTextFileReadOptions): SafeReadValidationOptions {
-	return {
-		...(options.projectRoot !== undefined ? { projectRoot: options.projectRoot } : {}),
-		...(options.safeDirectory !== undefined ? { safeDirectory: options.safeDirectory } : {}),
+	const normalizedOptions: SafeReadValidationOptions = {
 		unsafeCode: options.unsafeCode ?? "unsafe_path",
 		unsafeMessage: options.unsafeMessage ?? "Refusing to read a symlinked trusted local state file.",
 		notFileMessage: options.notFileMessage ?? "Trusted local state path exists but is not a regular file.",
 		raceSwapMessage: options.raceSwapMessage ?? "Trusted local state file changed while it was being opened for reading.",
 	};
+	assignSafeReadPathOption(normalizedOptions, "projectRoot", options.projectRoot);
+	assignSafeReadPathOption(normalizedOptions, "safeDirectory", options.safeDirectory);
+	return normalizedOptions;
+}
+
+function assignSafeReadPathOption(options: SafeReadValidationOptions, field: "projectRoot" | "safeDirectory", value: string | undefined): void {
+	if (typeof value === "string") options[field] = value;
 }
 
 function assertTrustedPathInside(options: SafeReadValidationOptions, parentDirectory: string, childPath: string, message: string): void {

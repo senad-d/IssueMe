@@ -27,7 +27,7 @@ function normalizeAllowedIssueCreator(value: unknown, options: { strict: boolean
 	const trimmed = value.trim();
 	if (!trimmed) return invalidAllowedIssueCreator(options);
 	if (trimmed.includes("\0")) return invalidAllowedIssueCreator(options, "Allowed issue creator must not contain null bytes.");
-	if (/\r|\n/.test(trimmed)) return invalidAllowedIssueCreator(options, "Allowed issue creator must fit on one line.");
+	if (/[\r\n]/.test(trimmed)) return invalidAllowedIssueCreator(options, "Allowed issue creator must fit on one line.");
 	if (/\s/.test(trimmed)) return invalidAllowedIssueCreator(options, "Allowed issue creator must be all or one GitHub username, not a whitespace-separated list.");
 	if (trimmed.toLowerCase() === ALL_ISSUE_CREATORS) return ALL_ISSUE_CREATORS;
 	if (isValidGitHubLogin(trimmed)) return trimmed;

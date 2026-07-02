@@ -636,19 +636,24 @@ function subIssueAttachPartialSuccessError(error: unknown, record: IssueRecord, 
 	return {
 		...safeError,
 		recoveryHint,
-		details: {
-			parentNumber,
-			createdIssue: {
-				number: record.number,
-				title: record.title,
-				html_url: record.html_url,
-			},
-			retrySafeGuidance: recoveryHint,
-			...(safeError.details ?? {}),
-			partialSuccessStatus: "sub_issue_attach_partial_success",
-			partialSuccessRecoveryHint: recoveryHint,
-		},
+		details: subIssueAttachPartialSuccessDetails(safeError.details, record, parentNumber, recoveryHint),
 	};
+}
+
+function subIssueAttachPartialSuccessDetails(safeErrorDetails: Record<string, unknown> | undefined, record: IssueRecord, parentNumber: number, recoveryHint: string): Record<string, unknown> {
+	const details: Record<string, unknown> = {
+		parentNumber,
+		createdIssue: {
+			number: record.number,
+			title: record.title,
+			html_url: record.html_url,
+		},
+		retrySafeGuidance: recoveryHint,
+	};
+	if (safeErrorDetails) Object.assign(details, safeErrorDetails);
+	details.partialSuccessStatus = "sub_issue_attach_partial_success";
+	details.partialSuccessRecoveryHint = recoveryHint;
+	return details;
 }
 
 function subIssueMutationFailure(runtime: IssueMeRuntime, parentNumber: number, childNumber: number, action: "attach" | "remove", error: unknown) {

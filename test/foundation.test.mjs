@@ -124,9 +124,11 @@ test("token resolution rejects malformed token values and symlinked project env 
 test("repository resolution supports env precedence, normal checkouts, worktrees, submodules, nested cwd, and safe errors", async () => {
 	assert.deepEqual(parseGitHubRepository("owner/repo"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("https://github.com/owner/repo.git"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
+	assert.deepEqual(parseGitHubRepository("https://github.com////owner/repo////"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("git@github.com:owner/repo.git"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.equal(parseGitHubRepository("https://example.com/owner/repo.git"), undefined);
 	assert.equal(parseGitHubRepository("https://github.com/owner"), undefined);
+	assert.equal(parseGitHubRepository("https://github.com/owner//repo.git"), undefined);
 
 	const envWins = await tempProject();
 	await mkdir(join(envWins, ".git"));
