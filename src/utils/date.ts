@@ -1,5 +1,7 @@
+const ISO_DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 export function isValidIsoDateOnly(value: string): boolean {
-	const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+	const match = ISO_DATE_ONLY_PATTERN.exec(value);
 	if (!match) return false;
 	const [, rawYear, rawMonth, rawDay] = match;
 	const year = Number(rawYear);

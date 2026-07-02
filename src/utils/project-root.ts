@@ -4,6 +4,9 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { IssueMeError, isNodeError } from "../errors.ts";
 import { readTrustedTextFile } from "./safe-read.ts";
 
+const GITDIR_ENTRY_PREFIX = "gitdir:";
+const GITDIR_ENTRY_PATTERN = /^gitdir:[^\r\n]*$/im;
+
 export interface ProjectRootResolution {
 	root: string;
 	gitRootFound: boolean;
@@ -70,11 +73,11 @@ export async function resolveGitDirectory(gitRoot: string): Promise<string> {
 		notFileMessage: "The .git entry is neither a directory nor a gitdir file.",
 		raceSwapMessage: "The .git gitdir file changed while it was being opened for reading.",
 	});
-	const match = text.match(/^gitdir:\s*(.+)\s*$/im);
-	if (!match?.[1]) {
+	const match = GITDIR_ENTRY_PATTERN.exec(text);
+	const rawGitDir = match?.[0].slice(GITDIR_ENTRY_PREFIX.length).trim();
+	if (!rawGitDir) {
 		throw new IssueMeError("repository_gitdir_invalid", "The .git file does not contain a valid gitdir entry.");
 	}
-	const rawGitDir = match[1].trim();
 	if (rawGitDir.includes("\0")) {
 		throw new IssueMeError("repository_gitdir_invalid", "The .git file contains an invalid gitdir path.");
 	}

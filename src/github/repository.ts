@@ -7,6 +7,8 @@ import { resolveCommonGitDirectory, resolveGitDirectory, resolveIssueMeProjectRo
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const REPO_PATTERN = /^[A-Za-z0-9._-]+$/;
+const GIT_REMOTE_SECTION_PATTERN = /^\[remote\s+"([^"\r\n]+)"\]$/;
+const GIT_REMOTE_URL_PATTERN = /^url\s*=\s*(\S.*)$/;
 
 export function parseGitHubRepository(value: string): GitHubRepository | undefined {
 	const parsed = classifyRepositorySource(value);
@@ -17,13 +19,13 @@ export function parseGitConfigOriginUrl(configText: string): string | undefined 
 	let inOriginRemote = false;
 	for (const rawLine of configText.split(/\r?\n/)) {
 		const line = rawLine.trim();
-		const section = line.match(/^\[remote\s+"(.+)"\]$/);
+		const section = GIT_REMOTE_SECTION_PATTERN.exec(line);
 		if (section) {
 			inOriginRemote = section[1] === "origin";
 			continue;
 		}
 		if (!inOriginRemote) continue;
-		const url = line.match(/^url\s*=\s*(.+)$/);
+		const url = GIT_REMOTE_URL_PATTERN.exec(line);
 		if (url) return url[1]?.trim();
 	}
 	return undefined;

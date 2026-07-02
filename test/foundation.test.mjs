@@ -6,14 +6,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { getIssueMeConfigPath, loadIssueMeConfig, saveIssueMeConfig } from "../src/config/config.ts";
-import { parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
+import { parseGitConfigOriginUrl, parseGitHubRepository, resolveCurrentRepository } from "../src/github/repository.ts";
 import { githubIssueToRecord, issueRecordToToolSummary, formatIssueSummary } from "../src/issues/format.ts";
 import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
 import { isValidIsoDateOnly } from "../src/utils/date.ts";
 import { parseProjectEnvTokens, readProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
 import { resolveFileMutationQueuePath } from "../src/utils/mutation-queue.ts";
 import { resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
-import { assertPathInside, issueFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
+import { assertPathInside, issueFileName, parseIssueNumberFromFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
 
 async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-test-"));
@@ -122,6 +122,8 @@ test("token resolution rejects malformed token values and symlinked project env 
 });
 
 test("repository resolution supports env precedence, normal checkouts, worktrees, submodules, nested cwd, and safe errors", async () => {
+	assert.equal(parseGitConfigOriginUrl('[remote "upstream"]\n\turl = https://github.com/up/stream.git\n[remote "origin"]\n\turl =  https://github.com/local/repo.git\n'), "https://github.com/local/repo.git");
+	assert.equal(parseGitConfigOriginUrl('[remote "origin"]\n\turl =    \n'), undefined);
 	assert.deepEqual(parseGitHubRepository("owner/repo"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("https://github.com/owner/repo.git"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
 	assert.deepEqual(parseGitHubRepository("https://github.com////owner/repo////"), { owner: "owner", repo: "repo", fullName: "owner/repo" });
@@ -151,7 +153,7 @@ test("repository resolution supports env precedence, normal checkouts, worktrees
 	const commonGitDir = join(worktree, "actual-git");
 	const worktreeGitDir = join(commonGitDir, "worktrees", "feature");
 	await mkdir(worktreeGitDir, { recursive: true });
-	await writeFile(join(worktree, ".git"), "gitdir: actual-git/worktrees/feature\n", "utf8");
+	await writeFile(join(worktree, ".git"), "gitdir:   actual-git/worktrees/feature   \r\n", "utf8");
 	await writeFile(join(worktreeGitDir, "commondir"), "../..\n", "utf8");
 	await writeFile(join(commonGitDir, "config"), '[remote "origin"]\n\turl = https://github.com/work/tree.git\n', "utf8");
 	assert.deepEqual(await resolveCurrentRepository(worktree, {}), { owner: "work", repo: "tree", fullName: "work/tree" });
@@ -184,8 +186,13 @@ test("repository resolution supports env precedence, normal checkouts, worktrees
 test("slug, issue directory, and issue paths are safe and stable", async () => {
 	const cwd = await tempProject();
 	assert.equal(slugifyIssueTitle("Crème brûlée!!! Fix cache"), "creme-brulee-fix-cache");
+	assert.equal(slugifyIssueTitle("---Fix---cache---"), "fix-cache");
+	assert.equal(slugifyIssueTitle("Fix cache -----", 10), "fix-cache");
 	assert.equal(slugifyIssueTitle("你好 👋"), "issue");
 	assert.equal(issueFileName(42, "Fix cache bug"), "42-fix-cache-bug.json");
+	assert.equal(parseIssueNumberFromFileName("42-fix-cache-bug.json"), 42);
+	assert.equal(parseIssueNumberFromFileName("0-fix-cache-bug.json"), undefined);
+	assert.equal(parseIssueNumberFromFileName("not-an-issue.json"), undefined);
 	assert.match(resolveIssueDirectory(cwd, "issues/sub"), /issues[/\\]sub$/);
 	assert.match(resolveIssueDirectory(cwd, "..cache/issues"), /\.\.cache[/\\]issues$/);
 	assert.match(resolveIssueDirectory(cwd, ".../issues"), /\.\.\.[/\\]issues$/);
@@ -206,6 +213,7 @@ test("slug, issue directory, and issue paths are safe and stable", async () => {
 	assert.equal(isValidIsoDateOnly("2024-02-29"), true);
 	assert.equal(isValidIsoDateOnly("2026-02-30"), false);
 	assert.equal(isValidIsoDateOnly("2026-13-01"), false);
+	assert.equal(isValidIsoDateOnly("2026-02-28T00:00:00Z"), false);
 	assert.match(await readFile(".gitignore", "utf8"), /^\/issues\/$/m);
 });
 

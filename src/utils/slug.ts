@@ -4,18 +4,37 @@ import { DEFAULT_ISSUES_DIR, LOCAL_ISSUE_FILE_EXTENSION, MAX_TITLE_SLUG_LENGTH, 
 import { IssueMeError } from "../errors.ts";
 
 const PROTECTED_DIRECTORY_SET = new Set<string>(PROTECTED_ISSUE_DIRECTORIES.map((directory) => directory.toLowerCase()));
+const ISSUE_FILE_NAME_PATTERN = /^(\d+)-.+\.json$/;
 
 export function slugifyIssueTitle(title: string, maxLength = MAX_TITLE_SLUG_LENGTH): string {
-	const normalized = title
+	const asciiSlugText = title
 		.normalize("NFKD")
 		.replace(/[\u0300-\u036f]/g, "")
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.replace(/-{2,}/g, "-");
-
-	const clipped = normalized.slice(0, Math.max(1, maxLength)).replace(/-+$/g, "");
+		.replace(/[^a-z0-9]+/g, "-");
+	const normalized = collapseRepeatedDashes(trimEdgeDashes(asciiSlugText));
+	const clipped = trimTrailingDashes(normalized.slice(0, Math.max(1, maxLength)));
 	return clipped || "issue";
+}
+
+function trimEdgeDashes(value: string): string {
+	return trimTrailingDashes(trimLeadingDashes(value));
+}
+
+function trimLeadingDashes(value: string): string {
+	let start = 0;
+	while (start < value.length && value[start] === "-") start += 1;
+	return value.slice(start);
+}
+
+function trimTrailingDashes(value: string): string {
+	let end = value.length;
+	while (end > 0 && value[end - 1] === "-") end -= 1;
+	return value.slice(0, end);
+}
+
+function collapseRepeatedDashes(value: string): string {
+	return value.replace(/-{2,}/g, "-");
 }
 
 export function issueFileName(issueNumber: number, title: string): string {
@@ -24,7 +43,7 @@ export function issueFileName(issueNumber: number, title: string): string {
 }
 
 export function parseIssueNumberFromFileName(fileName: string): number | undefined {
-	const match = fileName.match(/^(\d+)-.+\.json$/);
+	const match = ISSUE_FILE_NAME_PATTERN.exec(fileName);
 	if (!match) return undefined;
 	const number = Number(match[1]);
 	return Number.isSafeInteger(number) && number > 0 ? number : undefined;
@@ -86,14 +105,19 @@ export function resolveExistingIssueFilePath(cwd: string, issueDirectory: string
 	if (!cleanPath || cleanPath.includes("\0")) {
 		throw new IssueMeError("unsafe_issue_file", "Issue file path is empty or invalid.");
 	}
-	const hasPathSeparator = cleanPath.includes("/") || cleanPath.includes("\\");
-	const absolute = isAbsolute(cleanPath)
-		? resolve(cleanPath)
-		: hasPathSeparator
-			? resolve(cwd, cleanPath)
-			: resolve(directory, cleanPath);
+	const absolute = resolveIssueLookupPath(cwd, directory, cleanPath);
 	assertPathInside(directory, absolute, "Issue file lookup must stay inside the configured issue directory.");
 	return absolute;
+}
+
+function resolveIssueLookupPath(cwd: string, directory: string, cleanPath: string): string {
+	if (isAbsolute(cleanPath)) return resolve(cleanPath);
+	if (hasPathSeparator(cleanPath)) return resolve(cwd, cleanPath);
+	return resolve(directory, cleanPath);
+}
+
+function hasPathSeparator(value: string): boolean {
+	return value.includes("/") || value.includes("\\");
 }
 
 export function assertPathInside(parentDirectory: string, childPath: string, message = "Path is outside the allowed directory."): void {

@@ -377,11 +377,7 @@ export class GitHubApiError extends IssueMeError {
 		super(
 			options?.code ?? ISSUEME_ERROR_CODES.GITHUB_API_ERROR,
 			message,
-			{
-				...(options?.status !== undefined ? { status: options.status } : {}),
-				...(options?.path ? { path: options.path } : {}),
-				...(options?.rateLimit ? { rateLimit: options.rateLimit } : {}),
-			},
+			githubApiErrorDetails(options),
 			{
 				category: "github_api",
 				recoveryHint: options?.recoveryHint ?? recoveryHintForGitHubApi(options),
@@ -390,6 +386,14 @@ export class GitHubApiError extends IssueMeError {
 		this.name = "GitHubApiError";
 		this.status = options?.status;
 	}
+}
+
+function githubApiErrorDetails(options: GitHubApiErrorOptions | undefined): Record<string, unknown> {
+	const details: Record<string, unknown> = {};
+	if (typeof options?.status === "number") details.status = options.status;
+	if (options?.path) details.path = options.path;
+	if (options?.rateLimit) details.rateLimit = options.rateLimit;
+	return details;
 }
 
 export function getIssueMeErrorTaxonomy(code: string): IssueMeErrorTaxonomyEntry {

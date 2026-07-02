@@ -488,9 +488,7 @@ function formatReorderSubIssuesText(repository: string, result: NativeSubIssueRe
 		result.mutations.length === 0
 			? "Remote order already matched the requested order; no GitHub reorder mutation was needed."
 			: `Applied ${result.mutations.length} GitHub reprioritizeSubIssue mutation(s).`,
-		cache
-			? `Local cache refreshed for ${cache.fileActions.length} issue(s); paths: ${cache.paths.length ? cache.paths.join(", ") : "none"}.`
-			: "Local cache was not refreshed yet.",
+		formatRelationshipCacheRefreshLine(cache, "Local cache was not refreshed yet."),
 	];
 	return lines.join("\n");
 }
@@ -502,9 +500,7 @@ function formatListSubIssuesText(
 	cache: RelationshipCacheRefreshResult | undefined,
 ): string {
 	const parent = result.parentIssue ? formatNativeIssueLine(result.parentIssue) : "none";
-	const subIssueHeader = result.subIssues.length === 0
-		? "none"
-		: `${result.subIssues.length}${result.subIssuesCount > result.subIssues.length ? ` shown of ${result.subIssuesCount}` : ""}`;
+	const subIssueHeader = formatSubIssueHeader(result);
 	const lines = [
 		`Native sub-issue relationships for ${repository}#${result.issue.number}.`,
 		`Issue: ${formatNativeIssueLine(result.issue)}`,
@@ -512,11 +508,26 @@ function formatListSubIssuesText(
 		`Sub-issues: ${subIssueHeader}`,
 		...result.subIssues.map((issue) => `- ${formatNativeIssueLine(issue)}`),
 		result.truncated ? `Sub-issue list truncated at ${params.limit}; rerun with a narrower parent or higher limit up to ${MAX_TOOL_ISSUES}.` : undefined,
-		cache
-			? `Local cache refreshed for ${cache.fileActions.length} issue(s); paths: ${cache.paths.length ? cache.paths.join(", ") : "none"}.`
-			: "Local cache was not refreshed; pass refreshCache true to update relationship metadata intentionally.",
+		formatRelationshipCacheRefreshLine(cache, "Local cache was not refreshed; pass refreshCache true to update relationship metadata intentionally."),
 	].filter((line): line is string => line !== undefined);
 	return lines.join("\n");
+}
+
+function formatSubIssueHeader(result: NativeSubIssueRelationshipResult): string {
+	const shownCount = result.subIssues.length;
+	if (shownCount === 0) return "none";
+	if (result.subIssuesCount > shownCount) return `${shownCount} shown of ${result.subIssuesCount}`;
+	return `${shownCount}`;
+}
+
+function formatRelationshipCacheRefreshLine(cache: RelationshipCacheRefreshResult | undefined, missingCacheText: string): string {
+	if (!cache) return missingCacheText;
+	return `Local cache refreshed for ${cache.fileActions.length} issue(s); paths: ${formatCachePaths(cache.paths)}.`;
+}
+
+function formatCachePaths(paths: string[]): string {
+	if (paths.length === 0) return "none";
+	return paths.join(", ");
 }
 
 function formatNativeIssueLine(issue: NativeSubIssueSummary): string {
@@ -616,10 +627,7 @@ async function cacheCreatedIssueAfterAttachFailure(
 				message: safeAttachError.message,
 				error: {
 					...safeAttachError,
-					details: {
-						...(safeAttachError.details ?? {}),
-						cacheError: safeCacheError,
-					},
+					details: attachFailureDetailsWithCacheError(safeAttachError, safeCacheError),
 				},
 			},
 		);
@@ -628,6 +636,13 @@ async function cacheCreatedIssueAfterAttachFailure(
 
 function subIssueAttachPartialSuccessGuidance(parentNumber: number, childNumber: number): string {
 	return `Do not rerun issueme_create_sub_issue blindly; after resolving the native attachment blocker, reuse the already-created issue with issueme_add_sub_issue using parentNumber ${parentNumber} and childNumber ${childNumber}.`;
+}
+
+function attachFailureDetailsWithCacheError(safeAttachError: SafeToolError, safeCacheError: SafeToolError): Record<string, unknown> {
+	const details: Record<string, unknown> = {};
+	if (safeAttachError.details) Object.assign(details, safeAttachError.details);
+	details.cacheError = safeCacheError;
+	return details;
 }
 
 function subIssueAttachPartialSuccessError(error: unknown, record: IssueRecord, parentNumber: number): SafeToolError {
