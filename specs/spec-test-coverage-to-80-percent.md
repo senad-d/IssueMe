@@ -384,7 +384,7 @@ Add `test/tool-matrix-admin.test.mjs` covering:
 
 ### 10. Cover `/issueme` command flows and configuration TUI interactions
 
-- [ ] Add command-handler and TUI interaction tests.
+- [x] Add command-handler and TUI interaction tests.
 
 #### Why
 
