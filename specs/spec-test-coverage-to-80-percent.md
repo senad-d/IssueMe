@@ -153,7 +153,7 @@ Many existing tests duplicate temp-project, fake-Pi, mocked-fetch, and GitHub fi
 
 ### 3. Cover runtime setup, safe details, truncation, and input validation
 
-- [ ] Add high-volume runtime unit tests for `src/tools/runtime.ts`.
+- [x] Add high-volume runtime unit tests for `src/tools/runtime.ts`.
 
 #### Why
 
@@ -184,7 +184,7 @@ Add `test/runtime-details.test.mjs` covering:
 
 ### 4. Cover GitHub transport, REST client, and issue-client helpers
 
-- [ ] Add REST and transport tests for request construction, pagination, and errors.
+- [x] Add REST and transport tests for request construction, pagination, and errors.
 
 #### Why
 
@@ -215,7 +215,7 @@ Add `test/github-transport-client.test.mjs` covering:
 
 ### 5. Cover Projects v2 GraphQL helpers, client flows, and tool behavior
 
-- [ ] Add Projects v2 GraphQL and tool tests.
+- [x] Add Projects v2 GraphQL and tool tests.
 
 #### Why
 
@@ -248,7 +248,7 @@ Add `test/github-projects-graphql.test.mjs` and extend or create Projects tool t
 
 ### 6. Cover native sub-issues and development-link GraphQL logic
 
-- [ ] Add relationship and development-link tests.
+- [x] Add relationship and development-link tests.
 
 #### Why
 
@@ -280,7 +280,7 @@ Add `test/github-relationships.test.mjs` covering:
 
 ### 7. Cover issue cache store and formatter edge cases
 
-- [ ] Add local cache and issue-format tests.
+- [x] Add local cache and issue-format tests.
 
 #### Why
 
@@ -310,7 +310,7 @@ Add `test/issue-store-format-edge.test.mjs` covering:
 
 ### 8. Cover core issue tool execution matrices
 
-- [ ] Add table-driven tool execution tests for core issue tools.
+- [x] Add table-driven tool execution tests for core issue tools.
 
 #### Why
 
@@ -348,7 +348,7 @@ Add `test/tool-matrix-core.test.mjs` covering:
 
 ### 9. Cover discovery, admin, Projects, and bulk tool matrices
 
-- [ ] Add table-driven tests for non-core and bulk tools.
+- [x] Add table-driven tests for non-core and bulk tools.
 
 #### Why
 
