@@ -341,6 +341,23 @@ test("issueme_add_sub_issue attaches an existing issue and refreshes stale local
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /addSubIssue/.test(call.body.query)), true);
 });
 
+test("issueme_add_sub_issue reports native attachment failures without body fallbacks", async () => {
+	const projectRoot = await tempProject();
+	const mock = makeSubIssueFetch({ forbidden: true });
+	const tools = registerInjectedTools(mock.fetchFn);
+
+	const result = await execute(tools.get("issueme_add_sub_issue"), projectRoot, { parentNumber: 1, childNumber: 2 });
+
+	assert.equal(result.details.result, "error");
+	assert.equal(result.details.status, "sub_issue_attach_failed");
+	assert.equal(result.details.cacheUpdated, false);
+	assert.equal(result.details.needsSync, false);
+	assert.equal(result.details.error.code, "github_sub_issue_forbidden");
+	assert.match(result.content[0].text, /did not fall back to body-only references/i);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && /addSubIssue/.test(call.body.query)), true);
+	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+});
+
 test("restricted issueme_add_sub_issue refuses disallowed child before native GraphQL mutation", async () => {
 	const projectRoot = await tempProject();
 	const mock = makeSubIssueFetch({

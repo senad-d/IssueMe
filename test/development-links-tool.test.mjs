@@ -39,6 +39,35 @@ async function executeDevelopmentLinksTool(fetchFn, params) {
 	});
 }
 
+async function executeDevelopmentLinksToolWithClient(client, params) {
+	const pi = fakePi();
+	registerListIssueDevelopmentLinksTool(pi, {
+		runtime: {
+			config,
+			repository: REPOSITORY,
+			client,
+		},
+	});
+	return pi.tools.get("issueme_list_issue_development_links").execute("call", params, undefined, undefined, {
+		cwd: await tempProject(),
+		isProjectTrusted: () => true,
+	});
+}
+
+function developmentLinksClient(link) {
+	return {
+		repository: { owner: "owner", repo: "repo", fullName: REPOSITORY },
+		async listIssueDevelopmentLinks() {
+			return {
+				issue: { id: "I_42", number: 42, title: "Feature issue", state: "open", html_url: `https://github.com/${REPOSITORY}/issues/42` },
+				links: [link],
+				timelineEventCount: 1,
+				truncated: false,
+			};
+		},
+	};
+}
+
 function issueNode(number = 42, title = "Feature issue", state = "OPEN") {
 	return {
 		id: `I_${number}`,
@@ -169,6 +198,17 @@ test("issueme_list_issue_development_links reports no linked development clearly
 	assert.equal(result.details.counts.timelineEvents, 0);
 	assert.match(result.content[0].text, /No linked pull requests/);
 	assert.match(result.content[0].text, /read-only/);
+	assertNoToken(result);
+});
+
+test("issueme_list_issue_development_links formats generic unknown references from injected clients", async () => {
+	const genericLink = { type: "unknown", referenceTypes: [], title: "Manual development reference" };
+
+	const result = await executeDevelopmentLinksToolWithClient(developmentLinksClient(genericLink), { issueNumber: 42 });
+
+	assert.equal(result.details.result, "success");
+	assert.equal(result.details.developmentLinks[0].type, "unknown");
+	assert.match(result.content[0].text, /Development reference \(reference\); Manual development reference/);
 	assertNoToken(result);
 });
 

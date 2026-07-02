@@ -12,6 +12,9 @@ import {
 	buildProjectV2ItemValidationQuery,
 	buildProjectsV2ListQuery,
 	buildUpdateProjectV2ItemFieldValueMutation,
+	connectionEndCursor,
+	connectionHasNextPage,
+	extractConnectionNodes,
 	extractProjectV2Connection,
 	extractProjectV2FieldProject,
 	normalizeProjectV2AddValidationPolicy,
@@ -115,7 +118,10 @@ test("Projects v2 query builders include expected operations, owners, and fragme
 });
 
 test("Projects v2 connection and field project extraction handle all scopes and inaccessible owners", () => {
-	const connection = { nodes: [project()], pageInfo: { hasNextPage: false } };
+	const connection = { nodes: [project()], pageInfo: { hasNextPage: false, endCursor: "cursor-1" } };
+	assert.deepEqual(extractConnectionNodes(connection), [project()]);
+	assert.equal(connectionHasNextPage(connection), false);
+	assert.equal(connectionEndCursor(connection), "cursor-1");
 	assert.equal(extractProjectV2Connection({ repository: { projectsV2: connection } }, "repository"), connection);
 	assert.equal(extractProjectV2Connection({ organization: { projectsV2: connection } }, "organization"), connection);
 	assert.equal(extractProjectV2Connection({ user: { projectsV2: connection } }, "user"), connection);

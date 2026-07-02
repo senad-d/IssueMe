@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { GitHubApiError, IssueMeError } from "../src/errors.ts";
 import { GitHubClient } from "../src/github/client.ts";
+import { commentBelongsToIssue } from "../src/github/issues-client.ts";
 
 const TOKEN = "ghp_client_coverage_secret";
 const REPOSITORY = { owner: "owner", repo: "repo", fullName: "owner/repo" };
@@ -89,6 +90,49 @@ function projectItem(overrides = {}) {
 		project: project(),
 		content: { __typename: "Issue", id: "I_5", number: 5, title: "Issue 5", state: "OPEN", url: `https://github.com/${REPOSITORY.fullName}/issues/5`, repository: { nameWithOwner: REPOSITORY.fullName }, author: { login: "octocat" } },
 		...overrides,
+	};
+}
+
+function subIssueNode(number, overrides = {}) {
+	return {
+		id: `I_${number}`,
+		number,
+		title: `Issue ${number}`,
+		state: "OPEN",
+		url: `https://github.com/${REPOSITORY.fullName}/issues/${number}`,
+		author: { login: "octocat" },
+		...overrides,
+	};
+}
+
+function subIssueRelationship(childNumbers) {
+	return {
+		repository: {
+			issue: {
+				...subIssueNode(10),
+				parent: null,
+				subIssues: {
+					totalCount: childNumbers.length,
+					nodes: childNumbers.map((number) => subIssueNode(number)),
+					pageInfo: { hasNextPage: false },
+				},
+			},
+		},
+	};
+}
+
+function createSubIssueReorderFetch(calls) {
+	let relationshipReads = 0;
+	return async (input, init = {}) => {
+		const { url, body } = captureCall(calls, input, init);
+		if (url.pathname === "/repos/owner/repo/issues/10" && init.method === "GET") return jsonResponse(issue(10));
+		if (url.pathname !== "/graphql" || init.method !== "POST") throw new Error(`Unexpected request ${init.method} ${url.pathname}`);
+		if (body.operationName === "IssueMeListSubIssues") {
+			relationshipReads += 1;
+			return jsonResponse({ data: subIssueRelationship(relationshipReads === 1 ? [11, 12, 13] : [12, 11, 13]) });
+		}
+		if (body.operationName === "IssueMeReprioritizeSubIssue") return jsonResponse({ data: { reprioritizeSubIssue: { issue: subIssueNode(10) } } });
+		throw new Error(`Unexpected GraphQL operation ${body.operationName}`);
 	};
 }
 
@@ -209,6 +253,30 @@ test("GitHubClient comments, labels, assignees, and pagination methods use expec
 	assert.ok(pathMethods.includes("GET /repos/owner/repo/milestones?state=all&per_page=2"));
 	assert.ok(pathMethods.includes("GET /repos/owner/repo/assignees?per_page=2"));
 	assertAllRepoCallsStayInBoundary(calls);
+});
+
+test("GitHub issue comment ownership falls back to matching HTML issue-comment URLs", () => {
+	const htmlOnly = comment(777, 42, { issue_url: undefined, html_url: "https://github.com/owner/repo/issues/42#issuecomment-777" });
+
+	assert.equal(commentBelongsToIssue(REPOSITORY, htmlOnly, 42, 777), true);
+	assert.equal(commentBelongsToIssue(REPOSITORY, { ...htmlOnly, html_url: "https://github.com/owner/repo/issues/43#issuecomment-777" }, 42, 777), false);
+	assert.equal(commentBelongsToIssue(REPOSITORY, { ...htmlOnly, html_url: "https://github.com/owner/repo/pull/42#issuecomment-777" }, 42, 777), false);
+});
+
+test("GitHubClient public reorderSubIssues fetches, reprioritizes, and refreshes relationships", async () => {
+	const calls = [];
+	const client = clientWith(createSubIssueReorderFetch(calls));
+
+	const result = await client.reorderSubIssues(10, [12, 11, 13]);
+
+	assert.deepEqual(result.relationship.subIssues.map((item) => item.number), [12, 11, 13]);
+	assert.equal(result.mutations.length, 1);
+	assert.equal(result.mutations[0].child.number, 12);
+	const operations = calls.filter((call) => call.path === "/graphql").map((call) => call.body.operationName);
+	assert.deepEqual(operations, ["IssueMeListSubIssues", "IssueMeReprioritizeSubIssue", "IssueMeListSubIssues"]);
+	const mutation = calls.find((call) => call.body?.operationName === "IssueMeReprioritizeSubIssue");
+	assert.deepEqual(mutation.body.variables, { issueId: "I_10", subIssueId: "I_12", beforeId: "I_11" });
+	assertNoToken(calls.map((call) => ({ path: call.path, body: call.body })));
 });
 
 test("GitHubClient GraphQL Projects v2 methods send variables and normalize items", async () => {

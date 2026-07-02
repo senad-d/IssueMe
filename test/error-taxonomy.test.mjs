@@ -6,6 +6,7 @@ import {
 	GitHubApiError,
 	ISSUEME_ERROR_CODES,
 	IssueMeError,
+	getIssueMeErrorRecoveryHint,
 	getIssueMeErrorTaxonomy,
 } from "../src/errors.ts";
 import { partialSuccessToolError, safeToolError } from "../src/tools/runtime.ts";
@@ -29,6 +30,20 @@ test("IssueMe error taxonomy provides stable categories and recovery hints", () 
 		assert.equal(typeof taxonomy.recoveryHint, "string", code);
 		assert.ok(taxonomy.recoveryHint.length > 20, code);
 	}
+});
+
+test("unknown IssueMe error codes infer recovery categories safely", () => {
+	assert.equal(getIssueMeErrorTaxonomy("partial_success_after_write").category, "partial_success");
+	assert.equal(getIssueMeErrorTaxonomy("closed_issue_external").category, "closed_issue");
+	assert.equal(getIssueMeErrorTaxonomy("project_untrusted_custom").category, "trust");
+	assert.equal(getIssueMeErrorTaxonomy("token_missing_custom").category, "auth");
+	assert.equal(getIssueMeErrorTaxonomy("config_custom").category, "config");
+	assert.equal(getIssueMeErrorTaxonomy("repository_custom").category, "repository");
+	assert.equal(getIssueMeErrorTaxonomy("github_custom").category, "github_api");
+	assert.equal(getIssueMeErrorTaxonomy("issue_cache_custom").category, "local_cache");
+	assert.equal(getIssueMeErrorTaxonomy("invalid_custom").category, "validation");
+	assert.equal(getIssueMeErrorTaxonomy("surprising_custom").category, "runtime");
+	assert.match(getIssueMeErrorRecoveryHint("token_missing_custom"), /GH_TOKEN|GITHUB_TOKEN/);
 });
 
 test("IssueMeError and safeToolError expose safe recovery guidance", () => {

@@ -243,6 +243,8 @@ test("issue format helpers normalize GitHub issue shapes, relationship metadata,
 	assert.match(formatted.text, /Creator: creator/);
 	assert.match(formatted.text, /Parent issue: none/);
 	assert.match(formatted.text, /Sub-issues: #30 Related 30 \(open\) \(1 shown of 2\)/);
+	const countOnly = formatIssueSummary({ ...withRelationships, sub_issues: undefined, sub_issues_count: 3 });
+	assert.match(countOnly.text, /Sub-issues: 3 total/);
 	assert.match(formatted.text, /IssueMe output truncated/);
 	assert.equal(formatted.truncation.body.maxChars, 20);
 	assert.deepEqual(formatted.truncation.comments, { shown: 1, total: 2, max: 1 });

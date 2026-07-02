@@ -10,10 +10,10 @@ import { parseGitConfigOriginUrl, parseGitHubRepository, resolveCurrentRepositor
 import { githubIssueToRecord, issueRecordToToolSummary, formatIssueSummary } from "../src/issues/format.ts";
 import { findIssueByLookup, findIssueByNumber, listIssueFileEntries, readIssueByLookup, readIssueByNumber, readIssueFile, removeClosedIssueFiles, removeIssueByNumber, writeIssueRecord } from "../src/issues/store.ts";
 import { isValidIsoDateOnly } from "../src/utils/date.ts";
-import { parseProjectEnvTokens, readProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus } from "../src/utils/env.ts";
+import { parseProjectEnvTokens, readProjectEnvTokens, resolveGitHubToken, getGitHubTokenStatus, stripLeadingAt } from "../src/utils/env.ts";
 import { resolveFileMutationQueuePath } from "../src/utils/mutation-queue.ts";
-import { resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
-import { assertPathInside, issueFileName, parseIssueNumberFromFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
+import { realpathIfExists, resolveIssueMeProjectRoot } from "../src/utils/project-root.ts";
+import { assertPathInside, assertPathNotEqual, issueFileName, parseIssueNumberFromFileName, resolveIssueDirectory, resolveIssueFilePath, slugifyIssueTitle } from "../src/utils/slug.ts";
 
 async function tempProject() {
 	return mkdtemp(join(tmpdir(), "issueme-test-"));
@@ -50,6 +50,8 @@ test("project .env token values override process environment", async () => {
 });
 
 test("dotenv parser handles export, quotes, comments, whitespace, empty values, and unsupported multiline values", () => {
+	assert.equal(stripLeadingAt("@skills/issue/SKILL.md"), "skills/issue/SKILL.md");
+	assert.equal(stripLeadingAt("skills/issue/SKILL.md"), "skills/issue/SKILL.md");
 	assert.deepEqual(parseProjectEnvTokens("export GH_TOKEN=abc # comment\nGITHUB_TOKEN=unused"), { GH_TOKEN: "abc", GITHUB_TOKEN: "unused" });
 	assert.deepEqual(parseProjectEnvTokens("export\tGH_TOKEN = abc # comment\n"), { GH_TOKEN: "abc" });
 	assert.deepEqual(parseProjectEnvTokens('GH_TOKEN="abc" # comment\n'), { GH_TOKEN: "abc" });
@@ -133,6 +135,9 @@ test("repository resolution supports env precedence, normal checkouts, worktrees
 	assert.equal(parseGitHubRepository("https://github.com/owner//repo.git"), undefined);
 
 	const envWins = await tempProject();
+	assert.equal(await realpathIfExists(join(envWins, "missing")), undefined);
+	await writeFile(join(envWins, "existing"), "ok", "utf8");
+	assert.equal(await realpathIfExists(join(envWins, "existing")), await realpath(join(envWins, "existing")));
 	await mkdir(join(envWins, ".git"));
 	await writeFile(join(envWins, ".git", "config"), '[remote "origin"]\n\turl = https://gitlab.com/local/repo.git\n', "utf8");
 	assert.deepEqual(await resolveCurrentRepository(envWins, { GITHUB_REPOSITORY: "env-owner/env-repo" }), {
@@ -198,6 +203,8 @@ test("slug, issue directory, and issue paths are safe and stable", async () => {
 	assert.match(resolveIssueDirectory(cwd, ".../issues"), /\.\.\.[/\\]issues$/);
 	assert.doesNotThrow(() => assertPathInside(cwd, join(cwd, "..cache", "issue.json")));
 	assert.doesNotThrow(() => assertPathInside(cwd, join(cwd, "...", "issue.json")));
+	assert.doesNotThrow(() => assertPathNotEqual(cwd, join(cwd, "issues"), "must not match"));
+	assert.throws(() => assertPathNotEqual(cwd, cwd, "must not match"), /must not match/);
 	assert.throws(() => assertPathInside(cwd, join(cwd, "..", "outside.json")), /allowed directory/);
 	assert.match(resolveIssueFilePath(cwd, "issues", 42, "Fix cache bug"), /issues[/\\]42-fix-cache-bug\.json$/);
 	assert.throws(() => resolveIssueFilePath(cwd, "../outside", 1, "Oops"), /path traversal|inside the current project/);

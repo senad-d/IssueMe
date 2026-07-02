@@ -553,6 +553,12 @@ test("configuration TUI handles terminal key variants", async () => {
 		component.handleInput(deleteInput);
 		assert.match(component.render(80).join("\n"), /Editing ab/, `delete input ${JSON.stringify(deleteInput)} should remove one grapheme`);
 	}
+
+	const renders = [];
+	const search = new IssueMeConfigTui(root, sampleConfig(), theme, () => {}, () => renders.push("render"), { searchActive: true });
+	search.handleInput("\u001b[97:65;2u");
+	assert.ok(renders.length > 0);
+	assert.match(search.render(80).join("\n"), /A/);
 });
 
 test("configuration TUI accepts pasted printable input as one edit chunk", async () => {
@@ -641,6 +647,8 @@ test("/issueme config uses custom TUI and notifications when TUI UI is available
 	const pi = fakePi();
 	registerIssueMeCommand(pi);
 	const notifications = [];
+	const fgCalls = [];
+	const boldCalls = [];
 	let customCalled = false;
 	await pi.commands.get("issueme").handler("", fakeCtx(root, {
 		mode: "tui",
@@ -649,13 +657,25 @@ test("/issueme config uses custom TUI and notifications when TUI UI is available
 			notify(message, level) { notifications.push({ message, level }); },
 			async custom(factory) {
 				customCalled = true;
-				const component = factory({ requestRender() {} }, { fg: (_role, text) => text, bold: (text) => text }, {}, () => {});
+				const component = factory({ requestRender() {} }, {
+					fg(role, text) {
+						fgCalls.push(role);
+						return text;
+					},
+					bold(text) {
+						boldCalls.push(text);
+						return text;
+					},
+				}, {}, () => {});
 				assert.equal(typeof component.render, "function");
+				component.render(80);
 				return sampleConfig({ defaultLabels: ["triaged"] });
 			},
 		},
 	}));
 	assert.equal(customCalled, true);
+	assert.ok(fgCalls.length > 0);
+	assert.ok(boldCalls.length > 0);
 	assert.equal(notifications.at(-1).message, "IssueMe config saved.");
 	assert.equal(notifications.at(-1).level, "info");
 	assert.equal(pi.messages.length, 1);

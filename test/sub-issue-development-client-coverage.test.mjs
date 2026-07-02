@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { MAX_TOOL_DEVELOPMENT_LINKS, MAX_TOOL_ISSUES } from "../src/constants.ts";
 import { GitHubApiError, IssueMeError } from "../src/errors.ts";
+import { mapGitHubGraphQLError } from "../src/github/graphql-errors.ts";
 import {
 	assertReorderableSubIssueList,
 	buildSubIssueRelationshipsQuery,
@@ -103,6 +104,23 @@ function assertInvalidToolInput(fn) {
 function assertGitHubShapeError(fn) {
 	assert.throws(fn, (error) => error instanceof GitHubApiError && error.code === "github_response_shape_invalid");
 }
+
+test("GraphQL error mapper handles forbidden status for all IssueMe GraphQL domains", () => {
+	const subIssue = mapGitHubGraphQLError({ operationName: "IssueMeListSubIssues", detail: "blocked", status: 403 });
+	const project = mapGitHubGraphQLError({ operationName: "IssueMeUpdateProjectV2ItemFieldValue", detail: "blocked", status: 403 });
+	const development = mapGitHubGraphQLError({ operationName: "IssueMeListIssueDevelopmentLinks", detail: "blocked", status: 403 });
+	const unknown = mapGitHubGraphQLError({ operationName: "OtherOperation", detail: "blocked", status: 403 });
+
+	assert.ok(subIssue instanceof GitHubApiError);
+	assert.equal(subIssue.code, "github_sub_issue_forbidden");
+	assert.match(subIssue.message, /ListSubIssues was forbidden/);
+	assert.ok(project instanceof GitHubApiError);
+	assert.equal(project.code, "github_projects_v2_forbidden");
+	assert.match(project.message, /project item management/);
+	assert.ok(development instanceof GitHubApiError);
+	assert.equal(development.code, "github_development_links_forbidden");
+	assert.equal(unknown, undefined);
+});
 
 test("sub-issue query builders and input normalizers cover validation edges", () => {
 	const query = buildSubIssueRelationshipsQuery();
