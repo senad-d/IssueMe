@@ -8,6 +8,8 @@ const rootUrl = new URL("../", import.meta.url);
 const rootPath = fileURLToPath(rootUrl);
 const packageJson = JSON.parse(await readFile(new URL("package.json", rootUrl), "utf8"));
 const ciWorkflow = await readFile(new URL(".github/workflows/ci.yml", rootUrl), "utf8");
+const sonarWorkflow = await readFile(new URL(".github/workflows/sonar.yml", rootUrl), "utf8");
+const sonarPropertiesText = await readFile(new URL("sonar-project.properties", rootUrl), "utf8");
 const gitignore = await readFile(new URL(".gitignore", rootUrl), "utf8");
 
 function splitChainedScript(name) {
@@ -15,6 +17,22 @@ function splitChainedScript(name) {
   assert.equal(typeof script, "string", `missing package script: ${name}`);
   return script.split(/\s*&&\s*/);
 }
+
+function parseProperties(text) {
+  return Object.fromEntries(
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const separatorIndex = line.indexOf("=");
+        assert.notEqual(separatorIndex, -1, `invalid property line: ${line}`);
+        return [line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim()];
+      }),
+  );
+}
+
+const sonarProperties = parseProperties(sonarPropertiesText);
 
 function isIgnoredByGit(path) {
   const result = spawnSync("git", ["check-ignore", "--no-index", "--quiet", "--", path], {
@@ -30,9 +48,11 @@ function isIgnoredByGit(path) {
 }
 
 test("local validation script covers CI-required checks", () => {
-  assert.deepEqual(splitChainedScript("lint"), ["npm run typecheck", "npm run format:check", "npm run check"]);
-  assert.deepEqual(splitChainedScript("check"), ["node --check scripts/check-package-contents.mjs", "node --check scripts/smoke-observability.mjs", "node --check scripts/smoke-packaged-install.mjs", "node --check scripts/smoke-handler-execution.mjs", "node --check scripts/smoke-pi-lifecycle.mjs"]);
+  assert.deepEqual(splitChainedScript("lint"), ["npm run typecheck", "npm run lint:eslint", "npm run format:check", "npm run check"]);
+  assert.deepEqual(splitChainedScript("check"), ["node --check scripts/check-package-contents.mjs", "node --check scripts/test-coverage.mjs", "node --check scripts/smoke-observability.mjs", "node --check scripts/smoke-packaged-install.mjs", "node --check scripts/smoke-handler-execution.mjs", "node --check scripts/smoke-pi-lifecycle.mjs"]);
   assert.deepEqual(splitChainedScript("validate"), ["npm run lint", "npm run test", "npm run check:pack", "npm run smoke:packaged", "npm run smoke:handlers", "npm run smoke:pi-lifecycle"]);
+  assert.equal(packageJson.scripts["lint:eslint"], "eslint . --max-warnings=0");
+  assert.equal(packageJson.scripts["test:coverage"], "node scripts/test-coverage.mjs");
   assert.equal(packageJson.scripts["smoke:discover"], "node scripts/smoke-observability.mjs");
   assert.equal(packageJson.scripts["smoke:packaged"], "node scripts/smoke-packaged-install.mjs");
   assert.equal(packageJson.scripts["smoke:handlers"], "node scripts/smoke-handler-execution.mjs");
@@ -69,4 +89,19 @@ test("CI uses lockfile installs and the local validation contract", () => {
   assert.match(ciWorkflow, /run:\s*npm ci\b/);
   assert.doesNotMatch(ciWorkflow, /run:\s*npm install\b/);
   assert.match(ciWorkflow, /run:\s*npm run validate\b/);
+});
+
+test("SonarQube workflow runs test coverage and scans lcov output", () => {
+  assert.match(sonarWorkflow, /fetch-depth:\s*0/);
+  assert.match(sonarWorkflow, /node-version:\s*22\.19\.0/);
+  assert.match(sonarWorkflow, /cache:\s*npm/);
+  assert.match(sonarWorkflow, /run:\s*npm ci --ignore-scripts\b/);
+  assert.match(sonarWorkflow, /run:\s*npm run test:coverage\b/);
+  assert.match(sonarWorkflow, /uses:\s*SonarSource\/sonarqube-scan-action@/);
+  assert.match(sonarWorkflow, /SONAR_TOKEN:\s*\$\{\{ secrets\.SONAR_TOKEN \}\}/);
+  assert.equal(sonarProperties["sonar.projectKey"], "senad-d_IssueMe");
+  assert.equal(sonarProperties["sonar.organization"], "senad-d");
+  assert.equal(sonarProperties["sonar.javascript.lcov.reportPaths"], "coverage/lcov.info");
+  assert.equal(sonarProperties["sonar.sources"], "src");
+  assert.equal(sonarProperties["sonar.tests"], "test");
 });

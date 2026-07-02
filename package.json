@@ -47,15 +47,17 @@
   "scripts": {
     "dev": "pi --no-extensions -e .",
     "typecheck": "tsc --noEmit",
-    "lint": "npm run typecheck && npm run format:check && npm run check",
+    "lint": "npm run typecheck && npm run lint:eslint && npm run format:check && npm run check",
+    "lint:eslint": "eslint . --max-warnings=0",
     "format:check": "node scripts/check-format.mjs",
     "test": "node --test test/*.test.mjs",
+    "test:coverage": "node scripts/test-coverage.mjs",
     "test:tui-artifacts": "node scripts/generate-tui-artifacts.mjs",
     "smoke:discover": "node scripts/smoke-observability.mjs",
     "smoke:packaged": "node scripts/smoke-packaged-install.mjs",
     "smoke:handlers": "node scripts/smoke-handler-execution.mjs",
     "smoke:pi-lifecycle": "node scripts/smoke-pi-lifecycle.mjs",
-    "check": "node --check scripts/check-package-contents.mjs && node --check scripts/smoke-observability.mjs && node --check scripts/smoke-packaged-install.mjs && node --check scripts/smoke-handler-execution.mjs && node --check scripts/smoke-pi-lifecycle.mjs",
+    "check": "node --check scripts/check-package-contents.mjs && node --check scripts/test-coverage.mjs && node --check scripts/smoke-observability.mjs && node --check scripts/smoke-packaged-install.mjs && node --check scripts/smoke-handler-execution.mjs && node --check scripts/smoke-pi-lifecycle.mjs",
     "pack:dry-run": "npm pack --dry-run --json",
     "check:pack": "node scripts/check-package-contents.mjs",
     "validate": "npm run lint && npm run test && npm run check:pack && npm run smoke:packaged && npm run smoke:handlers && npm run smoke:pi-lifecycle"
@@ -74,8 +76,12 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.80.2",
     "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
     "typebox": "^1.3.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1"
   }
 }

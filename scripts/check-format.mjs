@@ -8,9 +8,11 @@ const rootFiles = [
   ".gitignore",
   "CHANGELOG.md",
   "CONTRIBUTING.md",
+  "eslint.config.js",
   "README.md",
   "SECURITY.md",
   "package-lock.json",
+  "sonar-project.properties",
   "package.json",
   "tsconfig.json",
 ];

@@ -197,7 +197,7 @@ async function runIssueMeToolBatchThroughPiSession(projectRoot, fetchFn, toolCal
 		sessionManager: SessionManager.inMemory(projectRoot),
 		settingsManager,
 	});
-	options.sessionRef && (options.sessionRef.session = session);
+	if (options.sessionRef) options.sessionRef.session = session;
 
 	const events = [];
 	const toolResults = [];

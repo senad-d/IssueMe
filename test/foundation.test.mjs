@@ -309,7 +309,7 @@ test("issue store writes pretty JSON, reads by metadata, renames titles, preserv
 	const first = await writeIssueRecord(cwd, config, sampleIssue());
 	assert.equal(first.action, "created");
 	assert.match(first.path, /12-fix-cache-bug\.json$/);
-	assert.match(await readFile(first.path, "utf8"), /\n  "schemaVersion": 1,/);
+	assert.match(await readFile(first.path, "utf8"), /\n {2}"schemaVersion": 1,/);
 	assert.equal((await readIssueByNumber(cwd, config, 12)).title, "Fix Cache Bug");
 	assert.equal((await readIssueByLookup(cwd, config, "12-fix-cache-bug.json")).number, 12);
 	assert.equal((await findIssueByLookup(cwd, config, "cache bug")).path, first.path);

@@ -48,7 +48,7 @@ export function registerIssueMeTools(pi: ExtensionAPI, options: IssueMeToolRegis
 }
 
 function withIssueMeResultPolicyPrompt(pi: ExtensionAPI): ExtensionAPI {
-	function registerToolWithResultPolicy<TParams extends TSchema, TDetails = unknown, TState = any>(tool: ToolDefinition<TParams, TDetails, TState>) {
+	function registerToolWithResultPolicy<TParams extends TSchema, TDetails = unknown, TState = unknown>(tool: ToolDefinition<TParams, TDetails, TState>) {
 		pi.registerTool<TParams, TDetails, TState>(withResultPolicyGuideline(tool));
 	}
 

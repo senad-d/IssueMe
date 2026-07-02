@@ -1,6 +1,6 @@
 import { GITHUB_API_BASE_URL } from "../constants.ts";
 import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
-import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
+import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
 import { normalizeOptionalIsoDateOrTimestamp, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import { normalizeGraphQLIssueCreator } from "./graphql-normalizers.ts";
 import type { GitHubIssueListDirection, GitHubIssueListFilters, GitHubIssueListSort, GitHubIssueListState, GitHubIssueSearchFilters, GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState, GitHubRepositoryMilestoneListFilters, IssueUpdateInput } from "./client.ts";

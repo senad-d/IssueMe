@@ -9,7 +9,7 @@ import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV
 import { compactObject, connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject } from "./shared.ts";
 import { assertReorderableSubIssueList, buildSubIssueRelationshipsQuery, moveNativeSubIssue, normalizeNativeSubIssueRelationshipResult, normalizeReprioritizeSubIssueResult, normalizeSubIssueMutationResult, normalizeSubIssueRelationshipLimit, normalizeSubIssueReorderNumbers, requireIssueNodeId } from "./sub-issues-client.ts";
 import { GitHubTransport, parseNextLink } from "./transport.ts";
-import type { FetchLike, GitHubClientOptions, PaginationOptions } from "./transport.ts";
+import type { GitHubClientOptions, PaginationOptions } from "./transport.ts";
 
 export type { FetchLike, GitHubClientOptions, PaginationOptions } from "./transport.ts";
 

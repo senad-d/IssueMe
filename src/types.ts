@@ -370,4 +370,4 @@ export interface IssueMeToolErrorDetails extends IssueMeToolBaseDetails {
 	error: SafeToolError;
 }
 
-export interface IssueMeToolDetails extends IssueMeToolBaseDetails {}
+export type IssueMeToolDetails = IssueMeToolBaseDetails;

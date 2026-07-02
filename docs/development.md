@@ -29,6 +29,7 @@ Useful focused checks:
 npm run typecheck
 npm run format:check
 npm run test
+npm run test:coverage
 npm run smoke:discover
 npm run smoke:packaged
 npm run smoke:handlers
@@ -44,6 +45,8 @@ What the smoke checks cover:
 | `smoke:packaged` | Packs to a temporary directory, installs the tarball in a production-style project, and verifies the packed package registers `/issueme` and the tools. |
 | `smoke:handlers` | Safely invokes checkout and packed-package command/tool handler paths with temporary directories, scrubbed IssueMe environment variables, and mocked GitHub fetches. |
 | `smoke:pi-lifecycle` | Drives real pi RPC `/issueme info`, `/issueme`, and `/issueme start` command paths in an offline temporary trusted project. |
+
+`test:coverage` runs the Node test suite with built-in V8 coverage and writes `coverage/lcov.info` for SonarQube analysis. The generated `coverage/` directory is ignored by git.
 
 Discovery smoke checks do not invoke handlers. Handler and lifecycle smoke checks never read project token files, call live GitHub, publish, update dependencies, or mutate remote issues.
 

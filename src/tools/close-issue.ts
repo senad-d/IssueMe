@@ -37,7 +37,7 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 				const alreadyClosed = current.state === "closed";
 				const issue = alreadyClosed ? current : await runtime.client.closeIssue(params.number, { reason }, signal);
 				const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
-				let removedPaths: string[] = [];
+				let removedPaths: string[];
 				try {
 					const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, params.number, runtime.repository, signal);
 					removedPaths = removed.map((path) => relativeIssuePath(runtime.projectRoot, path) ?? path);
