@@ -76,8 +76,9 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				try {
 					const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					reopenedSummary = summary;
+					const successText = formatReopenedIssueText(params.number, summary, commentDetails, `\nLocal file: ${path ?? "not written"}`);
 					return toolText(
-						`Reopened issue #${params.number}: ${summary.title}\nURL: ${summary.html_url}${commentDetails?.html_url ? `\nComment: ${commentDetails.html_url}` : ""}\nLocal file: ${path ?? "not written"}`,
+						successText,
 						{
 							repository: runtime.repository,
 							creatorScope: issueCreatorScopeLabel(runtime.config),
@@ -91,8 +92,9 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 						},
 					);
 				} catch (error) {
+					const partialText = formatReopenedIssueText(params.number, reopenedSummary, commentDetails, "\nLocal cache refresh failed; run issueme_sync_issues before relying on cache state.");
 					return partialSuccessToolText(
-						`Reopened issue #${params.number}: ${reopenedSummary.title}\nURL: ${reopenedSummary.html_url}${commentDetails?.html_url ? `\nComment: ${commentDetails.html_url}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before relying on cache state.`,
+						partialText,
 						error,
 						{
 							repository: runtime.repository,
@@ -125,4 +127,14 @@ function commentSummary(comment: GitHubCommentResponse): ToolCommentSummary {
 		...(typeof comment.id === "number" && Number.isSafeInteger(comment.id) ? { id: comment.id } : {}),
 		...(typeof comment.html_url === "string" ? { html_url: comment.html_url } : {}),
 	};
+}
+
+function formatReopenedIssueText(issueNumber: number, summary: ToolIssueSummary, comment: ToolCommentSummary | undefined, suffix: string): string {
+	const commentLine = formatReopenedIssueCommentLine(comment);
+	return `Reopened issue #${issueNumber}: ${summary.title}\nURL: ${summary.html_url}${commentLine}${suffix}`;
+}
+
+function formatReopenedIssueCommentLine(comment: ToolCommentSummary | undefined): string {
+	if (typeof comment?.html_url === "string") return `\nComment: ${comment.html_url}`;
+	return "";
 }

@@ -289,15 +289,44 @@ function normalizeGetProjectFieldsParams(params: GetProjectFieldsToolParams): No
 	const scope = normalizeScope(params.scope);
 	const projectId = normalizeOptionalProjectId(params.projectId, "projectId");
 	const owner = normalizeOptionalText(params.owner, "owner");
-	if (!projectId) assertProjectOwnerScope(scope, owner);
-	if (!projectId && params.projectNumber === undefined) {
-		throw new IssueMeError("invalid_tool_input", "projectNumber is required when projectId is not provided.", { field: "projectNumber" });
-	}
+	const projectNumber = normalizeOptionalProjectNumber(params.projectNumber);
+	if (projectId) return normalizedGetProjectFieldsById(scope, projectId, owner, params);
+	assertProjectOwnerScope(scope, owner);
+	if (projectNumber) return normalizedGetProjectFieldsByNumber(scope, owner, projectNumber, params);
+	throw new IssueMeError("invalid_tool_input", "projectNumber is required when projectId is not provided.", { field: "projectNumber" });
+}
+
+function normalizeOptionalProjectNumber(value: number | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	return normalizePositiveInteger(value, "projectNumber");
+}
+
+function normalizedGetProjectFieldsById(
+	scope: GitHubProjectV2Scope,
+	projectId: string,
+	owner: string | undefined,
+	params: GetProjectFieldsToolParams,
+): NormalizedGetProjectFieldsParams {
 	return {
-		...(projectId ? { projectId } : {}),
+		projectId,
 		scope,
 		...(owner ? { owner } : {}),
-		...(params.projectNumber !== undefined ? { projectNumber: normalizePositiveInteger(params.projectNumber, "projectNumber") } : {}),
+		fieldLimit: normalizeLimit(params.fieldLimit, MAX_TOOL_PROJECT_FIELDS, DEFAULT_PROJECT_FIELD_LIMIT, "fieldLimit"),
+		optionLimit: normalizeLimit(params.optionLimit, MAX_TOOL_PROJECT_FIELD_OPTIONS, DEFAULT_PROJECT_FIELD_OPTION_LIMIT, "optionLimit"),
+		iterationLimit: normalizeLimit(params.iterationLimit, MAX_TOOL_PROJECT_ITERATIONS, DEFAULT_PROJECT_ITERATION_LIMIT, "iterationLimit"),
+	};
+}
+
+function normalizedGetProjectFieldsByNumber(
+	scope: GitHubProjectV2Scope,
+	owner: string | undefined,
+	projectNumber: number,
+	params: GetProjectFieldsToolParams,
+): NormalizedGetProjectFieldsParams {
+	return {
+		scope,
+		...(owner ? { owner } : {}),
+		projectNumber,
 		fieldLimit: normalizeLimit(params.fieldLimit, MAX_TOOL_PROJECT_FIELDS, DEFAULT_PROJECT_FIELD_LIMIT, "fieldLimit"),
 		optionLimit: normalizeLimit(params.optionLimit, MAX_TOOL_PROJECT_FIELD_OPTIONS, DEFAULT_PROJECT_FIELD_OPTION_LIMIT, "optionLimit"),
 		iterationLimit: normalizeLimit(params.iterationLimit, MAX_TOOL_PROJECT_ITERATIONS, DEFAULT_PROJECT_ITERATION_LIMIT, "iterationLimit"),
@@ -462,7 +491,7 @@ function formatUpdateProjectItemText(item: ToolProjectItemSummary, params: Norma
 
 function formatProjectLine(project: ToolProjectSummary): string {
 	const state = project.closed === true ? "closed" : "open";
-	const visibility = project.public === true ? "public" : project.public === false ? "private" : undefined;
+	const visibility = formatProjectVisibility(project.public);
 	const metadata = [state, visibility, `${project.ownerType}: ${project.owner}`].filter((value): value is string => value !== undefined).join(", ");
 	return [
 		`- #${project.number} ${project.title} (${metadata})`,
@@ -472,8 +501,15 @@ function formatProjectLine(project: ToolProjectSummary): string {
 	].join("");
 }
 
+function formatProjectVisibility(isPublic: boolean | undefined): string | undefined {
+	if (isPublic === true) return "public";
+	if (isPublic === false) return "private";
+	return undefined;
+}
+
 function formatProjectFieldLines(field: ToolProjectFieldSummary): string[] {
-	const lines = [`- ${field.name} (${field.dataType}${field.type ? `, ${field.type}` : ""}) id: ${field.id}`];
+	const fieldType = field.type ? `, ${field.type}` : "";
+	const lines = [`- ${field.name} (${field.dataType}${fieldType}) id: ${field.id}`];
 	if (field.options?.length) lines.push(`  options: ${field.options.map(formatProjectFieldOption).join(", ")}`);
 	if (field.iterations?.length) lines.push(`  iterations: ${field.iterations.map(formatProjectIteration).join(", ")}`);
 	if (field.completedIterations?.length) lines.push(`  completed iterations: ${field.completedIterations.map(formatProjectIteration).join(", ")}`);
@@ -482,12 +518,24 @@ function formatProjectFieldLines(field: ToolProjectFieldSummary): string[] {
 }
 
 function formatProjectFieldOption(option: { name: string; color?: string }): string {
-	return `${option.name}${option.color ? ` (${option.color})` : ""}`;
+	const color = option.color ? ` (${option.color})` : "";
+	return `${option.name}${color}`;
 }
 
 function formatProjectIteration(iteration: { title: string; startDate?: string; duration?: number }): string {
-	const metadata = [iteration.startDate, iteration.duration !== undefined ? `${iteration.duration}d` : undefined]
+	const metadata = [iteration.startDate, formatProjectIterationDuration(iteration.duration)]
 		.filter((value): value is string => value !== undefined)
 		.join("/");
-	return `${iteration.title}${metadata ? ` (${metadata})` : ""}`;
+	const metadataText = formatProjectIterationMetadata(metadata);
+	return `${iteration.title}${metadataText}`;
+}
+
+function formatProjectIterationDuration(duration: number | undefined): string | undefined {
+	if (typeof duration === "number") return `${duration}d`;
+	return undefined;
+}
+
+function formatProjectIterationMetadata(metadata: string): string {
+	if (metadata) return ` (${metadata})`;
+	return "";
 }

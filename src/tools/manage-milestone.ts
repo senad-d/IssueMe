@@ -303,8 +303,8 @@ function requireMilestoneNumber(value: number | undefined): number {
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: true): string;
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: false): string | undefined;
 function normalizeMilestoneTitle(value: string | undefined, field: string, required: boolean): string | undefined {
-	if (typeof value !== "string" && !required) return undefined;
-	return normalizeRequiredTrimmedText(value, field, { oneLine: true, maxLength: MAX_MILESTONE_TITLE_CHARS });
+	if (typeof value === "string" || required) return normalizeRequiredTrimmedText(value, field, { oneLine: true, maxLength: MAX_MILESTONE_TITLE_CHARS });
+	return undefined;
 }
 
 function requireNormalizedTitle(value: string | undefined, field: string): string {
@@ -320,19 +320,34 @@ function normalizeMilestoneDescription(value: string): string {
 
 function normalizeMilestoneDueOn(value: string): string {
 	const trimmed = value.trim();
-	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "dueOn must not be empty. Use clearDueOn to remove an existing due date.", { field: "dueOn" });
+	assertDueOnNotEmpty(trimmed);
 	assertNoNullBytes(trimmed, "dueOn");
 	const dateOnly = ISO_DATE_ONLY_PATTERN.exec(trimmed);
-	if (dateOnly) {
-		const [, year, month, day] = dateOnly;
-		if (!isValidUtcDate(Number(year), Number(month), Number(day))) throw invalidDueOnError();
-		return `${trimmed}T00:00:00Z`;
-	}
+	if (dateOnly) return normalizeDateOnlyDueOn(trimmed, dateOnly);
 	const dateTime = ISO_DATE_TIME_PATTERN.exec(trimmed);
-	if (!dateTime) throw invalidDueOnError();
-	const [, year, month, day] = dateTime;
-	if (!isValidUtcDate(Number(year), Number(month), Number(day)) || Number.isNaN(Date.parse(trimmed))) throw invalidDueOnError();
-	return trimmed;
+	if (dateTime) return normalizeDateTimeDueOn(trimmed, dateTime);
+	throw invalidDueOnError();
+}
+
+function assertDueOnNotEmpty(value: string): void {
+	if (value.length > 0) return;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "dueOn must not be empty. Use clearDueOn to remove an existing due date.", { field: "dueOn" });
+}
+
+function normalizeDateOnlyDueOn(trimmed: string, match: RegExpExecArray): string {
+	const [, year, month, day] = match;
+	if (isValidUtcDate(Number(year), Number(month), Number(day))) return `${trimmed}T00:00:00Z`;
+	throw invalidDueOnError();
+}
+
+function normalizeDateTimeDueOn(trimmed: string, match: RegExpExecArray): string {
+	const [, year, month, day] = match;
+	if (isValidDateTimeDueOn(trimmed, Number(year), Number(month), Number(day))) return trimmed;
+	throw invalidDueOnError();
+}
+
+function isValidDateTimeDueOn(value: string, year: number, month: number, day: number): boolean {
+	return isValidUtcDate(year, month, day) && Number.isFinite(Date.parse(value));
 }
 
 function invalidDueOnError(): IssueMeError {
@@ -350,7 +365,11 @@ function requireMilestoneState(value: MilestoneState | undefined): MilestoneStat
 }
 
 function handledKnownMilestoneApiResult(error: unknown, repository: string, params: NormalizedManageMilestoneParams): ReturnType<typeof toolText> | undefined {
-	if (!(error instanceof GitHubApiError)) return undefined;
+	if (error instanceof GitHubApiError) return handledKnownGitHubMilestoneApiResult(error, repository, params);
+	return undefined;
+}
+
+function handledKnownGitHubMilestoneApiResult(error: GitHubApiError, repository: string, params: NormalizedManageMilestoneParams): ReturnType<typeof toolText> | undefined {
 	if (params.action === "delete" && error.status === 404) {
 		return toolText(`Repository milestone #${params.number} is already absent in ${repository}; no remote milestone was deleted.`, managedMilestoneDetails(repository, "milestone_already_absent", undefined, params.changedFields));
 	}
@@ -465,12 +484,42 @@ function formatManagedMilestoneText(
 	const number = milestone?.number ?? params.number;
 	const title = milestone?.title ?? params.title ?? `#${number}`;
 	const metadata = [
-		milestone?.state ? `state: ${milestone.state}` : params.state ? `state: ${params.state}` : undefined,
-		milestone?.due_on ? `due: ${milestone.due_on}` : params.clearDueOn ? "due date cleared" : params.dueOn ? `due: ${params.dueOn}` : undefined,
-		milestone?.description ? `description: ${milestone.description}` : params.description === "" ? "description cleared" : undefined,
+		formatMilestoneStateMetadata(milestone, params),
+		formatMilestoneDueMetadata(milestone, params),
+		formatMilestoneDescriptionMetadata(milestone, params),
 	].filter((value): value is string => value !== undefined).join("; ");
-	const numberText = number !== undefined ? ` #${number}` : "";
-	return `${capitalize(verb)} repository milestone${numberText} "${title}" for ${repository}${metadata ? ` (${metadata})` : ""}.`;
+	const numberText = formatMilestoneNumberText(number);
+	const metadataText = formatMilestoneMetadataText(metadata);
+	return `${capitalize(verb)} repository milestone${numberText} "${title}" for ${repository}${metadataText}.`;
+}
+
+function formatMilestoneStateMetadata(milestone: ToolMilestoneSummary | undefined, params: NormalizedManageMilestoneParams): string | undefined {
+	if (milestone?.state) return `state: ${milestone.state}`;
+	if (params.state) return `state: ${params.state}`;
+	return undefined;
+}
+
+function formatMilestoneDueMetadata(milestone: ToolMilestoneSummary | undefined, params: NormalizedManageMilestoneParams): string | undefined {
+	if (milestone?.due_on) return `due: ${milestone.due_on}`;
+	if (params.clearDueOn) return "due date cleared";
+	if (params.dueOn) return `due: ${params.dueOn}`;
+	return undefined;
+}
+
+function formatMilestoneDescriptionMetadata(milestone: ToolMilestoneSummary | undefined, params: NormalizedManageMilestoneParams): string | undefined {
+	if (milestone?.description) return `description: ${milestone.description}`;
+	if (params.description === "") return "description cleared";
+	return undefined;
+}
+
+function formatMilestoneNumberText(number: number | undefined): string {
+	if (typeof number === "number") return ` #${number}`;
+	return "";
+}
+
+function formatMilestoneMetadataText(metadata: string): string {
+	if (metadata) return ` (${metadata})`;
+	return "";
 }
 
 function capitalize(value: string): string {

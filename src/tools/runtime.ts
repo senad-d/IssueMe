@@ -222,20 +222,31 @@ export async function assertAuthenticatedUserAllowedForCreate(runtime: IssueMeRu
 }
 
 export function extractIssueCreator(issueOrRecord: unknown): string | undefined {
-	if (!isRecord(issueOrRecord)) return undefined;
+	if (isRecord(issueOrRecord)) return extractIssueCreatorFromRecord(issueOrRecord);
+	return undefined;
+}
+
+function extractIssueCreatorFromRecord(issueOrRecord: Record<string, unknown>): string | undefined {
 	if (isValidGitHubLogin(issueOrRecord.creator)) return issueOrRecord.creator;
 	return extractLoginFromUserNode(issueOrRecord.user) ?? extractLoginFromUserNode(issueOrRecord.author);
 }
 
 function extractLoginFromUserNode(value: unknown): string | undefined {
-	if (!isRecord(value)) return undefined;
-	return isValidGitHubLogin(value.login) ? value.login : undefined;
+	if (isRecord(value)) return validGitHubLoginOrUndefined(value.login);
+	return undefined;
 }
 
 function extractIssueNumber(issueOrRecord: unknown): number | undefined {
-	if (!isRecord(issueOrRecord)) return undefined;
-	const number = issueOrRecord.number;
-	return typeof number === "number" && Number.isSafeInteger(number) && number > 0 ? number : undefined;
+	if (isRecord(issueOrRecord)) return positiveIssueNumberOrUndefined(issueOrRecord.number);
+	return undefined;
+}
+
+function validGitHubLoginOrUndefined(value: unknown): string | undefined {
+	return isValidGitHubLogin(value) ? value : undefined;
+}
+
+function positiveIssueNumberOrUndefined(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 export async function fetchIssueRecord(
@@ -322,105 +333,122 @@ export function isAbortError(error: unknown): boolean {
  */
 export function toolText(text: string, details: IssueMeToolDetails = {}) {
 	const content = truncateToolText(text);
-	const normalizedDetails = normalizeToolDetails({
-		...details,
-		...(content.truncated
-			? {
-				truncated: true,
-				truncation: {
-					...(details.truncation ?? {}),
-					content: { shownChars: content.text.length, totalChars: text.length, maxChars: MAX_TOOL_TEXT_CHARS },
-				},
-			}
-			: {}),
-	});
+	const detailsWithTruncation = withToolTextTruncation(details, content, text.length);
 	return {
 		content: [{ type: "text" as const, text: content.text }],
-		details: boundToolDetails(normalizedDetails),
+		details: boundToolDetails(detailsWithTruncation),
 	};
+}
+
+function withToolTextTruncation(details: IssueMeToolDetails, content: { text: string; truncated: boolean }, totalChars: number): IssueMeToolDetails {
+	if (content.truncated) {
+		return {
+			...details,
+			truncated: true,
+			truncation: mergeContentTruncation(details.truncation, { shownChars: content.text.length, totalChars, maxChars: MAX_TOOL_TEXT_CHARS }),
+		};
+	}
+	return details;
+}
+
+function mergeContentTruncation(truncation: Record<string, unknown> | undefined, content: Record<string, number>): Record<string, unknown> {
+	if (truncation) return { ...truncation, content };
+	return { content };
 }
 
 export function boundToolDetails(details: IssueMeToolDetails): IssueMeToolDetails {
 	const normalizedDetails = normalizeToolDetails(details);
-	const paths = limitArray(normalizedDetails.paths, MAX_TOOL_PATHS);
-	const removedPaths = limitArray(normalizedDetails.removedPaths, MAX_TOOL_PATHS);
-	const changedFields = limitArray(normalizedDetails.changedFields, MAX_TOOL_CHANGED_FIELDS);
+	const bounds = buildToolDetailBounds(normalizedDetails);
+	const truncation = buildToolTruncation(normalizedDetails, bounds);
+	return buildBoundedToolDetails(normalizedDetails, bounds, truncation);
+}
+
+function buildToolDetailBounds(normalizedDetails: IssueMeToolDetails): ToolDetailBounds {
 	const fileActions = limitArray(normalizedDetails.fileActions, MAX_TOOL_ISSUES);
-	const boundedFileActions = fileActions.value?.map(boundToolFileActionSummary);
-	const invalidFiles = limitArray(normalizedDetails.invalidFiles, MAX_TOOL_PATHS);
-	const issue = boundToolIssueSummary(normalizedDetails.issue);
-	const comment = boundToolCommentSummary(normalizedDetails.comment);
-	const error = boundSafeToolError(normalizedDetails.error);
-	const message = typeof normalizedDetails.message === "string" ? truncateSafeString(redactKnownSensitiveText(normalizedDetails.message), MAX_TOOL_ERROR_MESSAGE_CHARS) : undefined;
 	const issues = limitArray(normalizedDetails.issues, MAX_TOOL_ISSUES);
-	const boundedIssues = issues.value?.map((summary) => boundToolIssueSummary(summary));
 	const labels = limitArray(normalizedDetails.labels, MAX_TOOL_LABELS);
-	const boundedLabels = labels.value?.map(boundToolLabelSummary);
 	const milestones = limitArray(normalizedDetails.milestones, MAX_TOOL_MILESTONES);
-	const boundedMilestones = milestones.value?.map(boundToolMilestoneSummary);
 	const assignees = limitArray(normalizedDetails.assignees, MAX_TOOL_ASSIGNEES);
-	const boundedAssignees = assignees.value?.map(boundToolAssigneeSummary);
-	const project = boundToolProjectSummary(normalizedDetails.project);
 	const projects = limitArray(normalizedDetails.projects, MAX_TOOL_PROJECTS);
-	const boundedProjects = projects.value?.map(boundToolProjectSummary);
 	const projectFields = limitArray(normalizedDetails.projectFields, MAX_TOOL_PROJECT_FIELDS);
-	const boundedProjectFields = projectFields.value?.map(boundToolProjectFieldSummary);
-	const projectItem = boundToolProjectItemSummary(normalizedDetails.projectItem);
 	const developmentLinks = limitArray(normalizedDetails.developmentLinks, MAX_TOOL_DEVELOPMENT_LINKS);
-	const boundedDevelopmentLinks = developmentLinks.value?.map(boundToolDevelopmentLinkSummary);
 	const bulkResults = limitArray(normalizedDetails.bulkResults, MAX_TOOL_ISSUES);
-	const boundedBulkResults = bulkResults.value?.map(boundToolBulkIssueResultSummary);
-	const truncation = buildToolTruncation(normalizedDetails, {
-		paths,
-		removedPaths,
-		changedFields,
+	return {
+		paths: limitArray(normalizedDetails.paths, MAX_TOOL_PATHS),
+		removedPaths: limitArray(normalizedDetails.removedPaths, MAX_TOOL_PATHS),
+		changedFields: limitArray(normalizedDetails.changedFields, MAX_TOOL_CHANGED_FIELDS),
 		fileActions,
-		invalidFiles,
-		issue,
+		invalidFiles: limitArray(normalizedDetails.invalidFiles, MAX_TOOL_PATHS),
+		issue: boundToolIssueSummary(normalizedDetails.issue),
+		comment: boundToolCommentSummary(normalizedDetails.comment),
+		error: boundSafeToolError(normalizedDetails.error),
+		message: boundToolDetailMessage(normalizedDetails.message),
 		issues,
 		labels,
 		milestones,
 		assignees,
-		project,
+		project: boundToolProjectSummary(normalizedDetails.project),
 		projects,
 		projectFields,
-		projectItem,
+		projectItem: boundToolProjectItemSummary(normalizedDetails.projectItem),
 		developmentLinks,
 		bulkResults,
-		boundedIssues,
-		boundedFileActions,
-		boundedLabels,
-		boundedMilestones,
-		boundedAssignees,
-		boundedProjects,
-		boundedProjectFields,
-		boundedDevelopmentLinks,
-		boundedBulkResults,
-	});
-	const truncated = Boolean(normalizedDetails.truncated || Object.keys(truncation).length > 0);
-	return {
-		...normalizedDetails,
-		...(issue.value ? { issue: issue.value } : {}),
-		...(comment ? { comment } : {}),
-		...(error ? { error } : {}),
-		...(message ? { message } : {}),
-		...(paths.value ? { paths: paths.value } : {}),
-		...(removedPaths.value ? { removedPaths: removedPaths.value } : {}),
-		...(changedFields.value ? { changedFields: changedFields.value } : {}),
-		...(boundedIssues ? { issues: boundedIssues.map((summary) => summary.value).filter((value): value is ToolIssueSummary => value !== undefined) } : {}),
-		...(boundedLabels ? { labels: boundedLabels.map((label) => label.value) } : {}),
-		...(boundedMilestones ? { milestones: boundedMilestones.map((milestone) => milestone.value) } : {}),
-		...(boundedAssignees ? { assignees: boundedAssignees.map((assignee) => assignee.value) } : {}),
-		...(project.value ? { project: project.value } : {}),
-		...(boundedProjects ? { projects: boundedProjects.map((summary) => summary.value).filter((value): value is ToolProjectSummary => value !== undefined) } : {}),
-		...(boundedProjectFields ? { projectFields: boundedProjectFields.map((field) => field.value).filter((value): value is ToolProjectFieldSummary => value !== undefined) } : {}),
-		...(projectItem.value ? { projectItem: projectItem.value } : {}),
-		...(boundedDevelopmentLinks ? { developmentLinks: boundedDevelopmentLinks.map((link) => link.value) } : {}),
-		...(boundedBulkResults ? { bulkResults: boundedBulkResults.map((result) => result.value) } : {}),
-		...(boundedFileActions ? { fileActions: boundedFileActions.map((action) => action.value) } : {}),
-		...(invalidFiles.value ? { invalidFiles: invalidFiles.value } : {}),
-		...(truncated ? { truncated: true, truncation } : {}),
+		boundedIssues: issues.value?.map((summary) => boundToolIssueSummary(summary)),
+		boundedFileActions: fileActions.value?.map(boundToolFileActionSummary),
+		boundedLabels: labels.value?.map(boundToolLabelSummary),
+		boundedMilestones: milestones.value?.map(boundToolMilestoneSummary),
+		boundedAssignees: assignees.value?.map(boundToolAssigneeSummary),
+		boundedProjects: projects.value?.map(boundToolProjectSummary),
+		boundedProjectFields: projectFields.value?.map(boundToolProjectFieldSummary),
+		boundedDevelopmentLinks: developmentLinks.value?.map(boundToolDevelopmentLinkSummary),
+		boundedBulkResults: bulkResults.value?.map(boundToolBulkIssueResultSummary),
 	};
+}
+
+function boundToolDetailMessage(message: string | undefined): string | undefined {
+	if (typeof message === "string") return truncateSafeString(redactKnownSensitiveText(message), MAX_TOOL_ERROR_MESSAGE_CHARS);
+	return undefined;
+}
+
+function buildBoundedToolDetails(normalizedDetails: IssueMeToolDetails, bounds: ToolDetailBounds, truncation: Record<string, unknown>): IssueMeToolDetails {
+	const output: IssueMeToolDetails = { ...normalizedDetails };
+	assignDefinedToolDetail(output, "issue", bounds.issue.value);
+	assignDefinedToolDetail(output, "comment", bounds.comment);
+	assignDefinedToolDetail(output, "error", bounds.error);
+	assignDefinedToolDetail(output, "message", bounds.message);
+	assignDefinedToolDetail(output, "paths", bounds.paths.value);
+	assignDefinedToolDetail(output, "removedPaths", bounds.removedPaths.value);
+	assignDefinedToolDetail(output, "changedFields", bounds.changedFields.value);
+	assignDefinedToolDetail(output, "issues", collectBoundedValues(bounds.boundedIssues));
+	assignDefinedToolDetail(output, "labels", collectBoundedValues(bounds.boundedLabels));
+	assignDefinedToolDetail(output, "milestones", collectBoundedValues(bounds.boundedMilestones));
+	assignDefinedToolDetail(output, "assignees", collectBoundedValues(bounds.boundedAssignees));
+	assignDefinedToolDetail(output, "project", bounds.project.value);
+	assignDefinedToolDetail(output, "projects", collectBoundedValues(bounds.boundedProjects));
+	assignDefinedToolDetail(output, "projectFields", collectBoundedValues(bounds.boundedProjectFields));
+	assignDefinedToolDetail(output, "projectItem", bounds.projectItem.value);
+	assignDefinedToolDetail(output, "developmentLinks", collectBoundedValues(bounds.boundedDevelopmentLinks));
+	assignDefinedToolDetail(output, "bulkResults", collectBoundedValues(bounds.boundedBulkResults));
+	assignDefinedToolDetail(output, "fileActions", collectBoundedValues(bounds.boundedFileActions));
+	assignDefinedToolDetail(output, "invalidFiles", bounds.invalidFiles.value);
+	applyToolDetailsTruncation(output, normalizedDetails, truncation);
+	return output;
+}
+
+function assignDefinedToolDetail<K extends keyof IssueMeToolDetails>(target: IssueMeToolDetails, key: K, value: IssueMeToolDetails[K] | undefined): void {
+	if (value !== undefined) target[key] = value;
+}
+
+function collectBoundedValues<T>(values: Array<{ value?: T }> | undefined): T[] | undefined {
+	if (values) return values.map((item) => item.value).filter((value): value is T => value !== undefined);
+	return undefined;
+}
+
+function applyToolDetailsTruncation(target: IssueMeToolDetails, normalizedDetails: IssueMeToolDetails, truncation: Record<string, unknown>): void {
+	if (normalizedDetails.truncated || Object.keys(truncation).length > 0) {
+		target.truncated = true;
+		target.truncation = truncation;
+	}
 }
 
 export function listChangedFields(input: Record<string, unknown>): string[] {
@@ -437,7 +465,7 @@ export function sanitizeStringList(values: readonly string[] | undefined, fieldN
 		if (trimmed.includes("\0")) {
 			throw new IssueMeError("invalid_tool_input", `${fieldName} must not contain null bytes.`, { field: fieldName });
 		}
-		if (/\r|\n/.test(trimmed)) {
+		if (/[\r\n]/.test(trimmed)) {
 			throw new IssueMeError("invalid_tool_input", `${fieldName} entries must fit on one line.`, { field: fieldName });
 		}
 		normalized.push(trimmed);
@@ -512,13 +540,16 @@ export function partialSuccessToolError(error: unknown, partialSuccessStatus = "
 	return boundSafeToolError({
 		...safeError,
 		recoveryHint: taxonomy.recoveryHint,
-		details: {
-			...(safeError.details ?? {}),
-			partialSuccessCode: ISSUEME_ERROR_CODES.PARTIAL_SUCCESS_CACHE_SYNC_REQUIRED,
-			partialSuccessStatus,
-			partialSuccessRecoveryHint: taxonomy.recoveryHint,
-		},
+		details: partialSuccessErrorDetails(safeError, partialSuccessStatus, taxonomy.recoveryHint),
 	}) ?? safeError;
+}
+
+function partialSuccessErrorDetails(safeError: SafeToolError, partialSuccessStatus: string, recoveryHint: string): Record<string, unknown> {
+	const details = cloneRecord(safeError.details);
+	details.partialSuccessCode = ISSUEME_ERROR_CODES.PARTIAL_SUCCESS_CACHE_SYNC_REQUIRED;
+	details.partialSuccessStatus = partialSuccessStatus;
+	details.partialSuccessRecoveryHint = recoveryHint;
+	return details;
 }
 
 export function partialSuccessToolText(
@@ -574,6 +605,39 @@ function inferToolResult(details: IssueMeToolDetails): IssueMeToolResult {
 interface LimitedArray<T> {
 	value?: T[];
 	truncated: boolean;
+}
+
+type ToolInvalidFileDiagnostic = NonNullable<IssueMeToolDetails["invalidFiles"]>[number];
+
+interface ToolDetailBounds {
+	paths: LimitedArray<string>;
+	removedPaths: LimitedArray<string>;
+	changedFields: LimitedArray<string>;
+	fileActions: LimitedArray<ToolFileActionSummary>;
+	invalidFiles: LimitedArray<ToolInvalidFileDiagnostic>;
+	issue: BoundedIssueSummary;
+	comment?: ToolCommentSummary;
+	error?: SafeToolError;
+	message?: string;
+	issues: LimitedArray<ToolIssueSummary>;
+	labels: LimitedArray<ToolLabelSummary>;
+	milestones: LimitedArray<ToolMilestoneSummary>;
+	assignees: LimitedArray<ToolAssigneeSummary>;
+	project: BoundedProjectSummary;
+	projects: LimitedArray<ToolProjectSummary>;
+	projectFields: LimitedArray<ToolProjectFieldSummary>;
+	projectItem: BoundedProjectItemSummary;
+	developmentLinks: LimitedArray<ToolIssueDevelopmentLinkSummary>;
+	bulkResults: LimitedArray<ToolBulkIssueResultSummary>;
+	boundedIssues?: BoundedIssueSummary[];
+	boundedFileActions?: BoundedFileActionSummary[];
+	boundedLabels?: BoundedLabelSummary[];
+	boundedMilestones?: BoundedMilestoneSummary[];
+	boundedAssignees?: BoundedAssigneeSummary[];
+	boundedProjects?: BoundedProjectSummary[];
+	boundedProjectFields?: BoundedProjectFieldSummary[];
+	boundedDevelopmentLinks?: BoundedDevelopmentLinkSummary[];
+	boundedBulkResults?: BoundedBulkIssueResultSummary[];
 }
 
 interface BoundedIssueSummary {
@@ -644,7 +708,11 @@ function truncateToolText(text: string): { text: string; truncated: boolean } {
 }
 
 function boundToolIssueSummary(summary: ToolIssueSummary | undefined): BoundedIssueSummary {
-	if (!summary) return { truncated: false, truncation: {} };
+	if (summary) return buildBoundToolIssueSummary(summary);
+	return { truncated: false, truncation: {} };
+}
+
+function buildBoundToolIssueSummary(summary: ToolIssueSummary): BoundedIssueSummary {
 	const labels = limitArray(summary.labels, MAX_TOOL_LABELS);
 	const assignees = limitArray(summary.assignees, MAX_TOOL_ASSIGNEES);
 	const parentIssue = summary.parentIssue === null ? { value: null, truncated: false, truncation: {} } : boundIssueRelationshipSummary(summary.parentIssue);
@@ -675,11 +743,13 @@ function boundToolIssueSummary(summary: ToolIssueSummary | undefined): BoundedIs
 }
 
 function boundToolCommentSummary(comment: ToolCommentSummary | undefined): ToolCommentSummary | undefined {
-	if (!comment) return undefined;
-	return {
-		...(typeof comment.id === "number" && Number.isSafeInteger(comment.id) ? { id: comment.id } : {}),
-		...(typeof comment.html_url === "string" ? { html_url: truncateSafeString(comment.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS) } : {}),
-	};
+	if (comment) {
+		return {
+			...(typeof comment.id === "number" && Number.isSafeInteger(comment.id) ? { id: comment.id } : {}),
+			...(typeof comment.html_url === "string" ? { html_url: truncateSafeString(comment.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS) } : {}),
+		};
+	}
+	return undefined;
 }
 
 function boundToolLabelSummary(label: ToolLabelSummary): BoundedLabelSummary {
@@ -992,37 +1062,13 @@ function normalizeBulkIssueResultStatus(status: ToolBulkIssueResultStatus): Tool
 	return "failed";
 }
 
-function buildToolTruncation(
-	details: IssueMeToolDetails,
-	limits: {
-		paths: LimitedArray<string>;
-		removedPaths: LimitedArray<string>;
-		changedFields: LimitedArray<string>;
-		fileActions: LimitedArray<ToolFileActionSummary>;
-		invalidFiles: LimitedArray<unknown>;
-		issue: BoundedIssueSummary;
-		issues: LimitedArray<ToolIssueSummary>;
-		labels: LimitedArray<ToolLabelSummary>;
-		milestones: LimitedArray<ToolMilestoneSummary>;
-		assignees: LimitedArray<ToolAssigneeSummary>;
-		project: BoundedProjectSummary;
-		projects: LimitedArray<ToolProjectSummary>;
-		projectFields: LimitedArray<ToolProjectFieldSummary>;
-		projectItem: BoundedProjectItemSummary;
-		developmentLinks: LimitedArray<ToolIssueDevelopmentLinkSummary>;
-		bulkResults: LimitedArray<ToolBulkIssueResultSummary>;
-		boundedIssues?: BoundedIssueSummary[];
-		boundedFileActions?: BoundedFileActionSummary[];
-		boundedLabels?: BoundedLabelSummary[];
-		boundedMilestones?: BoundedMilestoneSummary[];
-		boundedAssignees?: BoundedAssigneeSummary[];
-		boundedProjects?: BoundedProjectSummary[];
-		boundedProjectFields?: BoundedProjectFieldSummary[];
-		boundedDevelopmentLinks?: BoundedDevelopmentLinkSummary[];
-		boundedBulkResults?: BoundedBulkIssueResultSummary[];
-	},
-): Record<string, unknown> {
-	const truncation: Record<string, unknown> = { ...(details.truncation ?? {}) };
+function cloneRecord(value: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (value) return { ...value };
+	return {};
+}
+
+function buildToolTruncation(details: IssueMeToolDetails, limits: ToolDetailBounds): Record<string, unknown> {
+	const truncation: Record<string, unknown> = cloneRecord(details.truncation);
 	if (limits.paths.truncated) mergeTruncationSection(truncation, "paths", { shown: limits.paths.value?.length ?? 0, total: details.paths?.length ?? 0, max: MAX_TOOL_PATHS });
 	if (limits.removedPaths.truncated) mergeTruncationSection(truncation, "removedPaths", { shown: limits.removedPaths.value?.length ?? 0, total: details.removedPaths?.length ?? 0, max: MAX_TOOL_PATHS });
 	if (limits.changedFields.truncated) mergeTruncationSection(truncation, "changedFields", { shown: limits.changedFields.value?.length ?? 0, total: details.changedFields?.length ?? 0, max: MAX_TOOL_CHANGED_FIELDS });
