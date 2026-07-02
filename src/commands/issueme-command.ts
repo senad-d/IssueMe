@@ -21,6 +21,9 @@ export type IssueMeCommand =
 	| { kind: "info"; warning?: string }
 	| { kind: "start"; skillPath?: string };
 
+type CommandQuote = "\"" | "'";
+type CommandQuoteState = CommandQuote | undefined;
+
 export function registerIssueMeCommand(pi: ExtensionAPI) {
 	pi.registerCommand(EXTENSION_COMMAND_NAME, {
 		description: "Configure IssueMe, show status, or start an IssueMe skill workflow",
@@ -362,7 +365,7 @@ function assertSkillPathInsideProject(projectRoot: string, skillPath: string): v
 function splitCommandArgs(input: string): string[] {
 	const tokens: string[] = [];
 	let current = "";
-	let quote: "\"" | "'" | undefined;
+	let quote: CommandQuoteState;
 	for (let index = 0; index < input.length; index += 1) {
 		const char = input[index];
 		const next = input[index + 1];
@@ -389,19 +392,19 @@ function splitCommandArgs(input: string): string[] {
 	return tokens;
 }
 
-function isEscapedCommandChar(char: string, next: string | undefined, quote: "\"" | "'" | undefined): boolean {
+function isEscapedCommandChar(char: string, next: string | undefined, quote: CommandQuoteState): boolean {
 	return char === "\\" && quote !== "'" && isEscapableCommandChar(next, quote);
 }
 
-function isOpeningCommandQuote(char: string, quote: "\"" | "'" | undefined): char is "\"" | "'" {
+function isOpeningCommandQuote(char: string, quote: CommandQuoteState): char is CommandQuote {
 	return (char === "\"" || char === "'") && quote === undefined;
 }
 
-function isClosingCommandQuote(char: string, quote: "\"" | "'" | undefined): boolean {
+function isClosingCommandQuote(char: string, quote: CommandQuoteState): boolean {
 	return quote === char;
 }
 
-function isCommandArgumentSeparator(char: string, quote: "\"" | "'" | undefined): boolean {
+function isCommandArgumentSeparator(char: string, quote: CommandQuoteState): boolean {
 	return /\s/.test(char) && quote === undefined;
 }
 
@@ -410,7 +413,7 @@ function flushCommandArgToken(tokens: string[], current: string): string {
 	return "";
 }
 
-function isEscapableCommandChar(value: string | undefined, quote: "\"" | "'" | undefined): value is string {
+function isEscapableCommandChar(value: string | undefined, quote: CommandQuoteState): value is string {
 	if (value === undefined) return false;
 	if (quote === "\"") return value === "\"" || value === "\\";
 	return /\s/.test(value) || value === "\"" || value === "'" || value === "\\";
