@@ -707,6 +707,81 @@ function truncateToolText(text: string): { text: string; truncated: boolean } {
 	return { text: `${text.slice(0, shownChars)}${marker}`, truncated: true };
 }
 
+function hasTruncation(truncation: Record<string, unknown>): boolean {
+	return Object.keys(truncation).length > 0;
+}
+
+function assignDefinedProperty<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
+	if (value === undefined) return;
+	target[key] = value;
+}
+
+function assignDefinedRecordValue(target: Record<string, unknown>, key: string, value: unknown | undefined): void {
+	if (value === undefined) return;
+	target[key] = value;
+}
+
+function safeIntegerOrUndefined(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+	return undefined;
+}
+
+function booleanOrUndefined(value: unknown): boolean | undefined {
+	if (typeof value === "boolean") return value;
+	return undefined;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+	if (typeof value === "string") return value;
+	return undefined;
+}
+
+function truthyStringOrUndefined(value: string | undefined): string | undefined {
+	if (value) return value;
+	return undefined;
+}
+
+function redactAndTruncateOptionalString(value: string | undefined, maxChars: number): string | undefined {
+	if (value === undefined) return undefined;
+	return truncateSafeString(redactKnownSensitiveText(value), maxChars);
+}
+
+function truncateOptionalString(value: string | undefined, maxChars: number): string | undefined {
+	if (value === undefined) return undefined;
+	return truncateSafeString(value, maxChars);
+}
+
+function recordTruncationIfChanged(truncation: Record<string, unknown>, key: string, boundedValue: unknown, originalValue: unknown, maxChars: number): void {
+	if (boundedValue === originalValue) return;
+	truncation[key] = { maxChars };
+}
+
+function recordLimitedArrayTruncation<T>(truncation: Record<string, unknown>, key: string, values: LimitedArray<T>, total: number | undefined, max: number): void {
+	if (values.truncated) truncation[key] = { shown: values.value?.length ?? 0, total: total ?? 0, max };
+}
+
+function countTruncatedSummaries(summaries: Array<{ truncated: boolean }> | undefined): number {
+	if (summaries) return summaries.filter((summary) => summary.truncated).length;
+	return 0;
+}
+
+function boundNullableIssueRelationshipSummary(issue: IssueRelationshipSummary | null | undefined): { value?: IssueRelationshipSummary | null; truncated: boolean; truncation: Record<string, unknown> } {
+	if (issue === null) return { value: null, truncated: false, truncation: {} };
+	return boundIssueRelationshipSummary(issue);
+}
+
+function buildSubIssuesTruncation(subIssues: LimitedArray<IssueRelationshipSummary>, childIssueTruncations: number, total: number | undefined): Record<string, unknown> | undefined {
+	const truncation: Record<string, unknown> = {};
+	if (subIssues.truncated) {
+		truncation.shown = subIssues.value?.length ?? 0;
+		truncation.total = total ?? 0;
+		truncation.max = MAX_TOOL_ISSUES;
+	}
+	if (childIssueTruncations > 0) truncation.affectedSummaries = childIssueTruncations;
+	if (hasTruncation(truncation)) return truncation;
+	return undefined;
+}
+
 function boundToolIssueSummary(summary: ToolIssueSummary | undefined): BoundedIssueSummary {
 	if (summary) return buildBoundToolIssueSummary(summary);
 	return { truncated: false, truncation: {} };
@@ -715,258 +790,237 @@ function boundToolIssueSummary(summary: ToolIssueSummary | undefined): BoundedIs
 function buildBoundToolIssueSummary(summary: ToolIssueSummary): BoundedIssueSummary {
 	const labels = limitArray(summary.labels, MAX_TOOL_LABELS);
 	const assignees = limitArray(summary.assignees, MAX_TOOL_ASSIGNEES);
-	const parentIssue = summary.parentIssue === null ? { value: null, truncated: false, truncation: {} } : boundIssueRelationshipSummary(summary.parentIssue);
+	const parentIssue = boundNullableIssueRelationshipSummary(summary.parentIssue);
 	const subIssues = limitArray(summary.subIssues, MAX_TOOL_ISSUES);
 	const boundedSubIssues = subIssues.value?.map(boundIssueRelationshipSummary);
-	const childIssueTruncations = boundedSubIssues?.filter((issue) => issue.truncated).length ?? 0;
+	const childIssueTruncations = countTruncatedSummaries(boundedSubIssues);
 	const truncation: Record<string, unknown> = {};
-	if (labels.truncated) truncation.labels = { shown: labels.value?.length ?? 0, total: summary.labels.length, max: MAX_TOOL_LABELS };
-	if (assignees.truncated) truncation.assignees = { shown: assignees.value?.length ?? 0, total: summary.assignees.length, max: MAX_TOOL_ASSIGNEES };
-	if (parentIssue.truncated) truncation.parentIssue = parentIssue.truncation;
-	if (subIssues.truncated || childIssueTruncations > 0) {
-		truncation.subIssues = {
-			...(subIssues.truncated ? { shown: subIssues.value?.length ?? 0, total: summary.subIssues?.length ?? 0, max: MAX_TOOL_ISSUES } : {}),
-			...(childIssueTruncations > 0 ? { affectedSummaries: childIssueTruncations } : {}),
-		};
-	}
+	recordLimitedArrayTruncation(truncation, "labels", labels, summary.labels.length, MAX_TOOL_LABELS);
+	recordLimitedArrayTruncation(truncation, "assignees", assignees, summary.assignees.length, MAX_TOOL_ASSIGNEES);
+	assignDefinedRecordValue(truncation, "parentIssue", parentIssue.truncated ? parentIssue.truncation : undefined);
+	assignDefinedRecordValue(truncation, "subIssues", buildSubIssuesTruncation(subIssues, childIssueTruncations, summary.subIssues?.length));
+	const value: ToolIssueSummary = { ...summary, labels: labels.value ?? [], assignees: assignees.value ?? [] };
+	assignDefinedProperty(value, "parentIssue", parentIssue.value);
+	assignDefinedProperty(value, "subIssues", collectBoundedValues(boundedSubIssues));
 	return {
-		value: {
-			...summary,
-			labels: labels.value ?? [],
-			assignees: assignees.value ?? [],
-			...(summary.parentIssue !== undefined ? { parentIssue: parentIssue.value } : {}),
-			...(boundedSubIssues ? { subIssues: boundedSubIssues.map((issue) => issue.value).filter((issue): issue is IssueRelationshipSummary => issue !== undefined) } : {}),
-		},
+		value,
 		truncated: labels.truncated || assignees.truncated || parentIssue.truncated || subIssues.truncated || childIssueTruncations > 0,
 		truncation,
 	};
 }
 
 function boundToolCommentSummary(comment: ToolCommentSummary | undefined): ToolCommentSummary | undefined {
-	if (comment) {
-		return {
-			...(typeof comment.id === "number" && Number.isSafeInteger(comment.id) ? { id: comment.id } : {}),
-			...(typeof comment.html_url === "string" ? { html_url: truncateSafeString(comment.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS) } : {}),
-		};
-	}
-	return undefined;
+	if (comment === undefined) return undefined;
+	const value: ToolCommentSummary = {};
+	assignDefinedProperty(value, "id", safeIntegerOrUndefined(comment.id));
+	assignDefinedProperty(value, "html_url", truncateOptionalString(stringOrUndefined(comment.html_url), MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+	return value;
 }
 
 function boundToolLabelSummary(label: ToolLabelSummary): BoundedLabelSummary {
 	const name = truncateSafeString(redactKnownSensitiveText(label.name), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const description = label.description === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(label.description), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const color = label.color === undefined ? undefined : truncateSafeString(label.color, 32);
-	const url = label.url === undefined ? undefined : truncateSafeString(label.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const description = redactAndTruncateOptionalString(label.description, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const color = truncateOptionalString(label.color, 32);
+	const url = truncateOptionalString(label.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (name !== label.name) truncation.name = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (description !== label.description) truncation.description = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (color !== label.color) truncation.color = { maxChars: 32 };
-	if (url !== label.url) truncation.url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordTruncationIfChanged(truncation, "name", name, label.name, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "description", description, label.description, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "color", color, label.color, 32);
+	recordTruncationIfChanged(truncation, "url", url, label.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolLabelSummary = { name };
+	assignDefinedProperty(value, "description", description);
+	assignDefinedProperty(value, "color", color);
+	assignDefinedProperty(value, "default", booleanOrUndefined(label.default));
+	assignDefinedProperty(value, "url", url);
 	return {
-		value: {
-			name,
-			...(description !== undefined ? { description } : {}),
-			...(color !== undefined ? { color } : {}),
-			...(typeof label.default === "boolean" ? { default: label.default } : {}),
-			...(url !== undefined ? { url } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
 function boundToolMilestoneSummary(milestone: ToolMilestoneSummary): BoundedMilestoneSummary {
 	const title = truncateSafeString(redactKnownSensitiveText(milestone.title), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const description = milestone.description === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(milestone.description), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const dueOn = milestone.due_on === undefined ? undefined : truncateSafeString(milestone.due_on, 64);
-	const htmlUrl = milestone.html_url === undefined ? undefined : truncateSafeString(milestone.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const url = milestone.url === undefined ? undefined : truncateSafeString(milestone.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const description = redactAndTruncateOptionalString(milestone.description, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const dueOn = truncateOptionalString(milestone.due_on, 64);
+	const htmlUrl = truncateOptionalString(milestone.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const url = truncateOptionalString(milestone.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (title !== milestone.title) truncation.title = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (description !== milestone.description) truncation.description = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (dueOn !== milestone.due_on) truncation.due_on = { maxChars: 64 };
-	if (htmlUrl !== milestone.html_url) truncation.html_url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (url !== milestone.url) truncation.url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordTruncationIfChanged(truncation, "title", title, milestone.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "description", description, milestone.description, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "due_on", dueOn, milestone.due_on, 64);
+	recordTruncationIfChanged(truncation, "html_url", htmlUrl, milestone.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "url", url, milestone.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolMilestoneSummary = { number: milestone.number, title, state: milestone.state };
+	assignDefinedProperty(value, "description", description);
+	assignDefinedProperty(value, "due_on", dueOn);
+	assignDefinedProperty(value, "open_issues", safeIntegerOrUndefined(milestone.open_issues));
+	assignDefinedProperty(value, "closed_issues", safeIntegerOrUndefined(milestone.closed_issues));
+	assignDefinedProperty(value, "html_url", htmlUrl);
+	assignDefinedProperty(value, "url", url);
 	return {
-		value: {
-			number: milestone.number,
-			title,
-			state: milestone.state,
-			...(description !== undefined ? { description } : {}),
-			...(dueOn !== undefined ? { due_on: dueOn } : {}),
-			...(typeof milestone.open_issues === "number" && Number.isSafeInteger(milestone.open_issues) ? { open_issues: milestone.open_issues } : {}),
-			...(typeof milestone.closed_issues === "number" && Number.isSafeInteger(milestone.closed_issues) ? { closed_issues: milestone.closed_issues } : {}),
-			...(htmlUrl !== undefined ? { html_url: htmlUrl } : {}),
-			...(url !== undefined ? { url } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
 function boundToolAssigneeSummary(assignee: ToolAssigneeSummary): BoundedAssigneeSummary {
 	const login = truncateSafeString(redactKnownSensitiveText(assignee.login), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const type = assignee.type === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(assignee.type), 120);
-	const htmlUrl = assignee.html_url === undefined ? undefined : truncateSafeString(assignee.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const url = assignee.url === undefined ? undefined : truncateSafeString(assignee.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const type = redactAndTruncateOptionalString(assignee.type, 120);
+	const htmlUrl = truncateOptionalString(assignee.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const url = truncateOptionalString(assignee.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (login !== assignee.login) truncation.login = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (type !== assignee.type) truncation.type = { maxChars: 120 };
-	if (htmlUrl !== assignee.html_url) truncation.html_url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (url !== assignee.url) truncation.url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordTruncationIfChanged(truncation, "login", login, assignee.login, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "type", type, assignee.type, 120);
+	recordTruncationIfChanged(truncation, "html_url", htmlUrl, assignee.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "url", url, assignee.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolAssigneeSummary = { login };
+	assignDefinedProperty(value, "id", safeIntegerOrUndefined(assignee.id));
+	assignDefinedProperty(value, "type", type);
+	assignDefinedProperty(value, "html_url", htmlUrl);
+	assignDefinedProperty(value, "url", url);
 	return {
-		value: {
-			login,
-			...(typeof assignee.id === "number" && Number.isSafeInteger(assignee.id) ? { id: assignee.id } : {}),
-			...(type !== undefined ? { type } : {}),
-			...(htmlUrl !== undefined ? { html_url: htmlUrl } : {}),
-			...(url !== undefined ? { url } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
 function boundToolProjectSummary(project: ToolProjectSummary | undefined): BoundedProjectSummary {
-	if (!project) return { truncated: false, truncation: {} };
+	if (project === undefined) return { truncated: false, truncation: {} };
 	const id = truncateSafeString(redactKnownSensitiveText(project.id), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const title = truncateSafeString(redactKnownSensitiveText(project.title), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const owner = truncateSafeString(redactKnownSensitiveText(project.owner), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const url = project.url === undefined ? undefined : truncateSafeString(project.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const shortDescription = project.shortDescription === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(project.shortDescription), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const url = truncateOptionalString(project.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const shortDescription = redactAndTruncateOptionalString(project.shortDescription, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (id !== project.id) truncation.id = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (title !== project.title) truncation.title = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (owner !== project.owner) truncation.owner = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (url !== project.url) truncation.url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (shortDescription !== project.shortDescription) truncation.shortDescription = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordTruncationIfChanged(truncation, "id", id, project.id, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "title", title, project.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "owner", owner, project.owner, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "url", url, project.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "shortDescription", shortDescription, project.shortDescription, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolProjectSummary = { id, title, number: project.number, owner, ownerType: project.ownerType };
+	assignDefinedProperty(value, "url", url);
+	assignDefinedProperty(value, "shortDescription", shortDescription);
+	assignDefinedProperty(value, "closed", booleanOrUndefined(project.closed));
+	assignDefinedProperty(value, "public", booleanOrUndefined(project.public));
 	return {
-		value: {
-			id,
-			title,
-			number: project.number,
-			owner,
-			ownerType: project.ownerType,
-			...(url !== undefined ? { url } : {}),
-			...(shortDescription !== undefined ? { shortDescription } : {}),
-			...(typeof project.closed === "boolean" ? { closed: project.closed } : {}),
-			...(typeof project.public === "boolean" ? { public: project.public } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
 function boundToolProjectFieldSummary(field: ToolProjectFieldSummary | undefined): BoundedProjectFieldSummary {
-	if (!field) return { truncated: false, truncation: {} };
+	if (field === undefined) return { truncated: false, truncation: {} };
 	const id = truncateSafeString(redactKnownSensitiveText(field.id), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const name = truncateSafeString(redactKnownSensitiveText(field.name), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const dataType = truncateSafeString(redactKnownSensitiveText(field.dataType), 120);
-	const type = field.type === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(field.type), 120);
+	const type = redactAndTruncateOptionalString(field.type, 120);
 	const options = limitArray(field.options?.map(boundToolProjectFieldOption), MAX_TOOL_PROJECT_FIELD_OPTIONS);
 	const iterations = limitArray(field.iterations?.map(boundToolProjectIteration), MAX_TOOL_PROJECT_ITERATIONS);
 	const completedIterations = limitArray(field.completedIterations?.map(boundToolProjectIteration), MAX_TOOL_PROJECT_ITERATIONS);
-	const truncation: Record<string, unknown> = { ...(field.truncation ?? {}) };
-	if (id !== field.id) truncation.id = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (name !== field.name) truncation.name = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (dataType !== field.dataType) truncation.dataType = { maxChars: 120 };
-	if (type !== field.type) truncation.type = { maxChars: 120 };
-	if (options.truncated) truncation.options = { shown: options.value?.length ?? 0, total: field.options?.length ?? 0, max: MAX_TOOL_PROJECT_FIELD_OPTIONS };
-	if (iterations.truncated) truncation.iterations = { shown: iterations.value?.length ?? 0, total: field.iterations?.length ?? 0, max: MAX_TOOL_PROJECT_ITERATIONS };
-	if (completedIterations.truncated) truncation.completedIterations = { shown: completedIterations.value?.length ?? 0, total: field.completedIterations?.length ?? 0, max: MAX_TOOL_PROJECT_ITERATIONS };
-	const truncated = Boolean(field.truncated || Object.keys(truncation).length > 0);
+	const truncation: Record<string, unknown> = cloneRecord(field.truncation);
+	recordTruncationIfChanged(truncation, "id", id, field.id, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "name", name, field.name, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "dataType", dataType, field.dataType, 120);
+	recordTruncationIfChanged(truncation, "type", type, field.type, 120);
+	recordLimitedArrayTruncation(truncation, "options", options, field.options?.length, MAX_TOOL_PROJECT_FIELD_OPTIONS);
+	recordLimitedArrayTruncation(truncation, "iterations", iterations, field.iterations?.length, MAX_TOOL_PROJECT_ITERATIONS);
+	recordLimitedArrayTruncation(truncation, "completedIterations", completedIterations, field.completedIterations?.length, MAX_TOOL_PROJECT_ITERATIONS);
+	const truncated = Boolean(field.truncated || hasTruncation(truncation));
+	const value: ToolProjectFieldSummary = { id, name, dataType };
+	assignDefinedProperty(value, "type", type);
+	assignDefinedProperty(value, "options", options.value);
+	assignDefinedProperty(value, "iterations", iterations.value);
+	assignDefinedProperty(value, "completedIterations", completedIterations.value);
+	if (truncated) {
+		value.truncated = true;
+		value.truncation = truncation;
+	}
 	return {
-		value: {
-			id,
-			name,
-			dataType,
-			...(type !== undefined ? { type } : {}),
-			...(options.value ? { options: options.value } : {}),
-			...(iterations.value ? { iterations: iterations.value } : {}),
-			...(completedIterations.value ? { completedIterations: completedIterations.value } : {}),
-			...(truncated ? { truncated: true, truncation } : {}),
-		},
+		value,
 		truncated,
 		truncation,
 	};
 }
 
 function boundToolProjectItemSummary(item: ToolProjectItemSummary | undefined): BoundedProjectItemSummary {
-	if (!item) return { truncated: false, truncation: {} };
+	if (item === undefined) return { truncated: false, truncation: {} };
 	const id = truncateSafeString(redactKnownSensitiveText(item.id), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const type = item.type === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(item.type), 120);
+	const type = redactAndTruncateOptionalString(item.type, 120);
 	const project = boundToolProjectSummary(item.project);
 	const issue = boundIssueRelationshipSummary(item.issue);
 	const truncation: Record<string, unknown> = {};
-	if (id !== item.id) truncation.id = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (type !== item.type) truncation.type = { maxChars: 120 };
-	if (project.truncated) truncation.project = project.truncation;
-	if (issue.truncated) truncation.issue = issue.truncation;
+	recordTruncationIfChanged(truncation, "id", id, item.id, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "type", type, item.type, 120);
+	assignDefinedRecordValue(truncation, "project", project.truncated ? project.truncation : undefined);
+	assignDefinedRecordValue(truncation, "issue", issue.truncated ? issue.truncation : undefined);
+	const value: ToolProjectItemSummary = { id };
+	assignDefinedProperty(value, "type", type);
+	assignDefinedProperty(value, "project", project.value);
+	assignDefinedProperty(value, "issue", issue.value);
 	return {
-		value: {
-			id,
-			...(type !== undefined ? { type } : {}),
-			...(project.value ? { project: project.value } : {}),
-			...(issue.value ? { issue: issue.value } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
 function boundToolDevelopmentLinkSummary(link: ToolIssueDevelopmentLinkSummary): BoundedDevelopmentLinkSummary {
 	const referenceTypes = limitArray(link.referenceTypes, MAX_TOOL_CHANGED_FIELDS);
-	const title = link.title === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(link.title), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const htmlUrl = link.html_url === undefined ? undefined : truncateSafeString(link.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
-	const branchName = link.branchName === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(link.branchName), 180);
-	const baseBranchName = link.baseBranchName === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(link.baseBranchName), 180);
-	const commitOid = link.commitOid === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(link.commitOid), 120);
-	const message = link.message === undefined ? undefined : truncateSafeString(redactKnownSensitiveText(link.message), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const title = redactAndTruncateOptionalString(link.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const htmlUrl = truncateOptionalString(link.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const branchName = redactAndTruncateOptionalString(link.branchName, 180);
+	const baseBranchName = redactAndTruncateOptionalString(link.baseBranchName, 180);
+	const commitOid = redactAndTruncateOptionalString(link.commitOid, 120);
+	const message = redactAndTruncateOptionalString(link.message, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (referenceTypes.truncated) truncation.referenceTypes = { shown: referenceTypes.value?.length ?? 0, total: link.referenceTypes.length, max: MAX_TOOL_CHANGED_FIELDS };
-	if (title !== link.title) truncation.title = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (htmlUrl !== link.html_url) truncation.html_url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (branchName !== link.branchName) truncation.branchName = { maxChars: 180 };
-	if (baseBranchName !== link.baseBranchName) truncation.baseBranchName = { maxChars: 180 };
-	if (commitOid !== link.commitOid) truncation.commitOid = { maxChars: 120 };
-	if (message !== link.message) truncation.message = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordLimitedArrayTruncation(truncation, "referenceTypes", referenceTypes, link.referenceTypes.length, MAX_TOOL_CHANGED_FIELDS);
+	recordTruncationIfChanged(truncation, "title", title, link.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "html_url", htmlUrl, link.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "branchName", branchName, link.branchName, 180);
+	recordTruncationIfChanged(truncation, "baseBranchName", baseBranchName, link.baseBranchName, 180);
+	recordTruncationIfChanged(truncation, "commitOid", commitOid, link.commitOid, 120);
+	recordTruncationIfChanged(truncation, "message", message, link.message, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolIssueDevelopmentLinkSummary = { type: link.type, referenceTypes: referenceTypes.value ?? [] };
+	assignDefinedProperty(value, "number", safeIntegerOrUndefined(link.number));
+	assignDefinedProperty(value, "title", title);
+	assignDefinedProperty(value, "state", normalizedDevelopmentLinkState(link.state));
+	assignDefinedProperty(value, "html_url", htmlUrl);
+	assignDefinedProperty(value, "branchName", branchName);
+	assignDefinedProperty(value, "baseBranchName", baseBranchName);
+	assignDefinedProperty(value, "commitOid", commitOid);
+	assignDefinedProperty(value, "message", message);
+	assignDefinedProperty(value, "willCloseTarget", booleanOrUndefined(link.willCloseTarget));
+	assignDefinedProperty(value, "closedBy", booleanOrUndefined(link.closedBy));
+	assignDefinedProperty(value, "isDraft", booleanOrUndefined(link.isDraft));
 	return {
-		value: {
-			type: link.type,
-			referenceTypes: referenceTypes.value ?? [],
-			...(typeof link.number === "number" && Number.isSafeInteger(link.number) ? { number: link.number } : {}),
-			...(title !== undefined ? { title } : {}),
-			...(link.state === "open" || link.state === "closed" || link.state === "merged" ? { state: link.state } : {}),
-			...(htmlUrl !== undefined ? { html_url: htmlUrl } : {}),
-			...(branchName !== undefined ? { branchName } : {}),
-			...(baseBranchName !== undefined ? { baseBranchName } : {}),
-			...(commitOid !== undefined ? { commitOid } : {}),
-			...(message !== undefined ? { message } : {}),
-			...(typeof link.willCloseTarget === "boolean" ? { willCloseTarget: link.willCloseTarget } : {}),
-			...(typeof link.closedBy === "boolean" ? { closedBy: link.closedBy } : {}),
-			...(typeof link.isDraft === "boolean" ? { isDraft: link.isDraft } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }
 
+function normalizedDevelopmentLinkState(state: ToolIssueDevelopmentLinkSummary["state"] | undefined): ToolIssueDevelopmentLinkSummary["state"] | undefined {
+	if (state === "open" || state === "closed" || state === "merged") return state;
+	return undefined;
+}
+
 function boundIssueRelationshipSummary(issue: IssueRelationshipSummary | undefined): { value?: IssueRelationshipSummary; truncated: boolean; truncation: Record<string, unknown> } {
-	if (!issue) return { truncated: false, truncation: {} };
+	if (issue === undefined) return { truncated: false, truncation: {} };
 	const title = truncateSafeString(redactKnownSensitiveText(issue.title), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const htmlUrl = truncateSafeString(issue.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
 	const truncation: Record<string, unknown> = {};
-	if (title !== issue.title) truncation.title = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
-	if (htmlUrl !== issue.html_url) truncation.html_url = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+	recordTruncationIfChanged(truncation, "title", title, issue.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "html_url", htmlUrl, issue.html_url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: IssueRelationshipSummary = { number: issue.number, title, html_url: htmlUrl };
+	assignDefinedProperty(value, "state", issue.state);
+	assignDefinedProperty(value, "creator", truthyStringOrUndefined(issue.creator));
 	return {
-		value: {
-			number: issue.number,
-			title,
-			...(issue.state ? { state: issue.state } : {}),
-			...(issue.creator ? { creator: issue.creator } : {}),
-			html_url: htmlUrl,
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
 }

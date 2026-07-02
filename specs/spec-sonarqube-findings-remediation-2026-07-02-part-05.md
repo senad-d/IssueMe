@@ -608,7 +608,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 226. Rewrite negated condition in src/tools/runtime.ts:677
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFis` (`typescript:S7735`) at `src/tools/runtime.ts:677`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFis` (`typescript:S7735`) at `src/tools/runtime.ts:677`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -632,7 +632,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 227. Rewrite negated condition in src/tools/runtime.ts:679
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFit` (`typescript:S7735`) at `src/tools/runtime.ts:679`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFit` (`typescript:S7735`) at `src/tools/runtime.ts:679`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -656,7 +656,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 228. Reduce cognitive complexity in src/tools/runtime.ts:686
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiu` (`typescript:S3776`) at `src/tools/runtime.ts:686`: reduce cognitive complexity from 17 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiu` (`typescript:S3776`) at `src/tools/runtime.ts:686`: reduce cognitive complexity from 17 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -680,7 +680,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 229. Rewrite negated condition in src/tools/runtime.ts:703
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiv` (`typescript:S7735`) at `src/tools/runtime.ts:703`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiv` (`typescript:S7735`) at `src/tools/runtime.ts:703`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -704,7 +704,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 230. Rewrite negated condition in src/tools/runtime.ts:704
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiw` (`typescript:S7735`) at `src/tools/runtime.ts:704`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiw` (`typescript:S7735`) at `src/tools/runtime.ts:704`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -728,7 +728,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 231. Rewrite negated condition in src/tools/runtime.ts:707
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFix` (`typescript:S7735`) at `src/tools/runtime.ts:707`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFix` (`typescript:S7735`) at `src/tools/runtime.ts:707`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -752,7 +752,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 232. Rewrite negated condition in src/tools/runtime.ts:708
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiy` (`typescript:S7735`) at `src/tools/runtime.ts:708`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiy` (`typescript:S7735`) at `src/tools/runtime.ts:708`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -776,7 +776,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 233. Rewrite negated condition in src/tools/runtime.ts:729
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiz` (`typescript:S7735`) at `src/tools/runtime.ts:729`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFiz` (`typescript:S7735`) at `src/tools/runtime.ts:729`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -800,7 +800,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 234. Rewrite negated condition in src/tools/runtime.ts:730
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi0` (`typescript:S7735`) at `src/tools/runtime.ts:730`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi0` (`typescript:S7735`) at `src/tools/runtime.ts:730`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -824,7 +824,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 235. Rewrite negated condition in src/tools/runtime.ts:731
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi1` (`typescript:S7735`) at `src/tools/runtime.ts:731`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi1` (`typescript:S7735`) at `src/tools/runtime.ts:731`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -848,7 +848,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 236. Rewrite negated condition in src/tools/runtime.ts:758
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi2` (`typescript:S7735`) at `src/tools/runtime.ts:758`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi2` (`typescript:S7735`) at `src/tools/runtime.ts:758`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -872,7 +872,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 237. Rewrite negated condition in src/tools/runtime.ts:759
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi3` (`typescript:S7735`) at `src/tools/runtime.ts:759`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi3` (`typescript:S7735`) at `src/tools/runtime.ts:759`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -896,7 +896,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 238. Remove useless empty object in src/tools/runtime.ts:777
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi4` (`typescript:S7744`) at `src/tools/runtime.ts:777`: remove the useless empty object.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi4` (`typescript:S7744`) at `src/tools/runtime.ts:777`: remove the useless empty object.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Spreading or returning an empty object in this context has no effect and adds visual noise.
@@ -920,7 +920,7 @@ Remove the useless `{}` branch or restructure the object construction so only me
 
 ### 239. Rewrite negated condition in src/tools/runtime.ts:791
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi5` (`typescript:S7735`) at `src/tools/runtime.ts:791`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi5` (`typescript:S7735`) at `src/tools/runtime.ts:791`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -944,7 +944,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 240. Rewrite negated condition in src/tools/runtime.ts:816
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi6` (`typescript:S7735`) at `src/tools/runtime.ts:816`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi6` (`typescript:S7735`) at `src/tools/runtime.ts:816`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -968,7 +968,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 241. Reduce cognitive complexity in src/tools/runtime.ts:825
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi7` (`typescript:S3776`) at `src/tools/runtime.ts:825`: reduce cognitive complexity from 25 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi7` (`typescript:S3776`) at `src/tools/runtime.ts:825`: reduce cognitive complexity from 25 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -992,7 +992,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 242. Rewrite negated condition in src/tools/runtime.ts:846
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi8` (`typescript:S7735`) at `src/tools/runtime.ts:846`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi8` (`typescript:S7735`) at `src/tools/runtime.ts:846`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1016,7 +1016,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 243. Rewrite negated condition in src/tools/runtime.ts:848
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi9` (`typescript:S7735`) at `src/tools/runtime.ts:848`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi9` (`typescript:S7735`) at `src/tools/runtime.ts:848`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1040,7 +1040,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 244. Rewrite negated condition in src/tools/runtime.ts:849
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi-` (`typescript:S7735`) at `src/tools/runtime.ts:849`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi-` (`typescript:S7735`) at `src/tools/runtime.ts:849`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1064,7 +1064,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 245. Rewrite negated condition in src/tools/runtime.ts:850
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi_` (`typescript:S7735`) at `src/tools/runtime.ts:850`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFi_` (`typescript:S7735`) at `src/tools/runtime.ts:850`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1088,7 +1088,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 246. Rewrite negated condition in src/tools/runtime.ts:851
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjA` (`typescript:S7735`) at `src/tools/runtime.ts:851`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjA` (`typescript:S7735`) at `src/tools/runtime.ts:851`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1112,7 +1112,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 247. Rewrite negated condition in src/tools/runtime.ts:852
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjB` (`typescript:S7735`) at `src/tools/runtime.ts:852`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjB` (`typescript:S7735`) at `src/tools/runtime.ts:852`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1136,7 +1136,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 248. Rewrite negated condition in src/tools/runtime.ts:888
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjC` (`typescript:S7735`) at `src/tools/runtime.ts:888`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjC` (`typescript:S7735`) at `src/tools/runtime.ts:888`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1160,7 +1160,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 249. Rewrite negated condition in src/tools/runtime.ts:889
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjD` (`typescript:S7735`) at `src/tools/runtime.ts:889`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjD` (`typescript:S7735`) at `src/tools/runtime.ts:889`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1184,7 +1184,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 250. Rewrite negated condition in src/tools/runtime.ts:897
 
-- [ ] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjE` (`typescript:S7735`) at `src/tools/runtime.ts:897`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxLI5cC3g4vWFjE` (`typescript:S7735`) at `src/tools/runtime.ts:897`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
