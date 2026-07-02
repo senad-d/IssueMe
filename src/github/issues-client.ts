@@ -21,7 +21,7 @@ export interface NormalizedIssueSearchResponse {
 const SEARCH_QUALIFIER_ESCAPED_BACKSLASH = String.raw`\\`;
 const SEARCH_QUALIFIER_ESCAPED_DOUBLE_QUOTE = String.raw`\"`;
 const SEARCH_QUALIFIER_BACKSLASH = SEARCH_QUALIFIER_ESCAPED_BACKSLASH.charAt(0);
-const SEARCH_QUALIFIER_DOUBLE_QUOTE = String.raw`"`;
+const SEARCH_QUALIFIER_DOUBLE_QUOTE = "\"";
 
 export function buildIssueListQuery(filters: GitHubIssueListFilters, limit: number | undefined): Record<string, string> {
 	const state = normalizeIssueListState(filters.state);

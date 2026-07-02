@@ -260,16 +260,17 @@ export async function fetchIssueRecord(
 	const remoteCommentCount = typeof issue.comments === "number" && Number.isSafeInteger(issue.comments) && issue.comments >= comments.length
 		? issue.comments
 		: undefined;
-	const commentsTruncated = remoteCommentCount !== undefined ? remoteCommentCount > comments.length : comments.length >= MAX_CACHE_COMMENTS;
+	const commentsTruncated = remoteCommentCount === undefined ? comments.length >= MAX_CACHE_COMMENTS : remoteCommentCount > comments.length;
 	if (commentsTruncated) {
 		runtime.commentsTruncated = true;
 		if (number !== undefined && !runtime.truncatedCommentIssues.includes(number)) runtime.truncatedCommentIssues.push(number);
 	}
-	return githubIssueToRecord(runtime.client.repository, issue, comments, new Date().toISOString(), {
+	const commentCacheOptions: { limit: number; truncated: boolean; totalCount?: number } = {
 		limit: MAX_CACHE_COMMENTS,
 		truncated: commentsTruncated,
-		...(remoteCommentCount !== undefined ? { totalCount: remoteCommentCount } : {}),
-	});
+	};
+	assignDefinedProperty(commentCacheOptions, "totalCount", remoteCommentCount);
+	return githubIssueToRecord(runtime.client.repository, issue, comments, new Date().toISOString(), commentCacheOptions);
 }
 
 export async function refreshIssueRecord(
@@ -708,7 +709,7 @@ interface BoundedDevelopmentLinkParts {
 	referenceTypes: LimitedArray<string>;
 	number?: number;
 	title?: string;
-	state?: ToolIssueDevelopmentLinkSummary["state"];
+	state: ToolIssueDevelopmentLinkSummary["state"];
 	htmlUrl?: string;
 	branchName?: string;
 	baseBranchName?: string;
@@ -723,6 +724,18 @@ interface BoundedBulkIssueResultSummary {
 	value: ToolBulkIssueResultSummary;
 	truncated: boolean;
 	truncation: Record<string, unknown>;
+}
+
+interface BoundedBulkIssueResultParts {
+	issue: BoundedIssueSummary;
+	projectItem: BoundedProjectItemSummary;
+	paths: LimitedArray<string>;
+	removedPaths: LimitedArray<string>;
+	changedFields: LimitedArray<string>;
+	error?: SafeToolError;
+	message?: string;
+	action: string;
+	status: ToolBulkIssueResultStatus;
 }
 
 function truncateToolText(text: string): { text: string; truncated: boolean } {
@@ -741,7 +754,7 @@ function assignDefinedProperty<T extends object, K extends keyof T>(target: T, k
 	target[key] = value;
 }
 
-function assignDefinedRecordValue(target: Record<string, unknown>, key: string, value: unknown | undefined): void {
+function assignDefinedRecordValue(target: Record<string, unknown>, key: string, value: unknown): void {
 	if (value === undefined) return;
 	target[key] = value;
 }
@@ -1137,41 +1150,57 @@ function boundToolFileActionSummary(action: ToolFileActionSummary): BoundedFileA
 }
 
 function boundToolBulkIssueResultSummary(result: ToolBulkIssueResultSummary): BoundedBulkIssueResultSummary {
-	const issue = boundToolIssueSummary(result.issue);
-	const projectItem = boundToolProjectItemSummary(result.projectItem);
-	const paths = limitArray(result.paths, MAX_TOOL_PATHS);
-	const removedPaths = limitArray(result.removedPaths, MAX_TOOL_PATHS);
-	const changedFields = limitArray(result.changedFields, MAX_TOOL_CHANGED_FIELDS);
-	const error = boundSafeToolError(result.error);
-	const message = typeof result.message === "string" ? truncateSafeString(redactKnownSensitiveText(result.message), MAX_TOOL_ERROR_MESSAGE_CHARS) : undefined;
-	const action = truncateSafeString(redactKnownSensitiveText(result.action), 120);
-	const status = normalizeBulkIssueResultStatus(result.status);
-	const truncation: Record<string, unknown> = {};
-	if (message !== result.message) truncation.message = { maxChars: MAX_TOOL_ERROR_MESSAGE_CHARS };
-	if (action !== result.action) truncation.action = { maxChars: 120 };
-	if (paths.truncated) truncation.paths = { shown: paths.value?.length ?? 0, total: result.paths?.length ?? 0, max: MAX_TOOL_PATHS };
-	if (removedPaths.truncated) truncation.removedPaths = { shown: removedPaths.value?.length ?? 0, total: result.removedPaths?.length ?? 0, max: MAX_TOOL_PATHS };
-	if (changedFields.truncated) truncation.changedFields = { shown: changedFields.value?.length ?? 0, total: result.changedFields?.length ?? 0, max: MAX_TOOL_CHANGED_FIELDS };
-	if (issue.truncated) truncation.issue = issue.truncation;
-	if (projectItem.truncated) truncation.projectItem = projectItem.truncation;
+	const parts = boundBulkIssueResultParts(result);
+	const truncation = buildBulkIssueResultTruncation(result, parts);
 	return {
-		value: {
-			number: Number.isSafeInteger(result.number) && result.number > 0 ? result.number : 0,
-			action,
-			status,
-			...(message ? { message } : {}),
-			...(issue.value ? { issue: issue.value } : {}),
-			...(projectItem.value ? { projectItem: projectItem.value } : {}),
-			...(paths.value ? { paths: paths.value } : {}),
-			...(removedPaths.value ? { removedPaths: removedPaths.value } : {}),
-			...(changedFields.value ? { changedFields: changedFields.value } : {}),
-			...(typeof result.cacheUpdated === "boolean" ? { cacheUpdated: result.cacheUpdated } : {}),
-			...(typeof result.needsSync === "boolean" ? { needsSync: result.needsSync } : {}),
-			...(error ? { error } : {}),
-		},
-		truncated: Object.keys(truncation).length > 0,
+		value: buildBulkIssueResultValue(result, parts),
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
+}
+
+function boundBulkIssueResultParts(result: ToolBulkIssueResultSummary): BoundedBulkIssueResultParts {
+	return {
+		issue: boundToolIssueSummary(result.issue),
+		projectItem: boundToolProjectItemSummary(result.projectItem),
+		paths: limitArray(result.paths, MAX_TOOL_PATHS),
+		removedPaths: limitArray(result.removedPaths, MAX_TOOL_PATHS),
+		changedFields: limitArray(result.changedFields, MAX_TOOL_CHANGED_FIELDS),
+		error: boundSafeToolError(result.error),
+		message: typeof result.message === "string" ? truncateSafeString(redactKnownSensitiveText(result.message), MAX_TOOL_ERROR_MESSAGE_CHARS) : undefined,
+		action: truncateSafeString(redactKnownSensitiveText(result.action), 120),
+		status: normalizeBulkIssueResultStatus(result.status),
+	};
+}
+
+function buildBulkIssueResultTruncation(result: ToolBulkIssueResultSummary, parts: BoundedBulkIssueResultParts): Record<string, unknown> {
+	const truncation: Record<string, unknown> = {};
+	if (parts.message !== result.message) truncation.message = { maxChars: MAX_TOOL_ERROR_MESSAGE_CHARS };
+	if (parts.action !== result.action) truncation.action = { maxChars: 120 };
+	if (parts.paths.truncated) truncation.paths = { shown: parts.paths.value?.length ?? 0, total: result.paths?.length ?? 0, max: MAX_TOOL_PATHS };
+	if (parts.removedPaths.truncated) truncation.removedPaths = { shown: parts.removedPaths.value?.length ?? 0, total: result.removedPaths?.length ?? 0, max: MAX_TOOL_PATHS };
+	if (parts.changedFields.truncated) truncation.changedFields = { shown: parts.changedFields.value?.length ?? 0, total: result.changedFields?.length ?? 0, max: MAX_TOOL_CHANGED_FIELDS };
+	if (parts.issue.truncated) truncation.issue = parts.issue.truncation;
+	if (parts.projectItem.truncated) truncation.projectItem = parts.projectItem.truncation;
+	return truncation;
+}
+
+function buildBulkIssueResultValue(result: ToolBulkIssueResultSummary, parts: BoundedBulkIssueResultParts): ToolBulkIssueResultSummary {
+	const value: ToolBulkIssueResultSummary = {
+		number: positiveIssueNumberOrUndefined(result.number) ?? 0,
+		action: parts.action,
+		status: parts.status,
+	};
+	assignDefinedProperty(value, "message", truthyStringOrUndefined(parts.message));
+	assignDefinedProperty(value, "issue", parts.issue.value);
+	assignDefinedProperty(value, "projectItem", parts.projectItem.value);
+	assignDefinedProperty(value, "paths", parts.paths.value);
+	assignDefinedProperty(value, "removedPaths", parts.removedPaths.value);
+	assignDefinedProperty(value, "changedFields", parts.changedFields.value);
+	assignDefinedProperty(value, "cacheUpdated", booleanOrUndefined(result.cacheUpdated));
+	assignDefinedProperty(value, "needsSync", booleanOrUndefined(result.needsSync));
+	assignDefinedProperty(value, "error", parts.error);
+	return value;
 }
 
 function normalizeBulkIssueResultStatus(status: ToolBulkIssueResultStatus): ToolBulkIssueResultStatus {
@@ -1186,74 +1215,99 @@ function cloneRecord(value: Record<string, unknown> | undefined): Record<string,
 
 function buildToolTruncation(details: IssueMeToolDetails, limits: ToolDetailBounds): Record<string, unknown> {
 	const truncation: Record<string, unknown> = cloneRecord(details.truncation);
-	if (limits.paths.truncated) mergeTruncationSection(truncation, "paths", { shown: limits.paths.value?.length ?? 0, total: details.paths?.length ?? 0, max: MAX_TOOL_PATHS });
-	if (limits.removedPaths.truncated) mergeTruncationSection(truncation, "removedPaths", { shown: limits.removedPaths.value?.length ?? 0, total: details.removedPaths?.length ?? 0, max: MAX_TOOL_PATHS });
-	if (limits.changedFields.truncated) mergeTruncationSection(truncation, "changedFields", { shown: limits.changedFields.value?.length ?? 0, total: details.changedFields?.length ?? 0, max: MAX_TOOL_CHANGED_FIELDS });
-	if (limits.fileActions.truncated) mergeTruncationSection(truncation, "fileActions", { shown: limits.fileActions.value?.length ?? 0, total: details.fileActions?.length ?? 0, max: MAX_TOOL_ISSUES });
-	if (limits.invalidFiles.truncated) mergeTruncationSection(truncation, "invalidFiles", { shown: limits.invalidFiles.value?.length ?? 0, total: details.invalidFiles?.length ?? 0, max: MAX_TOOL_PATHS });
-	if (limits.issue.truncated) mergeTruncationSection(truncation, "issue", limits.issue.truncation);
-
-	const issueSummaryTruncation = collectIssueSummaryTruncation(limits.boundedIssues);
-	const issueSection = {
-		...(limits.issues.truncated ? { shown: limits.issues.value?.length ?? 0, total: details.issues?.length ?? 0, max: MAX_TOOL_ISSUES } : {}),
-		...issueSummaryTruncation,
-	};
-	if (Object.keys(issueSection).length > 0) mergeTruncationSection(truncation, "issues", issueSection);
-
-	const labelSummaryTruncation = collectLabelSummaryTruncation(limits.boundedLabels);
-	const labelSection = {
-		...(limits.labels.truncated ? { shown: limits.labels.value?.length ?? 0, total: details.labels?.length ?? 0, max: MAX_TOOL_LABELS } : {}),
-		...labelSummaryTruncation,
-	};
-	if (Object.keys(labelSection).length > 0) mergeTruncationSection(truncation, "labels", labelSection);
-
-	const milestoneSummaryTruncation = collectMilestoneSummaryTruncation(limits.boundedMilestones);
-	const milestoneSection = {
-		...(limits.milestones.truncated ? { shown: limits.milestones.value?.length ?? 0, total: details.milestones?.length ?? 0, max: MAX_TOOL_MILESTONES } : {}),
-		...milestoneSummaryTruncation,
-	};
-	if (Object.keys(milestoneSection).length > 0) mergeTruncationSection(truncation, "milestones", milestoneSection);
-
-	const assigneeSummaryTruncation = collectAssigneeSummaryTruncation(limits.boundedAssignees);
-	const assigneeSection = {
-		...(limits.assignees.truncated ? { shown: limits.assignees.value?.length ?? 0, total: details.assignees?.length ?? 0, max: MAX_TOOL_ASSIGNEES } : {}),
-		...assigneeSummaryTruncation,
-	};
-	if (Object.keys(assigneeSection).length > 0) mergeTruncationSection(truncation, "assignees", assigneeSection);
-
-	if (limits.project.truncated) mergeTruncationSection(truncation, "project", limits.project.truncation);
-	const projectSummaryTruncation = collectProjectSummaryTruncation(limits.boundedProjects);
-	const projectSection = {
-		...(limits.projects.truncated ? { shown: limits.projects.value?.length ?? 0, total: details.projects?.length ?? 0, max: MAX_TOOL_PROJECTS } : {}),
-		...projectSummaryTruncation,
-	};
-	if (Object.keys(projectSection).length > 0) mergeTruncationSection(truncation, "projects", projectSection);
-
-	const projectFieldSummaryTruncation = collectProjectFieldSummaryTruncation(limits.boundedProjectFields);
-	const projectFieldSection = {
-		...(limits.projectFields.truncated ? { shown: limits.projectFields.value?.length ?? 0, total: details.projectFields?.length ?? 0, max: MAX_TOOL_PROJECT_FIELDS } : {}),
-		...projectFieldSummaryTruncation,
-	};
-	if (Object.keys(projectFieldSection).length > 0) mergeTruncationSection(truncation, "projectFields", projectFieldSection);
-	if (limits.projectItem.truncated) mergeTruncationSection(truncation, "projectItem", limits.projectItem.truncation);
-
-	const developmentLinkSummaryTruncation = collectDevelopmentLinkSummaryTruncation(limits.boundedDevelopmentLinks);
-	const developmentLinkSection = {
-		...(limits.developmentLinks.truncated ? { shown: limits.developmentLinks.value?.length ?? 0, total: details.developmentLinks?.length ?? 0, max: MAX_TOOL_DEVELOPMENT_LINKS } : {}),
-		...developmentLinkSummaryTruncation,
-	};
-	if (Object.keys(developmentLinkSection).length > 0) mergeTruncationSection(truncation, "developmentLinks", developmentLinkSection);
-
-	const bulkResultTruncation = collectBulkResultTruncation(limits.boundedBulkResults);
-	const bulkResultSection = {
-		...(limits.bulkResults.truncated ? { shown: limits.bulkResults.value?.length ?? 0, total: details.bulkResults?.length ?? 0, max: MAX_TOOL_ISSUES } : {}),
-		...bulkResultTruncation,
-	};
-	if (Object.keys(bulkResultSection).length > 0) mergeTruncationSection(truncation, "bulkResults", bulkResultSection);
-
-	const fileActionIssueTruncation = collectIssueSummaryTruncation(limits.boundedFileActions);
-	if (Object.keys(fileActionIssueTruncation).length > 0) mergeTruncationSection(truncation, "fileActionIssues", fileActionIssueTruncation);
+	addPrimaryToolTruncations(truncation, details, limits);
+	addIssueToolTruncation(truncation, details, limits);
+	addLabelToolTruncation(truncation, details, limits);
+	addMilestoneToolTruncation(truncation, details, limits);
+	addAssigneeToolTruncation(truncation, details, limits);
+	addProjectToolTruncation(truncation, details, limits);
+	addProjectFieldToolTruncation(truncation, details, limits);
+	addDevelopmentLinkToolTruncation(truncation, details, limits);
+	addBulkResultToolTruncation(truncation, details, limits);
+	addFileActionIssueTruncation(truncation, limits);
 	return truncation;
+}
+
+function addPrimaryToolTruncations(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addLimitedToolTruncation(target, "paths", limits.paths, details.paths?.length, MAX_TOOL_PATHS);
+	addLimitedToolTruncation(target, "removedPaths", limits.removedPaths, details.removedPaths?.length, MAX_TOOL_PATHS);
+	addLimitedToolTruncation(target, "changedFields", limits.changedFields, details.changedFields?.length, MAX_TOOL_CHANGED_FIELDS);
+	addLimitedToolTruncation(target, "fileActions", limits.fileActions, details.fileActions?.length, MAX_TOOL_ISSUES);
+	addLimitedToolTruncation(target, "invalidFiles", limits.invalidFiles, details.invalidFiles?.length, MAX_TOOL_PATHS);
+	addBoundedToolTruncation(target, "issue", limits.issue);
+}
+
+function addIssueToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "issues", limits.issues, details.issues?.length, MAX_TOOL_ISSUES, collectIssueSummaryTruncation(limits.boundedIssues));
+}
+
+function addLabelToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "labels", limits.labels, details.labels?.length, MAX_TOOL_LABELS, collectLabelSummaryTruncation(limits.boundedLabels));
+}
+
+function addMilestoneToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "milestones", limits.milestones, details.milestones?.length, MAX_TOOL_MILESTONES, collectMilestoneSummaryTruncation(limits.boundedMilestones));
+}
+
+function addAssigneeToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "assignees", limits.assignees, details.assignees?.length, MAX_TOOL_ASSIGNEES, collectAssigneeSummaryTruncation(limits.boundedAssignees));
+}
+
+function addProjectToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addBoundedToolTruncation(target, "project", limits.project);
+	addToolArraySummaryTruncation(target, "projects", limits.projects, details.projects?.length, MAX_TOOL_PROJECTS, collectProjectSummaryTruncation(limits.boundedProjects));
+}
+
+function addProjectFieldToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "projectFields", limits.projectFields, details.projectFields?.length, MAX_TOOL_PROJECT_FIELDS, collectProjectFieldSummaryTruncation(limits.boundedProjectFields));
+	addBoundedToolTruncation(target, "projectItem", limits.projectItem);
+}
+
+function addDevelopmentLinkToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "developmentLinks", limits.developmentLinks, details.developmentLinks?.length, MAX_TOOL_DEVELOPMENT_LINKS, collectDevelopmentLinkSummaryTruncation(limits.boundedDevelopmentLinks));
+}
+
+function addBulkResultToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	addToolArraySummaryTruncation(target, "bulkResults", limits.bulkResults, details.bulkResults?.length, MAX_TOOL_ISSUES, collectBulkResultTruncation(limits.boundedBulkResults));
+}
+
+function addFileActionIssueTruncation(target: Record<string, unknown>, limits: ToolDetailBounds): void {
+	mergeTruncationSectionWhenPresent(target, "fileActionIssues", collectIssueSummaryTruncation(limits.boundedFileActions));
+}
+
+function addToolArraySummaryTruncation<T>(
+	target: Record<string, unknown>,
+	key: string,
+	values: LimitedArray<T>,
+	total: number | undefined,
+	max: number,
+	summaryTruncation: Record<string, unknown>,
+): void {
+	mergeTruncationSectionWhenPresent(target, key, buildToolArraySummaryTruncation(values, total, max, summaryTruncation));
+}
+
+function buildToolArraySummaryTruncation<T>(values: LimitedArray<T>, total: number | undefined, max: number, summaryTruncation: Record<string, unknown>): Record<string, unknown> {
+	return {
+		...limitedToolArrayTruncation(values, total, max),
+		...summaryTruncation,
+	};
+}
+
+function addLimitedToolTruncation<T>(target: Record<string, unknown>, key: string, values: LimitedArray<T>, total: number | undefined, max: number): void {
+	mergeTruncationSectionWhenPresent(target, key, limitedToolArrayTruncation(values, total, max));
+}
+
+function limitedToolArrayTruncation<T>(values: LimitedArray<T>, total: number | undefined, max: number): Record<string, unknown> {
+	if (!values.truncated) return {};
+	return { shown: values.value?.length ?? 0, total: total ?? 0, max };
+}
+
+function addBoundedToolTruncation(target: Record<string, unknown>, key: string, bounded: { truncated: boolean; truncation: Record<string, unknown> }): void {
+	if (bounded.truncated) mergeTruncationSection(target, key, bounded.truncation);
+}
+
+function mergeTruncationSectionWhenPresent(target: Record<string, unknown>, key: string, value: Record<string, unknown>): void {
+	if (hasTruncation(value)) mergeTruncationSection(target, key, value);
 }
 
 function collectIssueSummaryTruncation(summaries: Array<{ truncation: Record<string, unknown> }> | undefined): Record<string, unknown> {

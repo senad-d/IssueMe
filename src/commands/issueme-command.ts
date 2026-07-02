@@ -104,11 +104,11 @@ async function openConfig(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promi
 
 async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?: string): Promise<void> {
 	const trusted = ctx.isProjectTrusted();
-	const projectRoot = await resolveInfoProjectRoot(ctx, trusted);
-	const { config, configError } = await loadInfoConfigForTrust(projectRoot, trusted);
+	const projectRoot = trusted ? await resolveTrustedInfoProjectRoot(ctx) : resolveUntrustedInfoProjectRoot(ctx);
+	const { config, configError } = trusted ? await loadInfoConfig(projectRoot) : defaultInfoConfig();
 	const tokenStatus = await getGitHubTokenStatus(projectRoot, process.env, { readProjectEnv: trusted });
 	const repositoryStatus = await resolveInfoRepositoryStatus(projectRoot, trusted);
-	const cacheResult = await listInfoCache(projectRoot, config, trusted, configError);
+	const cacheResult = trusted ? await listTrustedInfoCache(projectRoot, config, configError) : emptyInfoCache();
 	const display = configDisplayValues(config, configError);
 	const combinedWarning = combineInfoWarnings(warning, configError);
 	const text = renderIssueMeInfo({
@@ -146,13 +146,16 @@ async function showInfo(pi: ExtensionAPI, ctx: ExtensionCommandContext, warning?
 	});
 }
 
-async function resolveInfoProjectRoot(ctx: ExtensionCommandContext, trusted: boolean): Promise<string> {
-	return trusted ? (await resolveIssueMeProjectRoot(ctx.cwd)).root : resolve(ctx.cwd);
+async function resolveTrustedInfoProjectRoot(ctx: ExtensionCommandContext): Promise<string> {
+	return (await resolveIssueMeProjectRoot(ctx.cwd)).root;
 }
 
-async function loadInfoConfigForTrust(projectRoot: string, trusted: boolean): Promise<{ config: IssueMeConfig; configError?: IssueMeError }> {
-	if (!trusted) return { config: DEFAULT_ISSUEME_CONFIG, configError: undefined };
-	return loadInfoConfig(projectRoot);
+function resolveUntrustedInfoProjectRoot(ctx: ExtensionCommandContext): string {
+	return resolve(ctx.cwd);
+}
+
+function defaultInfoConfig(): { config: IssueMeConfig; configError?: IssueMeError } {
+	return { config: DEFAULT_ISSUEME_CONFIG, configError: undefined };
 }
 
 async function resolveInfoRepositoryStatus(projectRoot: string, trusted: boolean): Promise<string> {
@@ -164,9 +167,13 @@ async function resolveInfoRepositoryStatus(projectRoot: string, trusted: boolean
 	}
 }
 
-async function listInfoCache(projectRoot: string, config: IssueMeConfig, trusted: boolean, configError: IssueMeError | undefined): ReturnType<typeof listIssueFileEntries> {
-	if (!trusted || configError) return { files: [], invalidFiles: [] };
+async function listTrustedInfoCache(projectRoot: string, config: IssueMeConfig, configError: IssueMeError | undefined): ReturnType<typeof listIssueFileEntries> {
+	if (configError) return emptyInfoCache();
 	return listIssueFileEntries(projectRoot, config);
+}
+
+function emptyInfoCache(): Awaited<ReturnType<typeof listIssueFileEntries>> {
+	return { files: [], invalidFiles: [] };
 }
 
 function configDisplayValues(config: IssueMeConfig, configError: IssueMeError | undefined): { issueDirectory: string; allowedIssueCreator: string; defaultSkillPath: string | null } {
@@ -359,28 +366,48 @@ function splitCommandArgs(input: string): string[] {
 	for (let index = 0; index < input.length; index += 1) {
 		const char = input[index];
 		const next = input[index + 1];
-		if (char === "\\" && quote !== "'" && isEscapableCommandChar(next, quote)) {
+		if (isEscapedCommandChar(char, next, quote)) {
 			current += next;
 			index += 1;
 			continue;
 		}
-		if ((char === "\"" || char === "'") && quote === undefined) {
+		if (isOpeningCommandQuote(char, quote)) {
 			quote = char;
 			continue;
 		}
-		if (quote === char) {
+		if (isClosingCommandQuote(char, quote)) {
 			quote = undefined;
 			continue;
 		}
-		if (/\s/.test(char) && quote === undefined) {
-			if (current) tokens.push(current);
-			current = "";
+		if (isCommandArgumentSeparator(char, quote)) {
+			current = flushCommandArgToken(tokens, current);
 			continue;
 		}
 		current += char;
 	}
-	if (current) tokens.push(current);
+	flushCommandArgToken(tokens, current);
 	return tokens;
+}
+
+function isEscapedCommandChar(char: string, next: string | undefined, quote: "\"" | "'" | undefined): boolean {
+	return char === "\\" && quote !== "'" && isEscapableCommandChar(next, quote);
+}
+
+function isOpeningCommandQuote(char: string, quote: "\"" | "'" | undefined): char is "\"" | "'" {
+	return (char === "\"" || char === "'") && quote === undefined;
+}
+
+function isClosingCommandQuote(char: string, quote: "\"" | "'" | undefined): boolean {
+	return quote === char;
+}
+
+function isCommandArgumentSeparator(char: string, quote: "\"" | "'" | undefined): boolean {
+	return /\s/.test(char) && quote === undefined;
+}
+
+function flushCommandArgToken(tokens: string[], current: string): string {
+	if (current) tokens.push(current);
+	return "";
 }
 
 function isEscapableCommandChar(value: string | undefined, quote: "\"" | "'" | undefined): value is string {

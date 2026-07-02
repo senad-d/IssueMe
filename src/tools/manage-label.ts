@@ -204,8 +204,7 @@ function isUnexpectedManageLabelActionField(params: ManageLabelToolParams, field
 }
 
 function hasManageLabelActionField(params: ManageLabelToolParams, field: LabelActionSpecificField): boolean {
-	if (typeof params[field] === "undefined") return false;
-	return true;
+	return params[field] !== undefined;
 }
 
 function normalizeLabelName(value: string | undefined, field: string): string {
