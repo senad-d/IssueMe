@@ -295,7 +295,7 @@ async function closeIssueForBulk(
 			number: issueNumber,
 			action: params.action,
 			status: "success",
-			message: alreadyClosed ? `Issue #${issueNumber} was already closed; removed matching stale local cache files.` : `Closed issue #${issueNumber}${params.reason ? ` with reason ${params.reason}` : ""}.`,
+			message: formatBulkCloseSuccessMessage(issueNumber, alreadyClosed, params.reason),
 			issue: issueSummary,
 			removedPaths,
 			changedFields: alreadyClosed ? [] : params.changedFields,
@@ -318,6 +318,16 @@ async function closeIssueForBulk(
 	}
 }
 
+function formatBulkCloseSuccessMessage(issueNumber: number, alreadyClosed: boolean, reason: GitHubIssueCloseReason | undefined): string {
+	if (alreadyClosed) return `Issue #${issueNumber} was already closed; removed matching stale local cache files.`;
+	return `Closed issue #${issueNumber}${formatBulkCloseReason(reason)}.`;
+}
+
+function formatBulkCloseReason(reason: GitHubIssueCloseReason | undefined): string {
+	if (reason === undefined) return "";
+	return ` with reason ${reason}`;
+}
+
 function buildBulkIssueDetails(
 	repository: string,
 	params: NormalizedBulkIssueParams,
@@ -333,7 +343,7 @@ function buildBulkIssueDetails(
 		result,
 		repository,
 		creatorScope,
-		status: result === "success" ? "bulk_success" : result === "partial_success" ? "bulk_partial_success" : "bulk_failed",
+		status: bulkToolStatus(result),
 		bulkResults: run.results,
 		issues: issueSummaries,
 		paths,
@@ -356,6 +366,12 @@ function inferBulkToolResult(counts: BulkRunCounts): IssueMeToolResult {
 	if (counts.failed === 0 && counts.partial === 0) return "success";
 	if (counts.succeeded > 0 || counts.partial > 0) return "partial_success";
 	return "error";
+}
+
+function bulkToolStatus(result: IssueMeToolResult): string {
+	if (result === "success") return "bulk_success";
+	if (result === "partial_success") return "bulk_partial_success";
+	return "bulk_failed";
 }
 
 function formatBulkIssueText(
@@ -413,7 +429,29 @@ function normalizeBulkIssueParams(params: BulkIssueToolParams): NormalizedBulkIs
 		return { issueNumbers, action, projectId: normalizeRequiredProjectId(params.projectId, "projectId"), continueOnError, changedFields: ["project_item"] };
 	}
 	assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.close);
-	return { issueNumbers, action, ...(params.reason !== undefined ? { reason: normalizeCloseReason(params.reason) } : {}), continueOnError, changedFields: params.reason ? ["state", "state_reason"] : ["state"] };
+	return normalizeCloseBulkParams(issueNumbers, action, continueOnError, params.reason);
+}
+
+function normalizeCloseBulkParams(
+	issueNumbers: number[],
+	action: BulkIssueActionName,
+	continueOnError: boolean,
+	value: BulkIssueToolParams["reason"],
+): NormalizedBulkIssueParams {
+	const reason = normalizeOptionalCloseReason(value);
+	const params: NormalizedBulkIssueParams = { issueNumbers, action, continueOnError, changedFields: bulkCloseChangedFields(reason) };
+	if (reason !== undefined) params.reason = reason;
+	return params;
+}
+
+function normalizeOptionalCloseReason(value: BulkIssueToolParams["reason"]): GitHubIssueCloseReason | undefined {
+	if (value === undefined) return undefined;
+	return normalizeCloseReason(value);
+}
+
+function bulkCloseChangedFields(reason: GitHubIssueCloseReason | undefined): string[] {
+	if (reason === undefined) return ["state"];
+	return ["state", "state_reason"];
 }
 
 function normalizeAction(value: BulkIssueActionName | undefined): BulkIssueActionName {

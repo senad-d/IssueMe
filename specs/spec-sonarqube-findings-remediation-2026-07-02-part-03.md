@@ -8,7 +8,7 @@ Common acceptance criteria: fix the referenced rule without suppression, preserv
 
 ### 101. Rewrite negated condition in src/issues/format.ts:100
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkp` (`typescript:S7735`) at `src/issues/format.ts:100`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkp` (`typescript:S7735`) at `src/issues/format.ts:100`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -32,7 +32,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 102. Rewrite negated condition in src/issues/format.ts:101
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkq` (`typescript:S7735`) at `src/issues/format.ts:101`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkq` (`typescript:S7735`) at `src/issues/format.ts:101`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -56,7 +56,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 103. Rewrite negated condition in src/issues/format.ts:102
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkr` (`typescript:S7735`) at `src/issues/format.ts:102`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkr` (`typescript:S7735`) at `src/issues/format.ts:102`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -80,7 +80,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 104. Rewrite negated condition in src/issues/format.ts:103
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFks` (`typescript:S7735`) at `src/issues/format.ts:103`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFks` (`typescript:S7735`) at `src/issues/format.ts:103`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -104,7 +104,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 105. Rewrite negated condition in src/issues/format.ts:110
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkt` (`typescript:S7735`) at `src/issues/format.ts:110`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkt` (`typescript:S7735`) at `src/issues/format.ts:110`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -128,7 +128,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 106. Rewrite negated condition in src/issues/format.ts:111
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFku` (`typescript:S7735`) at `src/issues/format.ts:111`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFku` (`typescript:S7735`) at `src/issues/format.ts:111`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -152,7 +152,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 107. Rewrite negated condition in src/issues/format.ts:112
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkv` (`typescript:S7735`) at `src/issues/format.ts:112`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkv` (`typescript:S7735`) at `src/issues/format.ts:112`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -176,7 +176,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 108. Rewrite negated condition in src/issues/format.ts:143
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkx` (`typescript:S7735`) at `src/issues/format.ts:143`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkx` (`typescript:S7735`) at `src/issues/format.ts:143`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -200,7 +200,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 109. Rewrite negated condition in src/issues/format.ts:155
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFky` (`typescript:S7735`) at `src/issues/format.ts:155`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFky` (`typescript:S7735`) at `src/issues/format.ts:155`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -224,7 +224,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 110. Remove nested template literal in src/issues/format.ts:160
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk0` (`typescript:S4624`) at `src/issues/format.ts:160`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk0` (`typescript:S4624`) at `src/issues/format.ts:160`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -248,7 +248,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 111. Rewrite negated condition in src/issues/format.ts:160
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkz` (`typescript:S7735`) at `src/issues/format.ts:160`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFkz` (`typescript:S7735`) at `src/issues/format.ts:160`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -272,7 +272,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 112. Rewrite negated condition in src/issues/format.ts:196
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk1` (`typescript:S7735`) at `src/issues/format.ts:196`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk1` (`typescript:S7735`) at `src/issues/format.ts:196`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -296,7 +296,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 113. Rewrite negated condition in src/issues/format.ts:197
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk2` (`typescript:S7735`) at `src/issues/format.ts:197`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk2` (`typescript:S7735`) at `src/issues/format.ts:197`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -320,7 +320,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 114. Rewrite negated condition in src/issues/format.ts:198
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk3` (`typescript:S7735`) at `src/issues/format.ts:198`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk3` (`typescript:S7735`) at `src/issues/format.ts:198`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -344,7 +344,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 115. Extract nested ternary in src/issues/format.ts:225
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk4` (`typescript:S3358`) at `src/issues/format.ts:225`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk4` (`typescript:S3358`) at `src/issues/format.ts:225`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -368,7 +368,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 116. Remove nested template literal in src/issues/format.ts:245
 
-- [ ] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk5` (`typescript:S4624`) at `src/issues/format.ts:245`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpx0gI5cC3g4vWFk5` (`typescript:S4624`) at `src/issues/format.ts:245`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -392,7 +392,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 117. Reduce cognitive complexity in src/issues/store.ts:210
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk6` (`typescript:S3776`) at `src/issues/store.ts:210`: reduce cognitive complexity from 19 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk6` (`typescript:S3776`) at `src/issues/store.ts:210`: reduce cognitive complexity from 19 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -416,7 +416,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 118. Reduce cognitive complexity in src/issues/store.ts:388
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk9` (`typescript:S3776`) at `src/issues/store.ts:388`: reduce cognitive complexity from 19 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFk9` (`typescript:S3776`) at `src/issues/store.ts:388`: reduce cognitive complexity from 19 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -440,7 +440,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 119. Rewrite negated condition in src/issues/store.ts:604
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlA` (`typescript:S7735`) at `src/issues/store.ts:604`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlA` (`typescript:S7735`) at `src/issues/store.ts:604`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -464,7 +464,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 120. Rewrite negated condition in src/issues/store.ts:605
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlB` (`typescript:S7735`) at `src/issues/store.ts:605`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlB` (`typescript:S7735`) at `src/issues/store.ts:605`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -488,7 +488,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 121. Rewrite negated condition in src/issues/store.ts:606
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlC` (`typescript:S7735`) at `src/issues/store.ts:606`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlC` (`typescript:S7735`) at `src/issues/store.ts:606`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -512,7 +512,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 122. Rewrite negated condition in src/issues/store.ts:608
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlD` (`typescript:S7735`) at `src/issues/store.ts:608`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlD` (`typescript:S7735`) at `src/issues/store.ts:608`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -536,7 +536,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 123. Rewrite negated condition in src/issues/store.ts:609
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlE` (`typescript:S7735`) at `src/issues/store.ts:609`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlE` (`typescript:S7735`) at `src/issues/store.ts:609`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -560,7 +560,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 124. Rewrite negated condition in src/issues/store.ts:610
 
-- [ ] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlF` (`typescript:S7735`) at `src/issues/store.ts:610`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpx0sI5cC3g4vWFlF` (`typescript:S7735`) at `src/issues/store.ts:610`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -584,7 +584,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 125. Extract nested ternary in src/tools/assign-issue.ts:36
 
-- [ ] Resolve Sonar issue `AZ8dpxwrI5cC3g4vWFiW` (`typescript:S3358`) at `src/tools/assign-issue.ts:36`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxwrI5cC3g4vWFiW` (`typescript:S3358`) at `src/tools/assign-issue.ts:36`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -608,7 +608,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 126. Extract nested ternary in src/tools/bulk-issues.ts:298
 
-- [ ] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjK` (`typescript:S3358`) at `src/tools/bulk-issues.ts:298`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjK` (`typescript:S3358`) at `src/tools/bulk-issues.ts:298`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -632,7 +632,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 127. Remove nested template literal in src/tools/bulk-issues.ts:298
 
-- [ ] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjL` (`typescript:S4624`) at `src/tools/bulk-issues.ts:298`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjL` (`typescript:S4624`) at `src/tools/bulk-issues.ts:298`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -656,7 +656,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 128. Extract nested ternary in src/tools/bulk-issues.ts:336
 
-- [ ] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjM` (`typescript:S3358`) at `src/tools/bulk-issues.ts:336`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjM` (`typescript:S3358`) at `src/tools/bulk-issues.ts:336`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -680,7 +680,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 129. Rewrite negated condition in src/tools/bulk-issues.ts:416
 
-- [ ] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjN` (`typescript:S7735`) at `src/tools/bulk-issues.ts:416`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxWI5cC3g4vWFjN` (`typescript:S7735`) at `src/tools/bulk-issues.ts:416`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -704,7 +704,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 130. Remove nested template literal in src/tools/close-issue.ts:47
 
-- [ ] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhH` (`typescript:S4624`) at `src/tools/close-issue.ts:47`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhH` (`typescript:S4624`) at `src/tools/close-issue.ts:47`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -728,7 +728,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 131. Remove nested template literal in src/tools/close-issue.ts:59
 
-- [ ] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhI` (`typescript:S4624`) at `src/tools/close-issue.ts:59`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxvVI5cC3g4vWFhI` (`typescript:S4624`) at `src/tools/close-issue.ts:59`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -752,7 +752,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 132. Remove nested template literal in src/tools/comment-issue.ts:54
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh3` (`typescript:S4624`) at `src/tools/comment-issue.ts:54`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh3` (`typescript:S4624`) at `src/tools/comment-issue.ts:54`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -776,7 +776,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 133. Remove nested template literal in src/tools/comment-issue.ts:65
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh4` (`typescript:S4624`) at `src/tools/comment-issue.ts:65`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh4` (`typescript:S4624`) at `src/tools/comment-issue.ts:65`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -800,7 +800,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 134. Remove nested template literal in src/tools/comment-issue.ts:101
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh5` (`typescript:S4624`) at `src/tools/comment-issue.ts:101`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh5` (`typescript:S4624`) at `src/tools/comment-issue.ts:101`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -824,7 +824,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 135. Remove nested template literal in src/tools/comment-issue.ts:112
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh6` (`typescript:S4624`) at `src/tools/comment-issue.ts:112`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh6` (`typescript:S4624`) at `src/tools/comment-issue.ts:112`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -848,7 +848,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 136. Remove nested template literal in src/tools/comment-issue.ts:147
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh7` (`typescript:S4624`) at `src/tools/comment-issue.ts:147`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh7` (`typescript:S4624`) at `src/tools/comment-issue.ts:147`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -872,7 +872,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 137. Remove nested template literal in src/tools/comment-issue.ts:159
 
-- [ ] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh8` (`typescript:S4624`) at `src/tools/comment-issue.ts:159`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwHI5cC3g4vWFh8` (`typescript:S4624`) at `src/tools/comment-issue.ts:159`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -896,7 +896,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 138. Reduce cognitive complexity in src/tools/development-links.ts:114
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFia` (`typescript:S3776`) at `src/tools/development-links.ts:114`: reduce cognitive complexity from 22 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFia` (`typescript:S3776`) at `src/tools/development-links.ts:114`: reduce cognitive complexity from 22 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -920,7 +920,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 139. Extract nested ternary in src/tools/development-links.ts:118
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFib` (`typescript:S3358`) at `src/tools/development-links.ts:118`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFib` (`typescript:S3358`) at `src/tools/development-links.ts:118`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -944,7 +944,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 140. Remove nested template literal in src/tools/development-links.ts:118
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFic` (`typescript:S4624`) at `src/tools/development-links.ts:118`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFic` (`typescript:S4624`) at `src/tools/development-links.ts:118`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -968,7 +968,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 141. Extract nested ternary in src/tools/development-links.ts:119
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFid` (`typescript:S3358`) at `src/tools/development-links.ts:119`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFid` (`typescript:S3358`) at `src/tools/development-links.ts:119`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -992,7 +992,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 142. Extract nested ternary in src/tools/development-links.ts:124
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFie` (`typescript:S3358`) at `src/tools/development-links.ts:124`: extract the nested ternary into independent statements.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFie` (`typescript:S3358`) at `src/tools/development-links.ts:124`: extract the nested ternary into independent statements.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested ternaries are difficult to read and easy to change incorrectly during later maintenance.
@@ -1016,7 +1016,7 @@ Replace the nested conditional expression with named intermediate variables, gua
 
 ### 143. Remove nested template literal in src/tools/development-links.ts:125
 
-- [ ] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFif` (`typescript:S4624`) at `src/tools/development-links.ts:125`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxw8I5cC3g4vWFif` (`typescript:S4624`) at `src/tools/development-links.ts:125`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -1040,7 +1040,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 144. Reduce cognitive complexity in src/tools/get-issue.ts:33
 
-- [ ] Resolve Sonar issue `AZ8dpxxyI5cC3g4vWFjS` (`typescript:S3776`) at `src/tools/get-issue.ts:33`: reduce cognitive complexity from 30 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxxyI5cC3g4vWFjS` (`typescript:S3776`) at `src/tools/get-issue.ts:33`: reduce cognitive complexity from 30 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -1064,7 +1064,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 145. Rewrite negated condition in src/tools/get-issue.ts:82
 
-- [ ] Resolve Sonar issue `AZ8dpxxyI5cC3g4vWFjT` (`typescript:S7735`) at `src/tools/get-issue.ts:82`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxxyI5cC3g4vWFjT` (`typescript:S7735`) at `src/tools/get-issue.ts:82`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1088,7 +1088,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 146. Reduce cognitive complexity in src/tools/label-issue.ts:28
 
-- [ ] Resolve Sonar issue `AZ8dpxxfI5cC3g4vWFjP` (`typescript:S3776`) at `src/tools/label-issue.ts:28`: reduce cognitive complexity from 17 to 15 or less.
+- [x] Resolve Sonar issue `AZ8dpxxfI5cC3g4vWFjP` (`typescript:S3776`) at `src/tools/label-issue.ts:28`: reduce cognitive complexity from 17 to 15 or less.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `CRITICAL` and impact `MAINTAINABILITY:HIGH`. High cognitive complexity makes the function harder to review, test, and safely modify.
@@ -1112,7 +1112,7 @@ Extract focused top-level helper functions, use guard clauses, flatten control f
 
 ### 147. Rewrite negated condition in src/tools/list-assignees.ts:85
 
-- [ ] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh9` (`typescript:S7735`) at `src/tools/list-assignees.ts:85`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh9` (`typescript:S7735`) at `src/tools/list-assignees.ts:85`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1136,7 +1136,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 148. Remove nested template literal in src/tools/list-assignees.ts:104
 
-- [ ] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh-` (`typescript:S4624`) at `src/tools/list-assignees.ts:104`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh-` (`typescript:S4624`) at `src/tools/list-assignees.ts:104`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.
@@ -1160,7 +1160,7 @@ Compute the nested string fragment in a named variable or helper, then interpola
 
 ### 149. Rewrite negated condition in src/tools/list-assignees.ts:117
 
-- [ ] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh_` (`typescript:S7735`) at `src/tools/list-assignees.ts:117`: rewrite the unexpected negated condition.
+- [x] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFh_` (`typescript:S7735`) at `src/tools/list-assignees.ts:117`: rewrite the unexpected negated condition.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MINOR` and impact `MAINTAINABILITY:LOW`. Unexpected negated conditions make branching harder to follow and can hide the main success path.
@@ -1184,7 +1184,7 @@ Invert the branch or reorder the conditional so the positive condition is handle
 
 ### 150. Remove nested template literal in src/tools/list-assignees.ts:120
 
-- [ ] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFiA` (`typescript:S4624`) at `src/tools/list-assignees.ts:120`: refactor the nested template literal.
+- [x] Resolve Sonar issue `AZ8dpxwPI5cC3g4vWFiA` (`typescript:S4624`) at `src/tools/list-assignees.ts:120`: refactor the nested template literal.
 
 #### Why
 Sonar reports this as a `CODE_SMELL` with severity `MAJOR` and impact `MAINTAINABILITY:MEDIUM`. Nested template literals make output formatting harder to inspect and increase the chance of subtle string regressions.

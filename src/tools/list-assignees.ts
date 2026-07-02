@@ -70,23 +70,48 @@ function normalizeListAssigneesParams(params: ListAssigneesToolParams): Normaliz
 }
 
 function summarizeAssignees(assignees: GitHubUserResponse[]): ToolAssigneeSummary[] {
-	return assignees.map(normalizeAssigneeSummary).filter((assignee): assignee is ToolAssigneeSummary => assignee !== undefined);
+	return assignees.map(normalizeAssigneeSummary).filter(isToolAssigneeSummary);
+}
+
+function isToolAssigneeSummary(assignee: ToolAssigneeSummary | undefined): assignee is ToolAssigneeSummary {
+	if (assignee === undefined) return false;
+	return true;
+}
+
+function isStringValue(value: string | undefined): value is string {
+	return typeof value === "string";
 }
 
 function normalizeAssigneeSummary(assignee: GitHubUserResponse): ToolAssigneeSummary | undefined {
-	const login = typeof assignee.login === "string" ? assignee.login.trim() : "";
-	if (!login) return undefined;
-	const id = typeof assignee.id === "number" && Number.isSafeInteger(assignee.id) && assignee.id > 0 ? assignee.id : undefined;
-	const type = typeof assignee.type === "string" && assignee.type.trim() ? assignee.type.trim() : undefined;
-	const htmlUrl = typeof assignee.html_url === "string" && assignee.html_url.trim() ? assignee.html_url.trim() : undefined;
-	const apiUrl = typeof assignee.url === "string" && assignee.url.trim() ? assignee.url.trim() : undefined;
-	return {
-		login,
-		...(id !== undefined ? { id } : {}),
-		...(type ? { type } : {}),
-		...(htmlUrl ? { html_url: htmlUrl } : {}),
-		...(apiUrl ? { url: apiUrl } : {}),
-	};
+	const login = normalizeAssigneeText(assignee.login);
+	if (login) return buildAssigneeSummary(login, assignee);
+	return undefined;
+}
+
+function normalizeAssigneeText(value: unknown): string | undefined {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		if (trimmed) return trimmed;
+	}
+	return undefined;
+}
+
+function normalizeAssigneeId(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+	return undefined;
+}
+
+function buildAssigneeSummary(login: string, assignee: GitHubUserResponse): ToolAssigneeSummary {
+	const summary: ToolAssigneeSummary = { login };
+	const id = normalizeAssigneeId(assignee.id);
+	const type = normalizeAssigneeText(assignee.type);
+	const htmlUrl = normalizeAssigneeText(assignee.html_url);
+	const apiUrl = normalizeAssigneeText(assignee.url);
+	if (typeof id === "number") summary.id = id;
+	if (type) summary.type = type;
+	if (htmlUrl) summary.html_url = htmlUrl;
+	if (apiUrl) summary.url = apiUrl;
+	return summary;
 }
 
 function formatListAssigneesText(
@@ -98,24 +123,50 @@ function formatListAssigneesText(
 	const filters = [
 		params.login ? `login: ${params.login}` : undefined,
 		params.query ? `query: ${params.query}` : undefined,
-	].filter((value): value is string => value !== undefined);
+	].filter(isStringValue);
+	const filterText = formatListAssigneeFilterText(filters);
 	const lines = [
 		`Listed ${assignees.length} assignable user(s) for ${repository}.`,
-		`Limit: ${params.limit}${filters.length ? `; filters: ${filters.join(", ")}` : ""}.`,
+		`Limit: ${params.limit}${filterText}.`,
 		"This tool is read-only; it does not assign users or write local issue cache files.",
 		"",
 		assignees.length ? undefined : "No assignable users matched the request.",
 		...assignees.map(formatAssigneeLine),
 		truncated ? `Results truncated at ${params.limit} assignable user(s); narrow filters or increase limit up to ${MAX_TOOL_ASSIGNEES}.` : undefined,
-	].filter((line): line is string => line !== undefined);
+	].filter(isStringValue);
 	return lines.join("\n");
 }
 
+function formatListAssigneeFilterText(filters: string[]): string {
+	if (filters.length) return `; filters: ${filters.join(", ")}`;
+	return "";
+}
+
 function formatAssigneeLine(assignee: ToolAssigneeSummary): string {
-	const metadata = [
+	const metadata = formatAssigneeMetadata(assignee);
+	const metadataText = formatAssigneeMetadataText(metadata);
+	const urlText = formatAssigneeUrlText(assignee.html_url ?? assignee.url);
+	return `- ${assignee.login}${metadataText}${urlText}`;
+}
+
+function formatAssigneeMetadata(assignee: ToolAssigneeSummary): string {
+	return [
 		assignee.type,
-		assignee.id !== undefined ? `id ${assignee.id}` : undefined,
-	].filter((value): value is string => value !== undefined).join(", ");
-	const url = assignee.html_url ?? assignee.url;
-	return `- ${assignee.login}${metadata ? ` (${metadata})` : ""}${url ? ` — ${url}` : ""}`;
+		formatAssigneeIdMetadata(assignee.id),
+	].filter(isStringValue).join(", ");
+}
+
+function formatAssigneeIdMetadata(id: number | undefined): string | undefined {
+	if (typeof id === "number") return `id ${id}`;
+	return undefined;
+}
+
+function formatAssigneeMetadataText(metadata: string): string {
+	if (metadata) return ` (${metadata})`;
+	return "";
+}
+
+function formatAssigneeUrlText(url: string | undefined): string {
+	if (url) return ` — ${url}`;
+	return "";
 }

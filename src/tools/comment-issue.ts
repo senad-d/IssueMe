@@ -49,9 +49,10 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 				const comment = await runtime.client.addComment(params.number, body, signal);
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
+				const successText = formatCommentCreateText(params.number, commentUrl);
 				try {
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
-					return toolText(`Added comment to issue #${params.number}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
+					return toolText(successText, {
 						repository: runtime.repository,
 						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
@@ -62,7 +63,7 @@ export function registerCommentIssueTool(pi: ExtensionAPI, options: IssueMeToolR
 					});
 				} catch (error) {
 					return partialSuccessToolText(
-						`Added comment to issue #${params.number}.${commentUrl ? `\nComment: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						`${successText}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
 						error,
 						{
 							repository: runtime.repository,
@@ -96,9 +97,10 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 				const comment = await runtime.client.updateComment(params.issueNumber, params.commentId, body, signal);
 				const commentDetails = commentSummary(comment);
 				const commentUrl = commentDetails.html_url;
+				const successText = formatCommentUpdateText(params.commentId, params.issueNumber, commentUrl);
 				try {
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
-					return toolText(`Updated comment ${params.commentId} on issue #${params.issueNumber}.${commentUrl ? `\nComment: ${commentUrl}` : ""}`, {
+					return toolText(successText, {
 						repository: runtime.repository,
 						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
@@ -109,7 +111,7 @@ export function registerUpdateCommentTool(pi: ExtensionAPI, options: IssueMeTool
 					});
 				} catch (error) {
 					return partialSuccessToolText(
-						`Updated comment ${params.commentId} on issue #${params.issueNumber}.${commentUrl ? `\nComment: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						`${successText}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
 						error,
 						{
 							repository: runtime.repository,
@@ -142,9 +144,10 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 				const deletedComment = await runtime.client.deleteComment(params.issueNumber, params.commentId, signal);
 				const commentDetails = commentSummary(deletedComment);
 				const commentUrl = commentDetails.html_url;
+				const successText = formatCommentDeleteText(params.commentId, params.issueNumber, commentUrl);
 				try {
 					const { summary, path } = await refreshAndCacheIssue(ctx, runtime, params.issueNumber, signal);
-					return toolText(`Deleted comment ${params.commentId} from issue #${params.issueNumber}.${commentUrl ? `\nDeleted comment URL: ${commentUrl}` : ""}`, {
+					return toolText(successText, {
 						repository: runtime.repository,
 						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
@@ -156,7 +159,7 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 					});
 				} catch (error) {
 					return partialSuccessToolText(
-						`Deleted comment ${params.commentId} from issue #${params.issueNumber}.${commentUrl ? `\nDeleted comment URL: ${commentUrl}` : ""}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
+						`${successText}\nLocal cache refresh failed; run issueme_sync_issues before retrying local work.`,
 						error,
 						{
 							repository: runtime.repository,
@@ -173,8 +176,25 @@ export function registerDeleteCommentTool(pi: ExtensionAPI, options: IssueMeTool
 
 function normalizeCommentBody(body: string): string {
 	const trimmed = body.trim();
-	if (!trimmed) throw new IssueMeError("invalid_tool_input", "Comment body must not be empty.", { field: "body" });
-	return trimmed;
+	if (trimmed) return trimmed;
+	throw new IssueMeError("invalid_tool_input", "Comment body must not be empty.", { field: "body" });
+}
+
+function formatCommentCreateText(issueNumber: number, commentUrl: string | undefined): string {
+	return `Added comment to issue #${issueNumber}.${formatOptionalCommentUrlLine("Comment", commentUrl)}`;
+}
+
+function formatCommentUpdateText(commentId: number, issueNumber: number, commentUrl: string | undefined): string {
+	return `Updated comment ${commentId} on issue #${issueNumber}.${formatOptionalCommentUrlLine("Comment", commentUrl)}`;
+}
+
+function formatCommentDeleteText(commentId: number, issueNumber: number, commentUrl: string | undefined): string {
+	return `Deleted comment ${commentId} from issue #${issueNumber}.${formatOptionalCommentUrlLine("Deleted comment URL", commentUrl)}`;
+}
+
+function formatOptionalCommentUrlLine(label: string, commentUrl: string | undefined): string {
+	if (commentUrl) return `\n${label}: ${commentUrl}`;
+	return "";
 }
 
 function commentSummary(comment: GitHubCommentResponse): ToolCommentSummary {

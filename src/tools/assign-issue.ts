@@ -3,7 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
-import type { ToolIssueSummary } from "../types.ts";
+import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
 import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const AssignIssueParams = Type.Object(
@@ -31,11 +31,14 @@ export function registerAssignIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				const assignees = params.action === "set" ? sanitizeGitHubLoginList(params.assignees, "assignees") : requireNonEmptyGitHubLogins(params.assignees, "assignees");
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				await assertExistingIssueCreatorAllowed(runtime, params.number, "assign_issue", signal);
-				const updatedIssue = params.action === "add"
-					? await runtime.client.addAssignees(params.number, assignees, signal)
-					: params.action === "remove"
-						? await runtime.client.removeAssignees(params.number, assignees, signal)
-						: await runtime.client.setAssignees(params.number, assignees, signal);
+				let updatedIssue: GitHubIssueResponse;
+				if (params.action === "add") {
+					updatedIssue = await runtime.client.addAssignees(params.number, assignees, signal);
+				} else if (params.action === "remove") {
+					updatedIssue = await runtime.client.removeAssignees(params.number, assignees, signal);
+				} else {
+					updatedIssue = await runtime.client.setAssignees(params.number, assignees, signal);
+				}
 				let updatedSummary: ToolIssueSummary | undefined;
 
 				try {

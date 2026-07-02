@@ -107,23 +107,65 @@ function formatDevelopmentLinksText(
 		...result.links.map(formatDevelopmentLinkLine),
 		result.truncated ? `Development timeline inspection truncated at ${params.limit} event(s); rerun with a higher limit up to ${MAX_TOOL_DEVELOPMENT_LINKS} if needed.` : undefined,
 		`Limitation: ${DEVELOPMENT_LINK_LIMITATION}`,
-	].filter((line): line is string => line !== undefined);
+	].filter(isDevelopmentLinkTextLine);
 	return lines.join("\n");
 }
 
+function isDevelopmentLinkTextLine(line: string | undefined): line is string {
+	return typeof line === "string";
+}
+
 function formatDevelopmentLinkLine(link: ToolIssueDevelopmentLinkSummary): string {
-	const references = link.referenceTypes.length ? link.referenceTypes.join(", ") : "reference";
-	if (link.type === "pull_request") {
-		const state = link.state ?? "unknown";
-		const branch = link.branchName ? `; branch ${link.branchName}${link.baseBranchName ? ` -> ${link.baseBranchName}` : ""}` : "";
-		const closing = link.willCloseTarget ? "; closes this issue" : link.closedBy ? "; closed this issue" : "";
-		return `- PR #${link.number ?? "?"} [${state}] ${link.title ?? "Untitled pull request"}${branch}${closing}; ${references}; ${link.html_url ?? "no URL returned"}`;
-	}
-	if (link.type === "commit") {
-		const oid = link.commitOid ? link.commitOid.slice(0, 12) : "unknown";
-		const closing = link.closedBy ? "; closed this issue" : link.willCloseTarget ? "; closes this issue" : "";
-		return `- Commit ${oid}${link.message ? ` ${link.message}` : ""}${closing}; ${references}; ${link.html_url ?? "no URL returned"}`;
-	}
+	const references = formatDevelopmentReferences(link);
+	if (link.type === "pull_request") return formatPullRequestDevelopmentLinkLine(link, references);
+	if (link.type === "commit") return formatCommitDevelopmentLinkLine(link, references);
+	return formatGenericDevelopmentLinkLine(link, references);
+}
+
+function formatDevelopmentReferences(link: ToolIssueDevelopmentLinkSummary): string {
+	if (link.referenceTypes.length) return link.referenceTypes.join(", ");
+	return "reference";
+}
+
+function formatPullRequestDevelopmentLinkLine(link: ToolIssueDevelopmentLinkSummary, references: string): string {
+	const state = link.state ?? "unknown";
+	const branch = formatPullRequestBranchText(link);
+	const closing = formatDevelopmentClosingText(link);
+	const title = link.title ?? "Untitled pull request";
+	const url = link.html_url ?? "no URL returned";
+	return `- PR #${link.number ?? "?"} [${state}] ${title}${branch}${closing}; ${references}; ${url}`;
+}
+
+function formatPullRequestBranchText(link: ToolIssueDevelopmentLinkSummary): string {
+	if (link.branchName) return `; branch ${link.branchName}${formatBaseBranchText(link.baseBranchName)}`;
+	return "";
+}
+
+function formatBaseBranchText(baseBranchName: string | undefined): string {
+	if (baseBranchName) return ` -> ${baseBranchName}`;
+	return "";
+}
+
+function formatDevelopmentClosingText(link: ToolIssueDevelopmentLinkSummary): string {
+	if (link.willCloseTarget) return "; closes this issue";
+	if (link.closedBy) return "; closed this issue";
+	return "";
+}
+
+function formatCommitDevelopmentLinkLine(link: ToolIssueDevelopmentLinkSummary, references: string): string {
+	const oid = link.commitOid ? link.commitOid.slice(0, 12) : "unknown";
+	const message = formatCommitMessageText(link.message);
+	const closing = formatDevelopmentClosingText(link);
+	const url = link.html_url ?? "no URL returned";
+	return `- Commit ${oid}${message}${closing}; ${references}; ${url}`;
+}
+
+function formatCommitMessageText(message: string | undefined): string {
+	if (message) return ` ${message}`;
+	return "";
+}
+
+function formatGenericDevelopmentLinkLine(link: ToolIssueDevelopmentLinkSummary, references: string): string {
 	return `- Development reference (${references}); ${link.html_url ?? link.title ?? "no URL returned"}`;
 }
 

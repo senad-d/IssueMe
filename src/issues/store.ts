@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
@@ -23,6 +24,22 @@ import { assertNotAborted } from "../utils/abort.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
 import { readTrustedTextFile, type TrustedTextFileReadOptions } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
+
+interface IssueFileEntryCandidate {
+	path: string;
+	fileName: string;
+	issueNumber: number;
+}
+
+type IssueFileEntryPreflightResult =
+	| { kind: "skip" }
+	| { kind: "invalid"; invalidFile: InvalidIssueFileDiagnostic }
+	| { kind: "candidate"; candidate: IssueFileEntryCandidate };
+
+type IssueFileEntryScanResult =
+	| { kind: "skip" }
+	| { kind: "invalid"; invalidFile: InvalidIssueFileDiagnostic }
+	| { kind: "file"; file: IssueFileMetadata };
 
 export async function writeIssueRecord(projectRoot: string, config: IssueMeConfig, record: IssueRecord, signal?: AbortSignal): Promise<IssueWriteResult> {
 	assertNotAborted(signal);
@@ -213,44 +230,60 @@ export async function listIssueFileEntries(
 	options: { repository?: string } = {},
 ): Promise<IssueFileListResult> {
 	const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
-	let entries;
-	try {
-		entries = await readdir(directory, { withFileTypes: true });
-	} catch (error) {
-		if (isNodeError(error) && error.code === "ENOENT") return { files: [], invalidFiles: [] };
-		throw error;
-	}
-
+	const entries = await readIssueDirectoryEntries(directory);
 	const files: IssueFileMetadata[] = [];
 	const invalidFiles: InvalidIssueFileDiagnostic[] = [];
 	for (const entry of entries) {
-		if (!entry.name.endsWith(".json")) continue;
-		const path = resolve(directory, entry.name);
-		if (!entry.isFile() && !entry.isSymbolicLink()) {
-			invalidFiles.push({ path, fileName: entry.name, reason: "issue_file_not_regular" });
+		const scanResult = await scanIssueFileEntry(projectRoot, directory, entry, options);
+		if (scanResult.kind === "file") {
+			files.push(scanResult.file);
 			continue;
 		}
-		const issueNumber = parseIssueNumberFromFileName(entry.name);
-		if (!issueNumber) {
-			invalidFiles.push({ path, fileName: entry.name, reason: "issue_file_name_invalid" });
-			continue;
-		}
-		try {
-			await ensureTargetFileSafe(path, directory, projectRoot);
-			const record = await readIssueFile(path, directory, projectRoot);
-			if (record.number !== issueNumber) {
-				invalidFiles.push({ path, fileName: entry.name, reason: "issue_file_number_mismatch" });
-				continue;
-			}
-			if (options.repository && record.repository !== options.repository) continue;
-			files.push(issueMetadataFromRecord(path, record));
-		} catch (error) {
-			invalidFiles.push({ path, fileName: entry.name, reason: issueFileDiagnosticReason(error) });
-		}
+		if (scanResult.kind === "invalid") invalidFiles.push(scanResult.invalidFile);
 	}
 	files.sort((a, b) => a.number - b.number || a.repository.localeCompare(b.repository) || a.fileName.localeCompare(b.fileName));
 	invalidFiles.sort((a, b) => a.fileName.localeCompare(b.fileName));
 	return { files, invalidFiles };
+}
+
+async function readIssueDirectoryEntries(directory: string): Promise<Dirent[]> {
+	try {
+		return await readdir(directory, { withFileTypes: true });
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return [];
+		throw error;
+	}
+}
+
+async function scanIssueFileEntry(
+	projectRoot: string,
+	directory: string,
+	entry: Dirent,
+	options: { repository?: string },
+): Promise<IssueFileEntryScanResult> {
+	const preflight = preflightIssueFileEntry(directory, entry);
+	if (preflight.kind !== "candidate") return preflight;
+	const { candidate } = preflight;
+	try {
+		await ensureTargetFileSafe(candidate.path, directory, projectRoot);
+		const record = await readIssueFile(candidate.path, directory, projectRoot);
+		if (record.number !== candidate.issueNumber) {
+			return { kind: "invalid", invalidFile: { path: candidate.path, fileName: candidate.fileName, reason: "issue_file_number_mismatch" } };
+		}
+		if (options.repository && record.repository !== options.repository) return { kind: "skip" };
+		return { kind: "file", file: issueMetadataFromRecord(candidate.path, record) };
+	} catch (error) {
+		return { kind: "invalid", invalidFile: { path: candidate.path, fileName: candidate.fileName, reason: issueFileDiagnosticReason(error) } };
+	}
+}
+
+function preflightIssueFileEntry(directory: string, entry: Dirent): IssueFileEntryPreflightResult {
+	if (!entry.name.endsWith(".json")) return { kind: "skip" };
+	const path = resolve(directory, entry.name);
+	if (!entry.isFile() && !entry.isSymbolicLink()) return { kind: "invalid", invalidFile: { path, fileName: entry.name, reason: "issue_file_not_regular" } };
+	const issueNumber = parseIssueNumberFromFileName(entry.name);
+	if (!issueNumber) return { kind: "invalid", invalidFile: { path, fileName: entry.name, reason: "issue_file_name_invalid" } };
+	return { kind: "candidate", candidate: { path, fileName: entry.name, issueNumber } };
 }
 
 export async function readIssueFile(path: string, safeDirectory?: string, projectRoot?: string): Promise<IssueRecord> {
@@ -391,40 +424,50 @@ async function nearestExistingParentRealPath(projectRoot: string, target: string
 }
 
 async function ensureTargetFileSafe(path: string, safeDirectory?: string, projectRoot?: string): Promise<void> {
-	const rootRealPath = projectRoot === undefined ? undefined : await realpath(projectRoot);
-	const safeDirectoryRealPath = safeDirectory === undefined ? undefined : await realpath(safeDirectory);
-	if (rootRealPath !== undefined && safeDirectoryRealPath !== undefined) {
-		assertPathInside(rootRealPath, safeDirectoryRealPath, "Issue directory must resolve inside the current project.");
-	}
-
+	const rootRealPath = await realPathIfDefined(projectRoot);
+	const safeDirectoryRealPath = await realPathIfDefined(safeDirectory);
+	assertSafeDirectoryInsideRoot(rootRealPath, safeDirectoryRealPath);
 	try {
-		const stat = await lstat(path);
-		if (stat.isSymbolicLink()) throw new IssueMeError("unsafe_issue_file", "IssueMe refuses to read or mutate symlinked issue files.");
-		if (!stat.isFile()) throw new IssueMeError("unsafe_issue_file", "Issue cache path exists but is not a regular file.");
-		const fileRealPath = await realpath(path);
-		if (rootRealPath !== undefined) {
-			assertPathInside(rootRealPath, fileRealPath, "Issue cache file must resolve inside the current project.");
-		}
-		if (safeDirectoryRealPath !== undefined) {
-			assertPathInside(
-				safeDirectoryRealPath,
-				fileRealPath,
-				"Issue cache file must resolve inside the configured issue directory.",
-			);
-		}
+		await ensureExistingTargetFileSafe(path, rootRealPath, safeDirectoryRealPath);
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") {
-			if (safeDirectoryRealPath !== undefined) {
-				const parentRealPath = await realpath(dirname(path));
-				if (rootRealPath !== undefined) {
-					assertPathInside(rootRealPath, parentRealPath, "Issue cache file parent must resolve inside the current project.");
-				}
-				assertPathInside(safeDirectoryRealPath, parentRealPath, "Issue cache file parent must resolve inside the configured issue directory.");
-			}
+			await ensureMissingTargetFileSafe(path, rootRealPath, safeDirectoryRealPath);
 			return;
 		}
 		throw error;
 	}
+}
+
+async function realPathIfDefined(path: string | undefined): Promise<string | undefined> {
+	if (path === undefined) return undefined;
+	return realpath(path);
+}
+
+function assertSafeDirectoryInsideRoot(rootRealPath: string | undefined, safeDirectoryRealPath: string | undefined): void {
+	if (rootRealPath === undefined || safeDirectoryRealPath === undefined) return;
+	assertPathInside(rootRealPath, safeDirectoryRealPath, "Issue directory must resolve inside the current project.");
+}
+
+async function ensureExistingTargetFileSafe(path: string, rootRealPath: string | undefined, safeDirectoryRealPath: string | undefined): Promise<void> {
+	const stat = await lstat(path);
+	if (stat.isSymbolicLink()) throw new IssueMeError("unsafe_issue_file", "IssueMe refuses to read or mutate symlinked issue files.");
+	if (!stat.isFile()) throw new IssueMeError("unsafe_issue_file", "Issue cache path exists but is not a regular file.");
+	const fileRealPath = await realpath(path);
+	if (rootRealPath !== undefined) assertPathInside(rootRealPath, fileRealPath, "Issue cache file must resolve inside the current project.");
+	if (safeDirectoryRealPath !== undefined) {
+		assertPathInside(
+			safeDirectoryRealPath,
+			fileRealPath,
+			"Issue cache file must resolve inside the configured issue directory.",
+		);
+	}
+}
+
+async function ensureMissingTargetFileSafe(path: string, rootRealPath: string | undefined, safeDirectoryRealPath: string | undefined): Promise<void> {
+	if (safeDirectoryRealPath === undefined) return;
+	const parentRealPath = await realpath(dirname(path));
+	if (rootRealPath !== undefined) assertPathInside(rootRealPath, parentRealPath, "Issue cache file parent must resolve inside the current project.");
+	assertPathInside(safeDirectoryRealPath, parentRealPath, "Issue cache file parent must resolve inside the configured issue directory.");
 }
 
 async function readIssueFileIfExists(path: string, safeDirectory?: string, projectRoot?: string): Promise<IssueRecord | undefined> {
@@ -592,26 +635,39 @@ function isIsoTimestamp(value: unknown): value is string {
 
 function isGitHubIssueUrl(value: unknown, repository: string, issueNumber: number): value is string {
 	const url = parseHttpsGitHubUrl(value);
-	if (!url) return false;
-	const [owner, repo, type, number, ...rest] = url.pathname.split("/").filter(Boolean);
-	return rest.length === 0 && ownerRepoMatches(repository, owner, repo) && type === "issues" && number === String(issueNumber);
+	if (url instanceof URL) {
+		const [owner, repo, type, number, ...rest] = url.pathname.split("/").filter(Boolean);
+		return rest.length === 0 && ownerRepoMatches(repository, owner, repo) && type === "issues" && number === String(issueNumber);
+	}
+	return false;
 }
 
 function isGitHubCommentUrl(value: unknown, repository: string, issueNumber: number, commentId: number): value is string {
 	const url = parseHttpsGitHubUrl(value);
-	if (!url) return false;
-	const [owner, repo, type, number, ...rest] = url.pathname.split("/").filter(Boolean);
-	return rest.length === 0 && ownerRepoMatches(repository, owner, repo) && type === "issues" && number === String(issueNumber) && url.hash === `#issuecomment-${commentId}`;
+	if (url instanceof URL) {
+		const [owner, repo, type, number, ...rest] = url.pathname.split("/").filter(Boolean);
+		return rest.length === 0 && ownerRepoMatches(repository, owner, repo) && type === "issues" && number === String(issueNumber) && url.hash === `#issuecomment-${commentId}`;
+	}
+	return false;
 }
 
 function parseHttpsGitHubUrl(value: unknown): URL | undefined {
-	if (typeof value !== "string") return undefined;
+	if (typeof value === "string") return parseHttpsGitHubUrlString(value);
+	return undefined;
+}
+
+function parseHttpsGitHubUrlString(value: string): URL | undefined {
 	try {
 		const url = new URL(value);
-		return url.protocol === "https:" && url.hostname === "github.com" ? url : undefined;
+		if (isGitHubWebUrl(url)) return url;
 	} catch {
 		return undefined;
 	}
+	return undefined;
+}
+
+function isGitHubWebUrl(url: URL): boolean {
+	return url.protocol === "https:" && url.hostname === "github.com";
 }
 
 function ownerRepoMatches(repository: string, owner: string | undefined, repo: string | undefined): boolean {

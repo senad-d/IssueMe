@@ -119,12 +119,11 @@ export function issueRecordToToolSummary(record: IssueRecord, localPath?: string
 }
 
 export function applyIssueRelationshipMetadata(record: IssueRecord, relationships: IssueRelationshipMetadata): IssueRecord {
-	return {
-		...record,
-		...(relationships.parent_issue !== undefined ? { parent_issue: relationships.parent_issue } : {}),
-		...(relationships.sub_issues !== undefined ? { sub_issues: relationships.sub_issues } : {}),
-		...(relationships.sub_issues_count !== undefined ? { sub_issues_count: relationships.sub_issues_count } : {}),
-	};
+	const updatedRecord: IssueRecord = { ...record };
+	if (relationships.parent_issue !== undefined) updatedRecord.parent_issue = relationships.parent_issue;
+	if (relationships.sub_issues !== undefined) updatedRecord.sub_issues = relationships.sub_issues;
+	if (relationships.sub_issues_count !== undefined) updatedRecord.sub_issues_count = relationships.sub_issues_count;
+	return updatedRecord;
 }
 
 export function formatIssueSummary(record: IssueRecord, options: IssueSummaryFormatOptions = {}): FormattedIssueSummary {
@@ -163,35 +162,39 @@ function trackIssueCommentListTruncation(state: IssueSummaryBuildState, shown: n
 }
 
 function issueSummaryHeaderLines(record: IssueRecord, bodyText: string): string[] {
-	return [
+	const lines = [
 		`#${record.number} ${record.title}`,
 		`Repository: ${record.repository}`,
 		`State: ${record.state}`,
-		...(record.creator ? [`Creator: ${record.creator}`] : []),
+	];
+	if (record.creator) lines.push(`Creator: ${record.creator}`);
+	lines.push(
 		`URL: ${record.html_url}`,
 		`Labels: ${record.labels.length ? record.labels.join(", ") : "none"}`,
 		`Assignees: ${record.assignees.length ? record.assignees.join(", ") : "none"}`,
-		...(record.parent_issue !== undefined ? [`Parent issue: ${record.parent_issue ? formatRelationshipSummary(record.parent_issue) : "none"}`] : []),
-		...(record.sub_issues !== undefined || record.sub_issues_count !== undefined ? [`Sub-issues: ${formatSubIssueSummary(record)}`] : []),
-		`Updated: ${record.updated_at}`,
-		"",
-		"Body:",
-		bodyText,
-	];
+	);
+	if (record.parent_issue !== undefined) lines.push(`Parent issue: ${record.parent_issue ? formatRelationshipSummary(record.parent_issue) : "none"}`);
+	if (record.sub_issues !== undefined || record.sub_issues_count !== undefined) lines.push(`Sub-issues: ${formatSubIssueSummary(record)}`);
+	lines.push(`Updated: ${record.updated_at}`, "", "Body:", bodyText);
+	return lines;
 }
 
 function appendCachedCommentTruncation(lines: string[], state: IssueSummaryBuildState, record: IssueRecord): void {
 	if (!record.comments_truncated) return;
 	state.truncated = true;
-	state.truncation.cacheComments = {
+	const cacheComments: Record<string, unknown> = {
 		shown: record.comments.length,
-		...(record.comments_count !== undefined ? { total: record.comments_count } : {}),
 		limit: record.comments_fetch_limit ?? record.comments.length,
 	};
-	lines.push(
-		"",
-		`Comments fetched: ${record.comments.length}${record.comments_count !== undefined ? ` of ${record.comments_count}` : ""} (limit ${record.comments_fetch_limit ?? record.comments.length}; truncated).`,
-	);
+	if (record.comments_count !== undefined) cacheComments.total = record.comments_count;
+	state.truncation.cacheComments = cacheComments;
+	lines.push("", `Comments fetched: ${formatFetchedCommentsCount(record)} (limit ${record.comments_fetch_limit ?? record.comments.length}; truncated).`);
+}
+
+function formatFetchedCommentsCount(record: IssueRecord): string {
+	const shown = String(record.comments.length);
+	if (record.comments_count === undefined) return shown;
+	return `${shown} of ${record.comments_count}`;
 }
 
 function appendIssueSummaryComments(lines: string[], state: IssueSummaryBuildState, comments: IssueCommentRecord[], totalComments: number, maxCommentChars: number): void {
@@ -229,11 +232,11 @@ function normalizeIssueRelationships(issue: GitHubIssueResponse): IssueRelations
 	const subIssues = normalizeSubIssues(issue.sub_issues);
 	const summaryCount = normalizeSubIssuesSummaryCount(issue.sub_issues_summary);
 	const subIssuesCount = summaryCount ?? (subIssues ? subIssues.length : undefined);
-	return {
-		...(rawParent !== undefined ? { parent_issue: parentIssue ?? null } : {}),
-		...(subIssues !== undefined ? { sub_issues: subIssues } : {}),
-		...(subIssuesCount !== undefined ? { sub_issues_count: subIssuesCount } : {}),
-	};
+	const relationships: IssueRelationshipMetadata = {};
+	if (rawParent !== undefined) relationships.parent_issue = parentIssue ?? null;
+	if (subIssues !== undefined) relationships.sub_issues = subIssues;
+	if (subIssuesCount !== undefined) relationships.sub_issues_count = subIssuesCount;
+	return relationships;
 }
 
 function normalizeRelationshipSummary(value: unknown): IssueRelationshipSummary | undefined {
@@ -257,12 +260,13 @@ function normalizeRelationshipSummary(value: unknown): IssueRelationshipSummary 
 
 function normalizeSubIssues(value: unknown): IssueRelationshipSummary[] | undefined {
 	if (value === undefined) return undefined;
-	const rawNodes = Array.isArray(value)
-		? value
-		: isObject(value) && Array.isArray(value.nodes)
-			? value.nodes
-			: undefined;
-	if (!rawNodes) return undefined;
+	let rawNodes: unknown[] | undefined;
+	if (Array.isArray(value)) {
+		rawNodes = value;
+	} else if (isObject(value) && Array.isArray(value.nodes)) {
+		rawNodes = value.nodes;
+	}
+	if (rawNodes === undefined) return undefined;
 	return rawNodes.map(normalizeRelationshipSummary).filter((issue): issue is IssueRelationshipSummary => issue !== undefined);
 }
 
@@ -279,15 +283,22 @@ function normalizeOptionalIssueState(value: unknown): IssueState | undefined {
 }
 
 function formatRelationshipSummary(issue: IssueRelationshipSummary): string {
-	return `#${issue.number} ${issue.title}${issue.state ? ` (${issue.state})` : ""}`;
+	const stateSuffix = issue.state ? ` (${issue.state})` : "";
+	return `#${issue.number} ${issue.title}${stateSuffix}`;
 }
 
 function formatSubIssueSummary(record: IssueRecord): string {
 	const subIssues = record.sub_issues ?? [];
-	if (subIssues.length === 0) return record.sub_issues_count === undefined ? "none" : `${record.sub_issues_count} total`;
+	if (subIssues.length === 0) return formatSubIssueCount(record.sub_issues_count);
 	const total = record.sub_issues_count ?? subIssues.length;
 	const shown = subIssues.map(formatRelationshipSummary).join(", ");
-	return total > subIssues.length ? `${shown} (${subIssues.length} shown of ${total})` : shown;
+	if (total > subIssues.length) return `${shown} (${subIssues.length} shown of ${total})`;
+	return shown;
+}
+
+function formatSubIssueCount(total: number | undefined): string {
+	if (total === undefined) return "none";
+	return `${total} total`;
 }
 
 function normalizeIssueCreator(value: unknown): string | undefined {
