@@ -74,8 +74,8 @@ function summarizeAssignees(assignees: GitHubUserResponse[]): ToolAssigneeSummar
 }
 
 function isToolAssigneeSummary(assignee: ToolAssigneeSummary | undefined): assignee is ToolAssigneeSummary {
-	if (assignee === undefined) return false;
-	return true;
+	if (assignee) return true;
+	return false;
 }
 
 function isStringValue(value: string | undefined): value is string {

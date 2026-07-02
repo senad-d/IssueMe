@@ -66,25 +66,37 @@ export function registerListIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 					? await runtime.client.searchIssues({ ...scoped, query: scoped.query }, signal)
 					: await runtime.client.listIssues(scoped, signal);
 				const summaries = summarizeIssues(runtime.repository, runtime.client.repository, result.issues, runtime.config);
+				const truncation = buildListIssueTruncation(result.truncated, summaries.length, normalized.limit, result.totalCount);
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
 					creatorScope,
 					status: result.mode,
 					issues: summaries,
-					counts: {
-						returned: summaries.length,
-						limit: normalized.limit,
-						...(result.totalCount !== undefined ? { total: result.totalCount } : {}),
-						...(result.incompleteResults ? { incompleteResults: 1 } : {}),
-					},
+					counts: buildListIssueCounts(summaries.length, normalized.limit, result.totalCount, result.incompleteResults),
 					cacheUpdated: false,
 					truncated: result.truncated,
-					...(result.truncated ? { truncation: { issues: { shown: summaries.length, max: normalized.limit, ...(result.totalCount !== undefined ? { total: result.totalCount } : {}) } } } : {}),
+					...(truncation ? { truncation } : {}),
 				};
 				return toolText(formatListIssuesText(runtime.repository, scoped, result.mode, summaries, result.truncated, creatorScope), details);
 			},
 		}),
 	);
+}
+
+function buildListIssueCounts(returned: number, limit: number, totalCount: number | undefined, incompleteResults: boolean | undefined): Record<string, number> {
+	const counts: Record<string, number> = { returned, limit };
+	if (typeof totalCount === "number") counts.total = totalCount;
+	if (incompleteResults) counts.incompleteResults = 1;
+	return counts;
+}
+
+function buildListIssueTruncation(truncated: boolean, shown: number, max: number, totalCount: number | undefined): Record<string, unknown> | undefined {
+	if (truncated) {
+		const issues: Record<string, number> = { shown, max };
+		if (typeof totalCount === "number") issues.total = totalCount;
+		return { issues };
+	}
+	return undefined;
 }
 
 function normalizeListIssuesParams(params: ListIssuesToolParams): NormalizedListIssuesParams {

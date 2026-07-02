@@ -97,38 +97,81 @@ function normalizeLimit(value: number | undefined): number {
 	return normalizeBoundedToolLimit(value, { max: MAX_TOOL_MILESTONES, defaultValue: DEFAULT_MILESTONE_LIST_LIMIT });
 }
 
+interface NormalizedMilestoneIdentity {
+	number: number;
+	title: string;
+	state: "open" | "closed";
+}
+
 function summarizeMilestones(milestones: GitHubMilestoneResponse[]): ToolMilestoneSummary[] {
-	return milestones.map(normalizeMilestoneSummary).filter((milestone): milestone is ToolMilestoneSummary => milestone !== undefined);
+	return milestones.map(normalizeMilestoneSummary).filter(isToolMilestoneSummary);
+}
+
+function isToolMilestoneSummary(milestone: ToolMilestoneSummary | undefined): milestone is ToolMilestoneSummary {
+	if (milestone) return true;
+	return false;
+}
+
+function isStringValue(value: string | undefined): value is string {
+	return typeof value === "string";
 }
 
 function normalizeMilestoneSummary(milestone: GitHubMilestoneResponse): ToolMilestoneSummary | undefined {
-	const number = typeof milestone.number === "number" && Number.isSafeInteger(milestone.number) && milestone.number > 0
-		? milestone.number
-		: undefined;
-	const title = typeof milestone.title === "string" ? milestone.title.trim() : "";
-	const state = milestone.state === "open" || milestone.state === "closed" ? milestone.state : undefined;
-	if (number === undefined || !title || !state) return undefined;
-	const description = typeof milestone.description === "string" && milestone.description.trim() ? milestone.description.trim() : undefined;
-	const dueOn = typeof milestone.due_on === "string" && milestone.due_on.trim() ? milestone.due_on.trim() : undefined;
-	const openIssues = normalizeCount(milestone.open_issues);
-	const closedIssues = normalizeCount(milestone.closed_issues);
-	const htmlUrl = typeof milestone.html_url === "string" && milestone.html_url.trim() ? milestone.html_url.trim() : undefined;
-	const apiUrl = typeof milestone.url === "string" && milestone.url.trim() ? milestone.url.trim() : undefined;
-	return {
-		number,
-		title,
-		state,
-		...(description ? { description } : {}),
-		...(dueOn ? { due_on: dueOn } : {}),
-		...(openIssues !== undefined ? { open_issues: openIssues } : {}),
-		...(closedIssues !== undefined ? { closed_issues: closedIssues } : {}),
-		...(htmlUrl ? { html_url: htmlUrl } : {}),
-		...(apiUrl ? { url: apiUrl } : {}),
-	};
+	const identity = normalizeMilestoneIdentity(milestone);
+	if (identity) return buildMilestoneSummary(identity, milestone);
+	return undefined;
+}
+
+function normalizeMilestoneIdentity(milestone: GitHubMilestoneResponse): NormalizedMilestoneIdentity | undefined {
+	const number = normalizeMilestoneNumber(milestone.number);
+	const title = normalizeMilestoneText(milestone.title);
+	const state = normalizeMilestoneState(milestone.state);
+	if (typeof number === "number" && typeof title === "string" && typeof state === "string") return { number, title, state };
+	return undefined;
+}
+
+function normalizeMilestoneNumber(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+	return undefined;
+}
+
+function normalizeMilestoneText(value: unknown): string | undefined {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		if (trimmed) return trimmed;
+	}
+	return undefined;
+}
+
+function normalizeMilestoneState(value: unknown): "open" | "closed" | undefined {
+	if (value === "open" || value === "closed") return value;
+	return undefined;
+}
+
+function buildMilestoneSummary(identity: NormalizedMilestoneIdentity, milestone: GitHubMilestoneResponse): ToolMilestoneSummary {
+	const summary: ToolMilestoneSummary = { ...identity };
+	assignMilestoneText(summary, "description", milestone.description);
+	assignMilestoneText(summary, "due_on", milestone.due_on);
+	assignMilestoneCount(summary, "open_issues", milestone.open_issues);
+	assignMilestoneCount(summary, "closed_issues", milestone.closed_issues);
+	assignMilestoneText(summary, "html_url", milestone.html_url);
+	assignMilestoneText(summary, "url", milestone.url);
+	return summary;
+}
+
+function assignMilestoneText(summary: ToolMilestoneSummary, field: "description" | "due_on" | "html_url" | "url", value: unknown): void {
+	const normalized = normalizeMilestoneText(value);
+	if (normalized) summary[field] = normalized;
+}
+
+function assignMilestoneCount(summary: ToolMilestoneSummary, field: "open_issues" | "closed_issues", value: unknown): void {
+	const normalized = normalizeCount(value);
+	if (typeof normalized === "number") summary[field] = normalized;
 }
 
 function normalizeCount(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+	return undefined;
 }
 
 function formatListMilestonesText(
@@ -140,32 +183,77 @@ function formatListMilestonesText(
 	const sortDetails = [
 		params.sort ? `sort: ${params.sort}` : undefined,
 		params.direction ? `direction: ${params.direction}` : undefined,
-	].filter((value): value is string => value !== undefined);
+	].filter(isStringValue);
+	const sortText = formatMilestoneSortText(sortDetails);
 	const lines = [
 		`Listed ${milestones.length} milestone(s) for ${repository}.`,
-		`State: ${params.state}; limit: ${params.limit}${sortDetails.length ? `; ${sortDetails.join("; ")}` : ""}.`,
+		`State: ${params.state}; limit: ${params.limit}${sortText}.`,
 		"This tool is read-only; it does not assign milestones or write local issue cache files.",
 		"",
 		milestones.length ? undefined : "No repository milestones matched the request.",
 		...milestones.map(formatMilestoneLine),
 		truncated ? `Results truncated at ${params.limit} milestone(s); narrow state filters or increase limit up to ${MAX_TOOL_MILESTONES}.` : undefined,
-	].filter((line): line is string => line !== undefined);
+	].filter(isStringValue);
 	return lines.join("\n");
 }
 
+function formatMilestoneSortText(sortDetails: string[]): string {
+	if (sortDetails.length) return `; ${sortDetails.join("; ")}`;
+	return "";
+}
+
 function formatMilestoneLine(milestone: ToolMilestoneSummary): string {
-	const issueCounts = [
-		milestone.open_issues !== undefined ? `${milestone.open_issues} open` : undefined,
-		milestone.closed_issues !== undefined ? `${milestone.closed_issues} closed` : undefined,
-	].filter((value): value is string => value !== undefined).join(", ");
-	const metadata = [
-		milestone.due_on ? `due ${milestone.due_on}` : "no due date",
-		issueCounts || undefined,
-	].filter((value): value is string => value !== undefined).join("; ");
+	const issueCounts = formatMilestoneIssueCounts(milestone);
+	const metadata = formatMilestoneMetadata(milestone, issueCounts);
+	const metadataText = formatMilestoneMetadataText(metadata);
 	const url = milestone.html_url ?? milestone.url;
 	return [
-		`- #${milestone.number} [${milestone.state}] ${milestone.title}${metadata ? ` — ${metadata}` : ""}`,
-		milestone.description ? ` — ${milestone.description}` : "",
-		url ? ` — ${url}` : "",
+		`- #${milestone.number} [${milestone.state}] ${milestone.title}${metadataText}`,
+		formatMilestoneDescriptionText(milestone.description),
+		formatMilestoneUrlText(url),
 	].join("");
+}
+
+function formatMilestoneIssueCounts(milestone: ToolMilestoneSummary): string {
+	return [
+		formatMilestoneOpenIssueCount(milestone.open_issues),
+		formatMilestoneClosedIssueCount(milestone.closed_issues),
+	].filter(isStringValue).join(", ");
+}
+
+function formatMilestoneOpenIssueCount(count: number | undefined): string | undefined {
+	if (typeof count === "number") return `${count} open`;
+	return undefined;
+}
+
+function formatMilestoneClosedIssueCount(count: number | undefined): string | undefined {
+	if (typeof count === "number") return `${count} closed`;
+	return undefined;
+}
+
+function formatMilestoneMetadata(milestone: ToolMilestoneSummary, issueCounts: string): string {
+	return [
+		formatMilestoneDueDate(milestone.due_on),
+		issueCounts || undefined,
+	].filter(isStringValue).join("; ");
+}
+
+function formatMilestoneDueDate(dueOn: string | undefined): string {
+	if (dueOn) return `due ${dueOn}`;
+	return "no due date";
+}
+
+function formatMilestoneMetadataText(metadata: string): string {
+	if (metadata) return ` — ${metadata}`;
+	return "";
+}
+
+function formatMilestoneDescriptionText(description: string | undefined): string {
+	if (description) return ` — ${description}`;
+	return "";
+}
+
+function formatMilestoneUrlText(url: string | undefined): string {
+	if (url) return ` — ${url}`;
+	return "";
 }

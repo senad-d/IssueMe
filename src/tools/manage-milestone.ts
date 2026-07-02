@@ -3,9 +3,10 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
+import type { GitHubRepositoryMilestoneCreateInput, GitHubRepositoryMilestoneUpdateInput } from "../github/client.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
-import { createIssueMeRuntime, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { createIssueMeRuntime, safeToolError, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const MAX_MILESTONE_TITLE_CHARS = 256;
 const MAX_MILESTONE_DESCRIPTION_CHARS = 1000;
@@ -50,6 +51,15 @@ interface NormalizedManageMilestoneParams {
 	changedFields: string[];
 }
 
+interface ManagedMilestoneIdentity {
+	number: number;
+	title: string;
+	state: MilestoneState;
+}
+
+type ManagedMilestoneVerb = "created" | "updated" | "closed" | "reopened" | "deleted";
+type ManagedMilestoneStatus = "milestone_created" | "milestone_updated" | "milestone_closed" | "milestone_reopened" | "milestone_deleted";
+
 export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
@@ -66,37 +76,7 @@ export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeTo
 				const normalized = normalizeManageMilestoneParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				try {
-					if (normalized.action === "create") {
-						const milestone = await runtime.client.createRepositoryMilestone({
-							title: requireNormalizedTitle(normalized.title, "title"),
-							...(normalized.description !== undefined ? { description: normalized.description } : {}),
-							...(normalized.dueOn !== undefined ? { due_on: normalized.dueOn } : {}),
-						}, signal);
-						const summary = normalizeMilestoneSummary(milestone, normalized);
-						return toolText(formatManagedMilestoneText("created", runtime.repository, summary, normalized), managedMilestoneDetails(runtime.repository, "milestone_created", summary, normalized.changedFields));
-					}
-
-					if (normalized.action === "update") {
-						const milestone = await runtime.client.updateRepositoryMilestone(requireMilestoneNumber(normalized.number), {
-							...(normalized.title !== undefined ? { title: normalized.title } : {}),
-							...(normalized.description !== undefined ? { description: normalized.description } : {}),
-							...(normalized.dueOn !== undefined ? { due_on: normalized.dueOn } : {}),
-							...(normalized.clearDueOn ? { due_on: null } : {}),
-						}, signal);
-						const summary = normalizeMilestoneSummary(milestone, normalized);
-						return toolText(formatManagedMilestoneText("updated", runtime.repository, summary, normalized), managedMilestoneDetails(runtime.repository, "milestone_updated", summary, normalized.changedFields));
-					}
-
-					if (normalized.action === "close" || normalized.action === "reopen") {
-						const milestone = await runtime.client.updateRepositoryMilestone(requireMilestoneNumber(normalized.number), { state: requireMilestoneState(normalized.state) }, signal);
-						const summary = normalizeMilestoneSummary(milestone, normalized);
-						const verb = normalized.action === "close" ? "closed" : "reopened";
-						const status = normalized.action === "close" ? "milestone_closed" : "milestone_reopened";
-						return toolText(formatManagedMilestoneText(verb, runtime.repository, summary, normalized), managedMilestoneDetails(runtime.repository, status, summary, normalized.changedFields));
-					}
-
-					await runtime.client.deleteRepositoryMilestone(requireMilestoneNumber(normalized.number), signal);
-					return toolText(formatManagedMilestoneText("deleted", runtime.repository, undefined, normalized), managedMilestoneDetails(runtime.repository, "milestone_deleted", undefined, normalized.changedFields));
+					return await executeManageMilestoneAction(runtime, normalized, signal);
 				} catch (error) {
 					const handled = handledKnownMilestoneApiResult(error, runtime.repository, normalized);
 					if (handled) return handled;
@@ -107,64 +87,191 @@ export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeTo
 	);
 }
 
+async function executeManageMilestoneAction(
+	runtime: IssueMeRuntime,
+	params: NormalizedManageMilestoneParams,
+	signal: AbortSignal | undefined,
+): Promise<ReturnType<typeof toolText>> {
+	switch (params.action) {
+		case "create":
+			return createManagedMilestone(runtime, params, signal);
+		case "update":
+			return updateManagedMilestone(runtime, params, signal);
+		case "close":
+		case "reopen":
+			return changeManagedMilestoneState(runtime, params, signal);
+		case "delete":
+			return deleteManagedMilestone(runtime, params, signal);
+	}
+}
+
+async function createManagedMilestone(runtime: IssueMeRuntime, params: NormalizedManageMilestoneParams, signal: AbortSignal | undefined): Promise<ReturnType<typeof toolText>> {
+	const milestone = await runtime.client.createRepositoryMilestone(buildCreateMilestoneInput(params), signal);
+	return managedMilestoneResult("created", "milestone_created", runtime.repository, milestone, params);
+}
+
+function buildCreateMilestoneInput(params: NormalizedManageMilestoneParams): GitHubRepositoryMilestoneCreateInput {
+	const input: GitHubRepositoryMilestoneCreateInput = { title: requireNormalizedTitle(params.title, "title") };
+	if (typeof params.description === "string") input.description = params.description;
+	if (typeof params.dueOn === "string") input.due_on = params.dueOn;
+	return input;
+}
+
+async function updateManagedMilestone(runtime: IssueMeRuntime, params: NormalizedManageMilestoneParams, signal: AbortSignal | undefined): Promise<ReturnType<typeof toolText>> {
+	const milestone = await runtime.client.updateRepositoryMilestone(requireMilestoneNumber(params.number), buildUpdateMilestoneInput(params), signal);
+	return managedMilestoneResult("updated", "milestone_updated", runtime.repository, milestone, params);
+}
+
+function buildUpdateMilestoneInput(params: NormalizedManageMilestoneParams): GitHubRepositoryMilestoneUpdateInput {
+	const input: GitHubRepositoryMilestoneUpdateInput = {};
+	if (typeof params.title === "string") input.title = params.title;
+	if (typeof params.description === "string") input.description = params.description;
+	if (typeof params.dueOn === "string") input.due_on = params.dueOn;
+	if (params.clearDueOn === true) input.due_on = null;
+	return input;
+}
+
+async function changeManagedMilestoneState(runtime: IssueMeRuntime, params: NormalizedManageMilestoneParams, signal: AbortSignal | undefined): Promise<ReturnType<typeof toolText>> {
+	const milestone = await runtime.client.updateRepositoryMilestone(requireMilestoneNumber(params.number), { state: requireMilestoneState(params.state) }, signal);
+	const result = managedMilestoneStateResult(params.action);
+	return managedMilestoneResult(result.verb, result.status, runtime.repository, milestone, params);
+}
+
+function managedMilestoneStateResult(action: MilestoneManagementAction): { verb: ManagedMilestoneVerb; status: ManagedMilestoneStatus } {
+	if (action === "close") return { verb: "closed", status: "milestone_closed" };
+	if (action === "reopen") return { verb: "reopened", status: "milestone_reopened" };
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone state action must be close or reopen.", { action });
+}
+
+async function deleteManagedMilestone(runtime: IssueMeRuntime, params: NormalizedManageMilestoneParams, signal: AbortSignal | undefined): Promise<ReturnType<typeof toolText>> {
+	await runtime.client.deleteRepositoryMilestone(requireMilestoneNumber(params.number), signal);
+	return toolText(formatManagedMilestoneText("deleted", runtime.repository, undefined, params), managedMilestoneDetails(runtime.repository, "milestone_deleted", undefined, params.changedFields));
+}
+
+function managedMilestoneResult(
+	verb: ManagedMilestoneVerb,
+	status: ManagedMilestoneStatus,
+	repository: string,
+	milestone: GitHubMilestoneResponse,
+	params: NormalizedManageMilestoneParams,
+): ReturnType<typeof toolText> {
+	const summary = normalizeMilestoneSummary(milestone, params);
+	return toolText(formatManagedMilestoneText(verb, repository, summary, params), managedMilestoneDetails(repository, status, summary, params.changedFields));
+}
+
 function normalizeManageMilestoneParams(params: ManageMilestoneToolParams): NormalizedManageMilestoneParams {
 	const action = normalizeAction(params.action);
 	assertManageMilestoneActionFields(params, action);
-	if (action === "create") {
-		if (params.number !== undefined || params.clearDueOn !== undefined || params.confirmDelete !== undefined) {
-			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone create accepts only action, title, description, and dueOn.", { action, fields: ["action", "title", "description", "dueOn"] });
-		}
-		return {
-			action,
-			title: normalizeMilestoneTitle(params.title, "title", true),
-			...(params.description !== undefined ? { description: normalizeMilestoneDescription(params.description) } : {}),
-			...(params.dueOn !== undefined ? { dueOn: normalizeMilestoneDueOn(params.dueOn) } : {}),
-			changedFields: ["title", params.description !== undefined ? "description" : undefined, params.dueOn !== undefined ? "due_on" : undefined].filter((field): field is string => field !== undefined),
-		};
+	switch (action) {
+		case "create":
+			return normalizeCreateManageMilestoneParams(params, action);
+		case "update":
+			return normalizeUpdateManageMilestoneParams(params, action);
+		case "close":
+		case "reopen":
+			return normalizeStateManageMilestoneParams(params, action);
+		case "delete":
+			return normalizeDeleteManageMilestoneParams(params, action);
 	}
+}
 
-	const number = normalizeMilestoneNumber(params.number);
-	if (action === "update") {
-		if (params.confirmDelete !== undefined) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "confirmDelete is only valid for milestone deletion.", { action, field: "confirmDelete" });
-		if (params.dueOn !== undefined && params.clearDueOn) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Use dueOn or clearDueOn, not both.", { action, fields: ["dueOn", "clearDueOn"] });
-		const title = params.title === undefined ? undefined : normalizeMilestoneTitle(params.title, "title", false);
-		const description = params.description === undefined ? undefined : normalizeMilestoneDescription(params.description);
-		const dueOn = params.dueOn === undefined ? undefined : normalizeMilestoneDueOn(params.dueOn);
-		const changedFields = [title !== undefined ? "title" : undefined, description !== undefined ? "description" : undefined, dueOn !== undefined || params.clearDueOn ? "due_on" : undefined]
-			.filter((field): field is string => field !== undefined);
-		if (changedFields.length === 0) {
-			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone update requires at least one of title, description, dueOn, or clearDueOn.", { action, fields: ["title", "description", "dueOn", "clearDueOn"] });
-		}
-		return {
-			action,
-			number,
-			...(title !== undefined ? { title } : {}),
-			...(description !== undefined ? { description } : {}),
-			...(dueOn !== undefined ? { dueOn } : {}),
-			...(params.clearDueOn ? { clearDueOn: true } : {}),
-			changedFields,
-		};
-	}
+function normalizeCreateManageMilestoneParams(params: ManageMilestoneToolParams, action: "create"): NormalizedManageMilestoneParams {
+	const description = normalizeOptionalMilestoneDescription(params.description);
+	const dueOn = normalizeOptionalMilestoneDueOn(params.dueOn);
+	const normalized: NormalizedManageMilestoneParams = {
+		action,
+		title: normalizeMilestoneTitle(params.title, "title", true),
+		changedFields: buildCreateMilestoneChangedFields(params),
+	};
+	if (typeof description === "string") normalized.description = description;
+	if (typeof dueOn === "string") normalized.dueOn = dueOn;
+	return normalized;
+}
 
-	if (action === "close" || action === "reopen") {
-		if (params.title !== undefined || params.description !== undefined || params.dueOn !== undefined || params.clearDueOn !== undefined || params.confirmDelete !== undefined) {
-			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `Milestone ${action} accepts only action and number.`, { action, fields: ["action", "number"] });
-		}
-		return {
-			action,
-			number,
-			state: action === "close" ? "closed" : "open",
-			changedFields: ["state"],
-		};
-	}
+function normalizeUpdateManageMilestoneParams(params: ManageMilestoneToolParams, action: "update"): NormalizedManageMilestoneParams {
+	assertSingleDueOnChange(params, action);
+	const title = normalizeOptionalMilestoneTitle(params.title);
+	const description = normalizeOptionalMilestoneDescription(params.description);
+	const dueOn = normalizeOptionalMilestoneDueOn(params.dueOn);
+	const changedFields = buildUpdateMilestoneChangedFields(title, description, dueOn, params.clearDueOn);
+	assertUpdateMilestoneChangedFields(changedFields, action);
+	const normalized: NormalizedManageMilestoneParams = {
+		action,
+		number: normalizeMilestoneNumber(params.number),
+		changedFields,
+	};
+	if (typeof title === "string") normalized.title = title;
+	if (typeof description === "string") normalized.description = description;
+	if (typeof dueOn === "string") normalized.dueOn = dueOn;
+	if (params.clearDueOn === true) normalized.clearDueOn = true;
+	return normalized;
+}
 
-	if (params.title !== undefined || params.description !== undefined || params.dueOn !== undefined || params.clearDueOn !== undefined) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone deletion accepts only action, number, and confirmDelete.", { action, fields: ["action", "number", "confirmDelete"] });
-	}
-	if (params.confirmDelete !== true) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone deletion requires confirmDelete: true after explicit user confirmation.", { action, field: "confirmDelete" });
-	}
-	return { action, number, changedFields: ["deleted"] };
+function normalizeStateManageMilestoneParams(params: ManageMilestoneToolParams, action: "close" | "reopen"): NormalizedManageMilestoneParams {
+	return {
+		action,
+		number: normalizeMilestoneNumber(params.number),
+		state: milestoneStateForAction(action),
+		changedFields: ["state"],
+	};
+}
+
+function normalizeDeleteManageMilestoneParams(params: ManageMilestoneToolParams, action: "delete"): NormalizedManageMilestoneParams {
+	assertMilestoneDeleteConfirmed(params.confirmDelete, action);
+	return {
+		action,
+		number: normalizeMilestoneNumber(params.number),
+		changedFields: ["deleted"],
+	};
+}
+
+function normalizeOptionalMilestoneTitle(value: string | undefined): string | undefined {
+	if (typeof value === "string") return normalizeMilestoneTitle(value, "title", false);
+	return undefined;
+}
+
+function normalizeOptionalMilestoneDescription(value: string | undefined): string | undefined {
+	if (typeof value === "string") return normalizeMilestoneDescription(value);
+	return undefined;
+}
+
+function normalizeOptionalMilestoneDueOn(value: string | undefined): string | undefined {
+	if (typeof value === "string") return normalizeMilestoneDueOn(value);
+	return undefined;
+}
+
+function buildCreateMilestoneChangedFields(params: ManageMilestoneToolParams): string[] {
+	const fields = ["title"];
+	if (typeof params.description === "string") fields.push("description");
+	if (typeof params.dueOn === "string") fields.push("due_on");
+	return fields;
+}
+
+function buildUpdateMilestoneChangedFields(title: string | undefined, description: string | undefined, dueOn: string | undefined, clearDueOn: boolean | undefined): string[] {
+	const fields: string[] = [];
+	if (typeof title === "string") fields.push("title");
+	if (typeof description === "string") fields.push("description");
+	if (typeof dueOn === "string" || clearDueOn === true) fields.push("due_on");
+	return fields;
+}
+
+function assertSingleDueOnChange(params: ManageMilestoneToolParams, action: "update"): void {
+	if (typeof params.dueOn === "string" && params.clearDueOn === true) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Use dueOn or clearDueOn, not both.", { action, fields: ["dueOn", "clearDueOn"] });
+}
+
+function assertUpdateMilestoneChangedFields(changedFields: string[], action: "update"): void {
+	if (changedFields.length > 0) return;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone update requires at least one of title, description, dueOn, or clearDueOn.", { action, fields: ["title", "description", "dueOn", "clearDueOn"] });
+}
+
+function milestoneStateForAction(action: "close" | "reopen"): MilestoneState {
+	if (action === "close") return "closed";
+	return "open";
+}
+
+function assertMilestoneDeleteConfirmed(confirmDelete: boolean | undefined, action: "delete"): void {
+	if (confirmDelete === true) return;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Milestone deletion requires confirmDelete: true after explicit user confirmation.", { action, field: "confirmDelete" });
 }
 
 function normalizeAction(value: MilestoneManagementAction | undefined): MilestoneManagementAction {
@@ -215,13 +322,13 @@ function normalizeMilestoneDueOn(value: string): string {
 	const trimmed = value.trim();
 	if (!trimmed) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "dueOn must not be empty. Use clearDueOn to remove an existing due date.", { field: "dueOn" });
 	assertNoNullBytes(trimmed, "dueOn");
-	const dateOnly = trimmed.match(ISO_DATE_ONLY_PATTERN);
+	const dateOnly = ISO_DATE_ONLY_PATTERN.exec(trimmed);
 	if (dateOnly) {
 		const [, year, month, day] = dateOnly;
 		if (!isValidUtcDate(Number(year), Number(month), Number(day))) throw invalidDueOnError();
 		return `${trimmed}T00:00:00Z`;
 	}
-	const dateTime = trimmed.match(ISO_DATE_TIME_PATTERN);
+	const dateTime = ISO_DATE_TIME_PATTERN.exec(trimmed);
 	if (!dateTime) throw invalidDueOnError();
 	const [, year, month, day] = dateTime;
 	if (!isValidUtcDate(Number(year), Number(month), Number(day)) || Number.isNaN(Date.parse(trimmed))) throw invalidDueOnError();
@@ -290,33 +397,56 @@ function managedMilestoneDetails(repository: string, status: string, milestone: 
 }
 
 function normalizeMilestoneSummary(milestone: GitHubMilestoneResponse, fallback: NormalizedManageMilestoneParams): ToolMilestoneSummary | undefined {
-	const number = typeof milestone.number === "number" && Number.isSafeInteger(milestone.number) && milestone.number > 0
-		? milestone.number
-		: fallback.number;
-	const title = typeof milestone.title === "string" && milestone.title.trim()
-		? milestone.title.trim()
-		: fallback.title;
-	const state = milestone.state === "open" || milestone.state === "closed"
-		? milestone.state
-		: fallback.state;
-	if (number === undefined || !title || state === undefined) return undefined;
-	const description = typeof milestone.description === "string" && milestone.description.trim() ? milestone.description.trim() : fallback.description;
-	const dueOn = typeof milestone.due_on === "string" && milestone.due_on.trim() ? milestone.due_on.trim() : fallback.dueOn;
-	const openIssues = normalizeCount(milestone.open_issues);
-	const closedIssues = normalizeCount(milestone.closed_issues);
-	const htmlUrl = typeof milestone.html_url === "string" && milestone.html_url.trim() ? milestone.html_url.trim() : undefined;
-	const apiUrl = typeof milestone.url === "string" && milestone.url.trim() ? milestone.url.trim() : undefined;
-	return {
-		number,
-		title,
-		state,
-		...(description !== undefined ? { description } : {}),
-		...(dueOn !== undefined ? { due_on: dueOn } : {}),
-		...(openIssues !== undefined ? { open_issues: openIssues } : {}),
-		...(closedIssues !== undefined ? { closed_issues: closedIssues } : {}),
-		...(htmlUrl ? { html_url: htmlUrl } : {}),
-		...(apiUrl ? { url: apiUrl } : {}),
-	};
+	const identity = normalizeManagedMilestoneIdentity(milestone, fallback);
+	if (identity) return buildManagedMilestoneSummary(identity, milestone, fallback);
+	return undefined;
+}
+
+function normalizeManagedMilestoneIdentity(milestone: GitHubMilestoneResponse, fallback: NormalizedManageMilestoneParams): ManagedMilestoneIdentity | undefined {
+	const number = normalizeManagedMilestoneNumber(milestone.number, fallback.number);
+	const title = normalizeManagedMilestoneText(milestone.title, fallback.title);
+	const state = normalizeManagedMilestoneState(milestone.state, fallback.state);
+	if (typeof number === "number" && typeof title === "string" && typeof state === "string") return { number, title, state };
+	return undefined;
+}
+
+function normalizeManagedMilestoneNumber(value: unknown, fallback: number | undefined): number | undefined {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+	return fallback;
+}
+
+function normalizeManagedMilestoneText(value: unknown, fallback: string | undefined): string | undefined {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		if (trimmed) return trimmed;
+	}
+	return fallback;
+}
+
+function normalizeManagedMilestoneState(value: unknown, fallback: MilestoneState | undefined): MilestoneState | undefined {
+	if (value === "open" || value === "closed") return value;
+	return fallback;
+}
+
+function buildManagedMilestoneSummary(identity: ManagedMilestoneIdentity, milestone: GitHubMilestoneResponse, fallback: NormalizedManageMilestoneParams): ToolMilestoneSummary {
+	const summary: ToolMilestoneSummary = { ...identity };
+	assignManagedMilestoneText(summary, "description", milestone.description, fallback.description);
+	assignManagedMilestoneText(summary, "due_on", milestone.due_on, fallback.dueOn);
+	assignManagedMilestoneCount(summary, "open_issues", milestone.open_issues);
+	assignManagedMilestoneCount(summary, "closed_issues", milestone.closed_issues);
+	assignManagedMilestoneText(summary, "html_url", milestone.html_url, undefined);
+	assignManagedMilestoneText(summary, "url", milestone.url, undefined);
+	return summary;
+}
+
+function assignManagedMilestoneText(summary: ToolMilestoneSummary, field: "description" | "due_on" | "html_url" | "url", value: unknown, fallback: string | undefined): void {
+	const normalized = normalizeManagedMilestoneText(value, fallback);
+	if (typeof normalized === "string") summary[field] = normalized;
+}
+
+function assignManagedMilestoneCount(summary: ToolMilestoneSummary, field: "open_issues" | "closed_issues", value: unknown): void {
+	const normalized = normalizeCount(value);
+	if (typeof normalized === "number") summary[field] = normalized;
 }
 
 function normalizeCount(value: unknown): number | undefined {
@@ -324,7 +454,7 @@ function normalizeCount(value: unknown): number | undefined {
 }
 
 function formatManagedMilestoneText(
-	verb: "created" | "updated" | "closed" | "reopened" | "deleted",
+	verb: ManagedMilestoneVerb,
 	repository: string,
 	milestone: ToolMilestoneSummary | undefined,
 	params: NormalizedManageMilestoneParams,

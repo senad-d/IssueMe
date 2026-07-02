@@ -70,7 +70,16 @@ function normalizeListLabelsParams(params: ListLabelsToolParams): NormalizedList
 }
 
 function summarizeLabels(labels: GitHubLabelResponse[]): ToolLabelSummary[] {
-	return labels.map(normalizeLabelSummary).filter((label): label is ToolLabelSummary => label !== undefined);
+	return labels.map(normalizeLabelSummary).filter(isToolLabelSummary);
+}
+
+function isToolLabelSummary(label: ToolLabelSummary | undefined): label is ToolLabelSummary {
+	if (label) return true;
+	return false;
+}
+
+function isStringValue(value: string | undefined): value is string {
+	return typeof value === "string";
 }
 
 function normalizeLabelSummary(label: GitHubLabelResponse): ToolLabelSummary | undefined {
@@ -97,27 +106,64 @@ function formatListLabelsText(
 	const filters = [
 		params.name ? `name: ${params.name}` : undefined,
 		params.query ? `query: ${params.query}` : undefined,
-	].filter((value): value is string => value !== undefined);
+	].filter(isStringValue);
+	const filterText = formatListLabelFilterText(filters);
 	const lines = [
 		`Listed ${labels.length} label(s) for ${repository}.`,
-		`Limit: ${params.limit}${filters.length ? `; filters: ${filters.join(", ")}` : ""}.`,
+		`Limit: ${params.limit}${filterText}.`,
 		"This tool is read-only; it does not apply labels or write local issue cache files.",
 		"",
 		labels.length ? undefined : "No repository labels matched the request.",
 		...labels.map(formatLabelLine),
 		truncated ? `Results truncated at ${params.limit} label(s); narrow filters or increase limit up to ${MAX_TOOL_LABELS}.` : undefined,
-	].filter((line): line is string => line !== undefined);
+	].filter(isStringValue);
 	return lines.join("\n");
 }
 
+function formatListLabelFilterText(filters: string[]): string {
+	if (filters.length) return `; filters: ${filters.join(", ")}`;
+	return "";
+}
+
 function formatLabelLine(label: ToolLabelSummary): string {
-	const metadata = [
-		label.color ? `#${label.color}` : undefined,
-		label.default === true ? "default" : label.default === false ? "custom" : undefined,
-	].filter((value): value is string => value !== undefined).join(", ");
+	const metadata = formatLabelMetadata(label);
+	const metadataText = formatLabelMetadataText(metadata);
 	return [
-		`- ${label.name}${metadata ? ` (${metadata})` : ""}`,
-		label.description ? ` — ${label.description}` : "",
-		label.url ? ` — ${label.url}` : "",
+		`- ${label.name}${metadataText}`,
+		formatLabelDescriptionText(label.description),
+		formatLabelUrlText(label.url),
 	].join("");
+}
+
+function formatLabelMetadata(label: ToolLabelSummary): string {
+	return [
+		formatLabelColorMetadata(label.color),
+		formatLabelDefaultMetadata(label.default),
+	].filter(isStringValue).join(", ");
+}
+
+function formatLabelColorMetadata(color: string | undefined): string | undefined {
+	if (color) return `#${color}`;
+	return undefined;
+}
+
+function formatLabelDefaultMetadata(defaultValue: boolean | undefined): string | undefined {
+	if (defaultValue === true) return "default";
+	if (defaultValue === false) return "custom";
+	return undefined;
+}
+
+function formatLabelMetadataText(metadata: string): string {
+	if (metadata) return ` (${metadata})`;
+	return "";
+}
+
+function formatLabelDescriptionText(description: string | undefined): string {
+	if (description) return ` — ${description}`;
+	return "";
+}
+
+function formatLabelUrlText(url: string | undefined): string {
+	if (url) return ` — ${url}`;
+	return "";
 }

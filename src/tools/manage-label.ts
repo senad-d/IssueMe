@@ -3,6 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
+import type { GitHubRepositoryLabelCreateInput, GitHubRepositoryLabelUpdateInput } from "../github/client.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, assertOneLine, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
@@ -60,21 +61,13 @@ export function registerManageLabelTool(pi: ExtensionAPI, options: IssueMeToolRe
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				try {
 					if (normalized.action === "create") {
-						const label = await runtime.client.createRepositoryLabel({
-							name: normalized.name,
-							color: requireNormalizedColor(normalized.color),
-							...(normalized.description !== undefined ? { description: normalized.description } : {}),
-						}, signal);
+						const label = await runtime.client.createRepositoryLabel(buildCreateRepositoryLabelInput(normalized), signal);
 						const summary = normalizeLabelSummary(label, normalized.name);
 						return toolText(formatManagedLabelText("created", runtime.repository, summary, normalized), managedLabelDetails(runtime.repository, "label_created", summary, normalized.changedFields));
 					}
 
 					if (normalized.action === "update") {
-						const label = await runtime.client.updateRepositoryLabel(normalized.name, {
-							...(normalized.newName !== undefined ? { new_name: normalized.newName } : {}),
-							...(normalized.color !== undefined ? { color: normalized.color } : {}),
-							...(normalized.description !== undefined ? { description: normalized.description } : {}),
-						}, signal);
+						const label = await runtime.client.updateRepositoryLabel(normalized.name, buildUpdateRepositoryLabelInput(normalized), signal);
 						const summary = normalizeLabelSummary(label, normalized.newName ?? normalized.name);
 						return toolText(formatManagedLabelText("updated", runtime.repository, summary, normalized), managedLabelDetails(runtime.repository, "label_updated", summary, normalized.changedFields));
 					}
@@ -92,45 +85,99 @@ export function registerManageLabelTool(pi: ExtensionAPI, options: IssueMeToolRe
 	);
 }
 
+function buildCreateRepositoryLabelInput(params: NormalizedManageLabelParams): GitHubRepositoryLabelCreateInput {
+	const input: GitHubRepositoryLabelCreateInput = {
+		name: params.name,
+		color: requireNormalizedColor(params.color),
+	};
+	if (typeof params.description === "string") input.description = params.description;
+	return input;
+}
+
+function buildUpdateRepositoryLabelInput(params: NormalizedManageLabelParams): GitHubRepositoryLabelUpdateInput {
+	const input: GitHubRepositoryLabelUpdateInput = {};
+	if (typeof params.newName === "string") input.new_name = params.newName;
+	if (typeof params.color === "string") input.color = params.color;
+	if (typeof params.description === "string") input.description = params.description;
+	return input;
+}
+
 function normalizeManageLabelParams(params: ManageLabelToolParams): NormalizedManageLabelParams {
 	const action = normalizeAction(params.action);
 	const name = normalizeLabelName(params.name, "name");
 	assertManageLabelActionFields(params, action);
-	if (action === "create") {
-		return {
-			action,
-			name,
-			color: normalizeLabelColor(params.color, true),
-			...(params.description !== undefined ? { description: normalizeLabelDescription(params.description) } : {}),
-			changedFields: params.description !== undefined ? ["name", "color", "description"] : ["name", "color"],
-		};
+	if (action === "create") return normalizeCreateLabelParams(params, name);
+	if (action === "update") return normalizeUpdateLabelParams(params, name);
+	return normalizeDeleteLabelParams(params, name);
+}
+
+function normalizeCreateLabelParams(params: ManageLabelToolParams, name: string): NormalizedManageLabelParams {
+	const normalized: NormalizedManageLabelParams = {
+		action: "create",
+		name,
+		color: normalizeLabelColor(params.color, true),
+		changedFields: ["name", "color"],
+	};
+	assignNormalizedLabelDescription(normalized, params.description);
+	return normalized;
+}
+
+function normalizeUpdateLabelParams(params: ManageLabelToolParams, name: string): NormalizedManageLabelParams {
+	assertNoUpdateConfirmDelete(params);
+	const normalized: NormalizedManageLabelParams = { action: "update", name, changedFields: [] };
+	assignNormalizedLabelNewName(normalized, params.newName);
+	assignNormalizedLabelColor(normalized, params.color);
+	assignNormalizedLabelDescription(normalized, params.description);
+	if (normalized.changedFields.length > 0) return normalized;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label update requires at least one of newName, color, or description.", { action: "update", fields: ["newName", "color", "description"] });
+}
+
+function normalizeDeleteLabelParams(params: ManageLabelToolParams, name: string): NormalizedManageLabelParams {
+	if (params.confirmDelete === true) return { action: "delete", name, changedFields: ["deleted"] };
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label deletion requires confirmDelete: true after explicit user confirmation.", { action: "delete", field: "confirmDelete" });
+}
+
+function assertNoUpdateConfirmDelete(params: ManageLabelToolParams): void {
+	if (typeof params.confirmDelete === "boolean") throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "confirmDelete is only valid for label deletion.", { field: "confirmDelete" });
+}
+
+function assignNormalizedLabelNewName(normalized: NormalizedManageLabelParams, value: string | undefined): void {
+	const newName = normalizeOptionalLabelName(value, "newName");
+	if (typeof newName === "string") {
+		normalized.newName = newName;
+		normalized.changedFields.push("name");
 	}
-	if (action === "update") {
-		if (params.confirmDelete !== undefined) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "confirmDelete is only valid for label deletion.", { field: "confirmDelete" });
-		const newName = params.newName === undefined ? undefined : normalizeLabelName(params.newName, "newName");
-		const color = params.color === undefined ? undefined : normalizeLabelColor(params.color, false);
-		const description = params.description === undefined ? undefined : normalizeLabelDescription(params.description);
-		const changedFields = [newName !== undefined ? "name" : undefined, color !== undefined ? "color" : undefined, description !== undefined ? "description" : undefined]
-			.filter((field): field is string => field !== undefined);
-		if (changedFields.length === 0) {
-			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label update requires at least one of newName, color, or description.", { action, fields: ["newName", "color", "description"] });
-		}
-		return {
-			action,
-			name,
-			...(newName !== undefined ? { newName } : {}),
-			...(color !== undefined ? { color } : {}),
-			...(description !== undefined ? { description } : {}),
-			changedFields,
-		};
+}
+
+function assignNormalizedLabelColor(normalized: NormalizedManageLabelParams, value: string | undefined): void {
+	const color = normalizeOptionalLabelColor(value);
+	if (typeof color === "string") {
+		normalized.color = color;
+		normalized.changedFields.push("color");
 	}
-	if (params.color !== undefined || params.newName !== undefined || params.description !== undefined) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label deletion accepts only action, name, and confirmDelete.", { action, fields: ["action", "name", "confirmDelete"] });
+}
+
+function assignNormalizedLabelDescription(normalized: NormalizedManageLabelParams, value: string | undefined): void {
+	const description = normalizeOptionalLabelDescription(value);
+	if (typeof description === "string") {
+		normalized.description = description;
+		normalized.changedFields.push("description");
 	}
-	if (params.confirmDelete !== true) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label deletion requires confirmDelete: true after explicit user confirmation.", { action, field: "confirmDelete" });
-	}
-	return { action, name, changedFields: ["deleted"] };
+}
+
+function normalizeOptionalLabelName(value: string | undefined, field: string): string | undefined {
+	if (typeof value === "string") return normalizeLabelName(value, field);
+	return undefined;
+}
+
+function normalizeOptionalLabelColor(value: string | undefined): string | undefined {
+	if (typeof value === "string") return normalizeLabelColor(value, false);
+	return undefined;
+}
+
+function normalizeOptionalLabelDescription(value: string | undefined): string | undefined {
+	if (typeof value === "string") return normalizeLabelDescription(value);
+	return undefined;
 }
 
 function normalizeAction(value: LabelManagementAction | undefined): LabelManagementAction {
@@ -141,7 +188,7 @@ function normalizeAction(value: LabelManagementAction | undefined): LabelManagem
 function assertManageLabelActionFields(params: ManageLabelToolParams, action: LabelManagementAction): void {
 	const allowed = new Set([...MANAGE_LABEL_COMMON_FIELDS, ...MANAGE_LABEL_ACTION_FIELDS[action]]);
 	const actionFields = Object.values(MANAGE_LABEL_ACTION_FIELDS).flat();
-	const unexpected = actionFields.filter((field) => !allowed.has(field) && params[field] !== undefined);
+	const unexpected = actionFields.filter((field) => isUnexpectedManageLabelActionField(params, field, allowed));
 	if (unexpected.length > 0) {
 		throw new IssueMeError(
 			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
@@ -151,24 +198,34 @@ function assertManageLabelActionFields(params: ManageLabelToolParams, action: La
 	}
 }
 
+function isUnexpectedManageLabelActionField(params: ManageLabelToolParams, field: LabelActionSpecificField, allowed: ReadonlySet<keyof ManageLabelToolParams>): boolean {
+	if (allowed.has(field)) return false;
+	return hasManageLabelActionField(params, field);
+}
+
+function hasManageLabelActionField(params: ManageLabelToolParams, field: LabelActionSpecificField): boolean {
+	if (typeof params[field] === "undefined") return false;
+	return true;
+}
+
 function normalizeLabelName(value: string | undefined, field: string): string {
 	return normalizeRequiredTrimmedText(value, field, { oneLine: true, maxLength: MAX_LABEL_NAME_CHARS });
 }
 
 function normalizeLabelColor(value: string | undefined, required: boolean): string | undefined {
-	if (typeof value !== "string") {
-		if (!required) return undefined;
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label color is required for create.", { field: "color" });
-	}
+	if (typeof value === "string") return normalizeLabelColorValue(value);
+	if (required) throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label color is required for create.", { field: "color" });
+	return undefined;
+}
+
+function normalizeLabelColorValue(value: string): string {
 	const normalized = value.trim().replace(/^#/, "").toLowerCase();
-	if (!LABEL_COLOR_PATTERN.test(normalized)) {
-		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label color must be a six-character hex value such as d73a4a.", { field: "color" });
-	}
-	return normalized;
+	if (LABEL_COLOR_PATTERN.test(normalized)) return normalized;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label color must be a six-character hex value such as d73a4a.", { field: "color" });
 }
 
 function requireNormalizedColor(value: string | undefined): string {
-	if (value !== undefined) return value;
+	if (typeof value === "string") return value;
 	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Label color is required for create.", { field: "color" });
 }
 
@@ -181,7 +238,11 @@ function normalizeLabelDescription(value: string): string {
 }
 
 function handledKnownLabelApiResult(error: unknown, repository: string, params: NormalizedManageLabelParams): ReturnType<typeof toolText> | undefined {
-	if (!(error instanceof GitHubApiError)) return undefined;
+	if (error instanceof GitHubApiError) return handledKnownGitHubLabelApiResult(error, repository, params);
+	return undefined;
+}
+
+function handledKnownGitHubLabelApiResult(error: GitHubApiError, repository: string, params: NormalizedManageLabelParams): ReturnType<typeof toolText> | undefined {
 	if (params.action === "delete" && error.status === 404) {
 		const summary = { name: params.name };
 		return toolText(`Repository label "${params.name}" is already absent in ${repository}; no remote label was deleted.`, managedLabelDetails(repository, "label_already_absent", summary, params.changedFields));
@@ -208,7 +269,7 @@ function knownLabelApiError(
 	return toolText(message, {
 		repository,
 		status,
-		labels: [{ name: params.newName ?? params.name, ...(params.color ? { color: params.color } : {}), ...(params.description !== undefined ? { description: params.description } : {}) }],
+		labels: [knownLabelApiErrorSummary(params)],
 		changedFields: params.changedFields,
 		cacheUpdated: false,
 		needsSync: false,
@@ -216,6 +277,13 @@ function knownLabelApiError(
 		message,
 		error: safeToolError(error),
 	});
+}
+
+function knownLabelApiErrorSummary(params: NormalizedManageLabelParams): ToolLabelSummary {
+	const summary: ToolLabelSummary = { name: params.newName ?? params.name };
+	if (params.color) summary.color = params.color;
+	if (typeof params.description === "string") summary.description = params.description;
+	return summary;
 }
 
 function managedLabelDetails(repository: string, status: string, label: ToolLabelSummary, changedFields: string[]): IssueMeToolDetails {
@@ -252,10 +320,57 @@ function formatManagedLabelText(
 	if (verb === "deleted") {
 		return `Deleted repository label "${label.name}" from ${repository}. This does not delete issues, but GitHub removes the label from repository taxonomy and existing issue associations.`;
 	}
-	const metadata = [
-		label.color ? `#${label.color}` : params.color ? `#${params.color}` : undefined,
-		label.description ? `description: ${label.description}` : params.description === "" ? "description cleared" : undefined,
-	].filter((value): value is string => value !== undefined).join("; ");
-	const rename = params.action === "update" && params.newName && params.newName !== params.name ? ` (renamed from "${params.name}")` : "";
-	return `${verb === "created" ? "Created" : "Updated"} repository label "${label.name}"${rename} for ${repository}${metadata ? ` (${metadata})` : ""}.`;
+	const metadata = formatManagedLabelMetadata(label, params);
+	const metadataText = formatManagedLabelMetadataText(metadata);
+	const rename = formatManagedLabelRename(params);
+	const actionText = formatManagedLabelActionText(verb);
+	return `${actionText} repository label "${label.name}"${rename} for ${repository}${metadataText}.`;
+}
+
+function formatManagedLabelMetadata(label: ToolLabelSummary, params: NormalizedManageLabelParams): string {
+	return [
+		formatManagedLabelColor(label, params),
+		formatManagedLabelDescription(label, params),
+	].filter(isStringValue).join("; ");
+}
+
+function formatManagedLabelColor(label: ToolLabelSummary, params: NormalizedManageLabelParams): string | undefined {
+	if (label.color) return `#${label.color}`;
+	if (params.color) return `#${params.color}`;
+	return undefined;
+}
+
+function formatManagedLabelDescription(label: ToolLabelSummary, params: NormalizedManageLabelParams): string | undefined {
+	if (label.description) return `description: ${label.description}`;
+	if (params.description === "") return "description cleared";
+	return undefined;
+}
+
+function formatManagedLabelMetadataText(metadata: string): string {
+	if (metadata) return ` (${metadata})`;
+	return "";
+}
+
+function formatManagedLabelRename(params: NormalizedManageLabelParams): string {
+	if (params.action === "create") return "";
+	return formatUpdatedManagedLabelRename(params);
+}
+
+function formatUpdatedManagedLabelRename(params: NormalizedManageLabelParams): string {
+	if (typeof params.newName === "string") return formatChangedManagedLabelName(params.name, params.newName);
+	return "";
+}
+
+function formatChangedManagedLabelName(name: string, newName: string): string {
+	if (newName === name) return "";
+	return ` (renamed from "${name}")`;
+}
+
+function formatManagedLabelActionText(verb: "created" | "updated"): string {
+	if (verb === "created") return "Created";
+	return "Updated";
+}
+
+function isStringValue(value: string | undefined): value is string {
+	return typeof value === "string";
 }
