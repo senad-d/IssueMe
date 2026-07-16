@@ -83,6 +83,12 @@ interface BulkRunCounts {
 	skipped: number;
 }
 
+interface BulkRunState {
+	results: ToolBulkIssueResultSummary[];
+	counts: BulkRunCounts;
+	firstError?: SafeToolError;
+}
+
 export function registerBulkIssueOperationsTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
@@ -112,69 +118,103 @@ async function runBulkIssueOperation(
 	runtime: IssueMeRuntime,
 	params: NormalizedBulkIssueParams,
 	signal?: AbortSignal,
-): Promise<{ results: ToolBulkIssueResultSummary[]; counts: BulkRunCounts; firstError?: SafeToolError }> {
-	const results: ToolBulkIssueResultSummary[] = [];
-	const counts: BulkRunCounts = {
-		requested: params.issueNumbers.length,
-		succeeded: 0,
-		partial: 0,
-		failed: 0,
-		skipped: 0,
+): Promise<BulkRunState> {
+	const state: BulkRunState = {
+		results: [],
+		counts: {
+			requested: params.issueNumbers.length,
+			succeeded: 0,
+			partial: 0,
+			failed: 0,
+			skipped: 0,
+		},
 	};
-	let firstError: SafeToolError | undefined;
 	assertBulkMutationNotStarted(signal);
 	const collectionPreflight = runtime.client.createIssueCollectionPreflight?.();
 
 	for (let index = 0; index < params.issueNumbers.length; index++) {
-		const issueNumber = params.issueNumbers[index];
-		try {
-			assertBulkMutationNotStarted(signal);
-			const result = await applyBulkAction(ctx, runtime, params, issueNumber, signal, collectionPreflight);
-			results.push(result);
-			if (result.status === "success") counts.succeeded += 1;
-			else if (result.status === "partial_success") {
-				counts.partial += 1;
-				firstError ??= result.error;
-				if (!params.continueOnError || result.error?.code === ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED) {
-					appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue had partial remote success or cancellation made later mutations unsafe.");
-					break;
-				}
-			}
-		} catch (error) {
-			if (isRemoteMutationSuccessKnown(error)) {
-				const partial = bulkResponseProcessingPartialResult(issueNumber, params, error);
-				results.push(partial);
-				counts.partial += 1;
-				firstError ??= partial.error;
-				if (!params.continueOnError) {
-					appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue had accepted remote work with an unverifiable response.");
-					break;
-				}
-				continue;
-			}
-			const fatalPreSettlementFailure = isFatalBulkPreSettlementFailure(error);
-			if (fatalPreSettlementFailure && counts.succeeded === 0 && counts.partial === 0) throw error;
-			const safeError = safeToolError(error);
-			firstError ??= safeError;
-			counts.failed += 1;
-			results.push({
-				number: issueNumber,
-				action: params.action,
-				status: "failed",
-				message: safeError.message,
-				changedFields: params.changedFields,
-				cacheUpdated: false,
-				needsSync: true,
-				error: safeError,
-			});
-			if (fatalPreSettlementFailure || !params.continueOnError) {
-				appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue failed or cancellation made later mutations unsafe.");
-				break;
-			}
-		}
+		const skipMessage = await processBulkIssue(ctx, runtime, params, params.issueNumbers[index], state, signal, collectionPreflight);
+		if (skipMessage === undefined) continue;
+		appendSkippedResults(state.results, state.counts, params, index + 1, skipMessage);
+		break;
 	}
 
-	return { results, counts, ...(firstError ? { firstError } : {}) };
+	return state;
+}
+
+async function processBulkIssue(
+	ctx: ExtensionContext,
+	runtime: IssueMeRuntime,
+	params: NormalizedBulkIssueParams,
+	issueNumber: number,
+	state: BulkRunState,
+	signal?: AbortSignal,
+	collectionPreflight?: GitHubIssueCollectionPreflight,
+): Promise<string | undefined> {
+	try {
+		assertBulkMutationNotStarted(signal);
+		const result = await applyBulkAction(ctx, runtime, params, issueNumber, signal, collectionPreflight);
+		return recordBulkActionResult(state, params, result);
+	} catch (error) {
+		return recordBulkActionError(state, params, issueNumber, error);
+	}
+}
+
+function recordBulkActionResult(
+	state: BulkRunState,
+	params: NormalizedBulkIssueParams,
+	result: ToolBulkIssueResultSummary,
+): string | undefined {
+	state.results.push(result);
+	if (result.status === "success") {
+		state.counts.succeeded += 1;
+		return undefined;
+	}
+	if (result.status !== "partial_success") return undefined;
+	state.counts.partial += 1;
+	state.firstError ??= result.error;
+	if (params.continueOnError && result.error?.code !== ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED) return undefined;
+	return "Skipped because the previous issue had partial remote success or cancellation made later mutations unsafe.";
+}
+
+function recordBulkActionError(
+	state: BulkRunState,
+	params: NormalizedBulkIssueParams,
+	issueNumber: number,
+	error: unknown,
+): string | undefined {
+	if (isRemoteMutationSuccessKnown(error)) return recordBulkResponseProcessingError(state, params, issueNumber, error);
+	const fatalPreSettlementFailure = isFatalBulkPreSettlementFailure(error);
+	if (fatalPreSettlementFailure && state.counts.succeeded === 0 && state.counts.partial === 0) throw error;
+	const safeError = safeToolError(error);
+	state.firstError ??= safeError;
+	state.counts.failed += 1;
+	state.results.push({
+		number: issueNumber,
+		action: params.action,
+		status: "failed",
+		message: safeError.message,
+		changedFields: params.changedFields,
+		cacheUpdated: false,
+		needsSync: true,
+		error: safeError,
+	});
+	if (fatalPreSettlementFailure || !params.continueOnError) return "Skipped because the previous issue failed or cancellation made later mutations unsafe.";
+	return undefined;
+}
+
+function recordBulkResponseProcessingError(
+	state: BulkRunState,
+	params: NormalizedBulkIssueParams,
+	issueNumber: number,
+	error: unknown,
+): string | undefined {
+	const partial = bulkResponseProcessingPartialResult(issueNumber, params, error);
+	state.results.push(partial);
+	state.counts.partial += 1;
+	state.firstError ??= partial.error;
+	if (params.continueOnError) return undefined;
+	return "Skipped because the previous issue had accepted remote work with an unverifiable response.";
 }
 
 function assertBulkMutationNotStarted(signal: AbortSignal | undefined): void {
