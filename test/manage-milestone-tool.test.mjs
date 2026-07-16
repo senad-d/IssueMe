@@ -140,6 +140,17 @@ test("issueme_manage_milestone creates, updates, closes, reopens, and deletes re
 	assertNoToken({ created, updated, closed, reopened, deleted });
 });
 
+test("issueme_manage_milestone returns retry-safe partial success for malformed accepted responses", async () => {
+	const result = await executeManageMilestoneTool(
+		async () => jsonResponse({}, { status: 201, statusText: "Created" }),
+		{ action: "create", title: "v1.0" },
+	);
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "milestone_create_response_partial_success");
+	assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+});
+
 test("issueme_manage_milestone rejects invalid titles, due dates, and unsafe delete inputs before fetch", async () => {
 	let calls = 0;
 	const fetchFn = async () => {

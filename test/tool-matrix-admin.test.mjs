@@ -618,7 +618,7 @@ test("bulk update matrix covers all action success paths with bounded per-issue 
 	}
 });
 
-test("bulk update matrix makes continueOnError partial failure semantics explicit and bounded", async () => {
+test("bulk update matrix stops unexpected API failures even when continueOnError is true", async () => {
 	const stoppedRoot = await tempProject("issueme-tool-matrix-admin-");
 	const stoppedClient = createAdminClient({ failIssueMethods: [["addLabels", new Set([2])]] });
 	const stoppedTools = registerAdminTools(stoppedRoot, stoppedClient);
@@ -635,8 +635,8 @@ test("bulk update matrix makes continueOnError partial failure semantics explici
 	const continuedTools = registerAdminTools(continuedRoot, continuedClient);
 	const continued = await executeTool(continuedTools, "issueme_bulk_update_issues", continuedRoot, { issueNumbers: [1, 2, 3], action: "add_labels", labels: ["triage"], continueOnError: true });
 	assert.equal(continued.details.status, "bulk_partial_success");
-	assert.deepEqual(continued.details.bulkResults.map((entry) => entry.status), ["success", "failed", "success"]);
-	assert.deepEqual(continued.details.counts, { requested: 3, succeeded: 2, partial: 0, failed: 1, skipped: 0 });
+	assert.deepEqual(continued.details.bulkResults.map((entry) => entry.status), ["success", "failed", "skipped"]);
+	assert.deepEqual(continued.details.counts, { requested: 3, succeeded: 1, partial: 0, failed: 1, skipped: 1 });
 	assertNoSecretLeak(continued);
 });
 
@@ -646,10 +646,10 @@ test("bulk update matrix reports aborts and partial cache sync without unsafe re
 	const abortedRoot = await tempProject("issueme-tool-matrix-admin-");
 	const abortedClient = createAdminClient();
 	const abortedTools = registerAdminTools(abortedRoot, abortedClient);
-	const aborted = await executeTool(abortedTools, "issueme_bulk_update_issues", abortedRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"] }, { signal: controller.signal });
-	assert.equal(aborted.details.status, "bulk_failed");
-	assert.deepEqual(aborted.details.bulkResults.map((entry) => entry.status), ["failed", "skipped"]);
-	assert.equal(aborted.details.bulkResults[0].error.code, "github_request_aborted");
+	await assert.rejects(
+		() => executeTool(abortedTools, "issueme_bulk_update_issues", abortedRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"], continueOnError: true }, { signal: controller.signal }),
+		(error) => error?.code === "github_request_aborted",
+	);
 	assert.equal(abortedClient.calls.length, 0);
 
 	const blockedRoot = await tempProjectWithBlockedIssueDirectory();

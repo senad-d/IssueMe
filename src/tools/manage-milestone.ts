@@ -2,11 +2,11 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
-import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
+import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError, isRemoteMutationSuccessKnown } from "../errors.ts";
 import type { GitHubRepositoryMilestoneCreateInput, GitHubRepositoryMilestoneUpdateInput } from "../github/client.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
-import { createIssueMeRuntime, safeToolError, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { createIssueMeRuntime, remoteMutationPartialSuccessToolText, safeToolError, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const MAX_MILESTONE_TITLE_CHARS = 256;
 const MAX_MILESTONE_DESCRIPTION_CHARS = 1000;
@@ -78,6 +78,14 @@ export function registerManageMilestoneTool(pi: ExtensionAPI, options: IssueMeTo
 				try {
 					return await executeManageMilestoneAction(runtime, normalized, signal);
 				} catch (error) {
+					if (isRemoteMutationSuccessKnown(error)) {
+						return remoteMutationPartialSuccessToolText(
+							`GitHub accepted the repository milestone ${normalized.action} request, but IssueMe could not verify the mutation response.`,
+							error,
+							{ repository: runtime.repository, changedFields: normalized.changedFields },
+							`milestone_${normalized.action}_response_partial_success`,
+						);
+					}
 					const handled = handledKnownMilestoneApiResult(error, runtime.repository, normalized);
 					if (handled) return handled;
 					throw error;

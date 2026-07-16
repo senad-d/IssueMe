@@ -119,6 +119,17 @@ test("issueme_list_assignees supports login filtering and empty assignable-user 
 	assertNoToken(empty);
 });
 
+test("issueme_list_assignees rejects malformed and mixed assignee discovery members", async () => {
+	for (const payload of [[{}], [assignee("octocat"), {}]]) {
+		await assert.rejects(
+			() => executeListAssigneesTool(async () => jsonResponse(payload), {}),
+			(error) => error instanceof GitHubApiError
+				&& error.code === "github_response_shape_invalid"
+				&& /malformed assignee collection member/.test(error.message),
+		);
+	}
+});
+
 test("issueme_list_assignees surfaces permission failures safely", async () => {
 	await assert.rejects(
 		() => executeListAssigneesTool(async () => jsonResponse({ message: `server saw ${TOKEN}` }, { status: 403, statusText: "Forbidden" }), {}),

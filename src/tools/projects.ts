@@ -3,11 +3,11 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_PROJECT_FIELD_OPTIONS, MAX_TOOL_PROJECT_FIELDS, MAX_TOOL_PROJECT_ITERATIONS, MAX_TOOL_PROJECTS } from "../constants.ts";
-import { IssueMeError } from "../errors.ts";
-import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2Scope } from "../github/client.ts";
+import { IssueMeError, isRemoteMutationSuccessKnown } from "../errors.ts";
+import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2ItemMutationResult, GitHubProjectV2Scope } from "../github/client.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalGitHubOpaqueId, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId, normalizeRequiredIsoDateOnly } from "../utils/validation.ts";
-import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, remoteMutationPartialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
 const DEFAULT_PROJECT_FIELD_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELDS);
@@ -216,7 +216,18 @@ export function registerAddIssueToProjectTool(pi: ExtensionAPI, options: IssueMe
 				const normalized = normalizeAddIssueToProjectParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "add_issue_to_project", signal);
-				const result = await runtime.client.addIssueToProjectV2(normalized, signal);
+				let result: GitHubProjectV2ItemMutationResult;
+				try {
+					result = await runtime.client.addIssueToProjectV2(normalized, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to add issue #${normalized.issueNumber} to project ${normalized.projectId}, but IssueMe could not verify the project item response.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["project_item"] },
+						"add_issue_to_project_response_partial_success",
+					);
+				}
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
 					creatorScope: issueCreatorScopeLabel(runtime.config),
@@ -248,13 +259,24 @@ export function registerUpdateProjectItemTool(pi: ExtensionAPI, options: IssueMe
 				const normalized = normalizeUpdateProjectItemParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "update_project_item", signal);
-				const result = await runtime.client.updateProjectV2ItemField({
-					projectId: normalized.projectId,
-					itemId: normalized.itemId,
-					fieldId: normalized.fieldId,
-					issueNumber: normalized.issueNumber,
-					value: normalized.value,
-				}, signal);
+				let result: GitHubProjectV2ItemMutationResult;
+				try {
+					result = await runtime.client.updateProjectV2ItemField({
+						projectId: normalized.projectId,
+						itemId: normalized.itemId,
+						fieldId: normalized.fieldId,
+						issueNumber: normalized.issueNumber,
+						value: normalized.value,
+					}, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to update project item ${normalized.itemId}, but IssueMe could not verify the field mutation response.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: [normalized.fieldId] },
+						"update_project_item_response_partial_success",
+					);
+				}
 				const details: IssueMeToolDetails = {
 					repository: runtime.repository,
 					creatorScope: issueCreatorScopeLabel(runtime.config),

@@ -1,10 +1,10 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { IssueMeError } from "../errors.ts";
+import { IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, ToolCommentSummary, ToolIssueSummary } from "../types.ts";
-import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, remoteMutationPartialSuccessToolText, refreshAndCacheIssue, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const ReopenIssueParams = Type.Object(
 	{
@@ -44,8 +44,29 @@ export function registerReopenIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 					});
 				}
 
-				const reopenedIssue = await runtime.client.reopenIssue(params.number, signal);
-				let reopenedSummary = issueSummaryFromGitHub(runtime, reopenedIssue);
+				let reopenedIssue: GitHubIssueResponse;
+				try {
+					reopenedIssue = await runtime.client.reopenIssue(params.number, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to reopen issue #${params.number}, but IssueMe could not verify the reopened issue response.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["state"] },
+						"reopen_issue_response_partial_success",
+					);
+				}
+				let reopenedSummary: ToolIssueSummary;
+				try {
+					reopenedSummary = issueSummaryFromGitHub(runtime, reopenedIssue);
+				} catch (error) {
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to reopen issue #${params.number}, but IssueMe could not verify the reopened issue details.`,
+						markMutationSettlement(error, "remote_success_known"),
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["state"] },
+						"reopen_issue_response_partial_success",
+					);
+				}
 				let commentDetails: ToolCommentSummary | undefined;
 				const changedFields = ["state"];
 

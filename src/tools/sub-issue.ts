@@ -1,8 +1,8 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
-import { MAX_TOOL_ISSUES } from "../constants.ts";
-import { IssueMeError } from "../errors.ts";
+import { MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_LABELS } from "../constants.ts";
+import { IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } from "../errors.ts";
 import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueReorderResult, NativeSubIssueSummary } from "../github/client.ts";
 import { applyIssueRelationshipMetadata, githubIssueToRecord, issueRecordToToolSummary, type IssueRelationshipMetadata } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, SafeToolError, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
@@ -17,6 +17,7 @@ import {
 	normalizeIssueBody,
 	partialSuccessToolError,
 	partialSuccessToolText,
+	remoteMutationPartialSuccessToolText,
 	refreshIssueRecord,
 	requireNonEmptyTitle,
 	safeToolError,
@@ -33,8 +34,8 @@ const CreateSubIssueParams = Type.Object(
 		parentNumber: Type.Integer({ minimum: 1, description: "Parent issue number." }),
 		title: Type.String({ description: "Sub-issue title. Non-empty." }),
 		body: Type.String({ description: "Markdown body. Empty only if intentional." }),
-		labels: Type.Optional(Type.Array(Type.String(), { description: "Labels. Omit for defaults; [] for none." })),
-		assignees: Type.Optional(Type.Array(Type.String(), { description: "Usernames. Omit for defaults; [] for none." })),
+		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Labels. Omit for defaults; [] for none. Max ${MAX_TOOL_LABELS}.` })),
+		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Usernames. Omit for defaults; [] for none. Max ${MAX_TOOL_ASSIGNEES}.` })),
 	},
 	{ additionalProperties: false },
 );
@@ -113,18 +114,42 @@ export function registerCreateSubIssueTool(pi: ExtensionAPI, options: IssueMeToo
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const title = requireNonEmptyTitle(params.title);
 				const body = normalizeIssueBody(params.body, "create");
+				const inputLabels = params.labels === undefined ? undefined : sanitizeStringList(params.labels, "labels");
+				const inputAssignees = params.assignees === undefined ? undefined : sanitizeGitHubLoginList(params.assignees, "assignees");
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
-				const labels = params.labels === undefined ? sanitizeStringList(runtime.config.defaultLabels, "labels") : sanitizeStringList(params.labels, "labels");
-				const assignees = params.assignees === undefined ? sanitizeGitHubLoginList(runtime.config.defaultAssignees, "assignees") : sanitizeGitHubLoginList(params.assignees, "assignees");
+				const labels = inputLabels ?? sanitizeStringList(runtime.config.defaultLabels, "labels");
+				const assignees = inputAssignees ?? sanitizeGitHubLoginList(runtime.config.defaultAssignees, "assignees");
 				const parentIssue = await fetchAllowedOpenIssue(runtime, params.parentNumber, "create_sub_issue_parent", signal);
 				await assertAuthenticatedUserAllowedForCreate(runtime, signal);
-				const childIssue = await runtime.client.createIssue({ title, body, labels, assignees }, signal);
+				let childIssue: GitHubIssueResponse;
+				try {
+					childIssue = await runtime.client.createIssue({ title, body, labels, assignees }, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to create a child issue for parent #${params.parentNumber}, but IssueMe could not verify the created issue response.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["title", "body", "labels", "assignees"] },
+						"create_sub_issue_response_partial_success",
+					);
+				}
+				let childRecord: IssueRecord;
+				try {
+					childRecord = githubIssueToRecord(runtime.client.repository, childIssue, []);
+				} catch (error) {
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to create a child issue for parent #${params.parentNumber}, but IssueMe could not verify the created issue details.`,
+						markMutationSettlement(error, "remote_success_known"),
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["title", "body", "labels", "assignees"] },
+						"create_sub_issue_response_partial_success",
+					);
+				}
 
 				let relationship: NativeSubIssueMutationResult;
 				try {
 					relationship = await runtime.client.addSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
-					return cacheCreatedIssueAfterAttachFailure(ctx, runtime, childIssue, params.parentNumber, error, signal);
+					return cacheCreatedIssueAfterAttachFailure(ctx, runtime, childRecord, params.parentNumber, error, signal);
 				}
 
 				return cacheRelationshipAfterSuccess(ctx, runtime, relationship, "add", signal, `Created native sub-issue #${relationship.child.number}: ${relationship.child.title}\nParent: #${relationship.parent.number} ${relationship.parent.title}`);
@@ -154,8 +179,16 @@ export function registerAddSubIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				try {
 					relationship = await runtime.client.addSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
-					if (isClosedIssueMutationRefusal(error)) throw error;
-					return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "attach", error);
+					if (isRemoteMutationSuccessKnown(error)) {
+						return remoteMutationPartialSuccessToolText(
+							`GitHub accepted the native sub-issue attachment for #${params.childNumber} under #${params.parentNumber}, but IssueMe could not verify the mutation response.`,
+							error,
+							{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["sub_issues"] },
+							"sub_issue_attach_response_partial_success",
+						);
+					}
+					if (isExpectedSubIssueDomainFailure(error)) return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "attach", error);
+					throw error;
 				}
 				return cacheRelationshipAfterSuccess(ctx, runtime, relationship, "add", signal, `Attached issue #${relationship.child.number} as a native sub-issue of #${relationship.parent.number}.`);
 			},
@@ -184,8 +217,16 @@ export function registerRemoveSubIssueTool(pi: ExtensionAPI, options: IssueMeToo
 				try {
 					relationship = await runtime.client.removeSubIssueByIssueResponses(parentIssue, childIssue, signal);
 				} catch (error) {
-					if (isClosedIssueMutationRefusal(error)) throw error;
-					return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "remove", error);
+					if (isRemoteMutationSuccessKnown(error)) {
+						return remoteMutationPartialSuccessToolText(
+							`GitHub accepted removal of the native sub-issue relationship for #${params.childNumber} under #${params.parentNumber}, but IssueMe could not verify the mutation response.`,
+							error,
+							{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["sub_issues"] },
+							"sub_issue_remove_response_partial_success",
+						);
+					}
+					if (isExpectedSubIssueDomainFailure(error)) return subIssueMutationFailure(runtime, params.parentNumber, params.childNumber, "remove", error);
+					throw error;
 				}
 				return cacheRelationshipAfterSuccess(ctx, runtime, relationship, "remove", signal, `Removed issue #${relationship.child.number} from the native sub-issues of #${relationship.parent.number}.`);
 			},
@@ -216,8 +257,16 @@ export function registerReorderSubIssuesTool(pi: ExtensionAPI, options: IssueMeT
 					reorder = await runtime.client.reorderSubIssuesByIssueResponseAndRelationship(parentIssue, relationship, normalized.orderedChildNumbers, signal);
 					assertRelationshipCreatorScopeAllowed(runtime, reorder.relationship, "reorder_sub_issues_result");
 				} catch (error) {
-					if (isClosedIssueMutationRefusal(error)) throw error;
-					return subIssueReorderFailure(runtime, normalized.parentNumber, error);
+					if (isRemoteMutationSuccessKnown(error)) {
+						return remoteMutationPartialSuccessToolText(
+							`GitHub accepted at least one native sub-issue reorder mutation under #${normalized.parentNumber}, but IssueMe could not verify the final order.`,
+							error,
+							{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["sub_issues"] },
+							"sub_issue_reorder_response_partial_success",
+						);
+					}
+					if (isExpectedSubIssueDomainFailure(error)) return subIssueReorderFailure(runtime, normalized.parentNumber, error);
+					throw error;
 				}
 				const creatorScope = issueCreatorScopeLabel(runtime.config);
 				try {
@@ -584,19 +633,20 @@ async function cacheRelationshipAfterSuccess(
 async function cacheCreatedIssueAfterAttachFailure(
 	ctx: ExtensionContext,
 	runtime: IssueMeRuntime,
-	childIssue: GitHubIssueResponse,
+	record: IssueRecord,
 	parentNumber: number,
 	attachError: unknown,
 	signal?: AbortSignal,
 ) {
-	const record = githubIssueToRecord(runtime.client.repository, childIssue, []);
 	const creatorScope = issueCreatorScopeLabel(runtime.config);
 	const safeAttachError = subIssueAttachPartialSuccessError(attachError, record, parentNumber);
 	const guidance = subIssueAttachPartialSuccessGuidance(parentNumber, record.number);
+	const relationshipNeedsSync = isRemoteMutationSuccessKnown(attachError);
+	const status = relationshipNeedsSync ? "sub_issue_attach_response_partial_success" : "sub_issue_attach_partial_success";
 	try {
 		const { summary, path } = await writeAndSummarizeIssue(ctx, runtime, record, signal);
 		return toolText(
-			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.\nURL: ${record.html_url}\nLocal file: ${path}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
+			`${formatCreatedSubIssueAttachFailure(record, parentNumber, relationshipNeedsSync)}\nURL: ${record.html_url}\nLocal file: ${path}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
 				creatorScope,
@@ -605,8 +655,8 @@ async function cacheCreatedIssueAfterAttachFailure(
 				issues: [summary],
 				paths: path ? [path] : [],
 				cacheUpdated: true,
-				needsSync: false,
-				status: "sub_issue_attach_partial_success",
+				needsSync: relationshipNeedsSync,
+				status,
 				message: safeAttachError.message,
 				error: safeAttachError,
 			},
@@ -614,7 +664,7 @@ async function cacheCreatedIssueAfterAttachFailure(
 	} catch (cacheError) {
 		const safeCacheError = partialSuccessToolError(cacheError, "sub_issue_attach_partial_success_cache_failed");
 		return toolText(
-			`Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references. Local cache update also failed; run issueme_sync_issues before relying on local cache state.\nURL: ${record.html_url}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
+			`${formatCreatedSubIssueAttachFailure(record, parentNumber, relationshipNeedsSync)} Local cache update also failed; run issueme_sync_issues before relying on local cache state.\nURL: ${record.html_url}\nRetry-safe guidance: ${guidance}\nError: ${safeAttachError.message}`,
 			{
 				repository: runtime.repository,
 				creatorScope,
@@ -632,6 +682,13 @@ async function cacheCreatedIssueAfterAttachFailure(
 			},
 		);
 	}
+}
+
+function formatCreatedSubIssueAttachFailure(record: IssueRecord, parentNumber: number, relationshipNeedsSync: boolean): string {
+	if (relationshipNeedsSync) {
+		return `Created issue #${record.number}: ${record.title}. GitHub accepted the native attachment request for parent #${parentNumber}, but IssueMe could not verify the relationship response.`;
+	}
+	return `Created issue #${record.number}: ${record.title}, but failed to link it as a native sub-issue of #${parentNumber}. IssueMe did not fall back to body-only references.`;
 }
 
 function subIssueAttachPartialSuccessGuidance(parentNumber: number, childNumber: number): string {
@@ -741,6 +798,7 @@ function requireDistinctIssueNumbers(parentNumber: number, childNumber: number):
 	}
 }
 
-function isClosedIssueMutationRefusal(error: unknown): boolean {
-	return error instanceof IssueMeError && error.code === "closed_issue_mutation_refused";
+function isExpectedSubIssueDomainFailure(error: unknown): boolean {
+	return error instanceof IssueMeError
+		&& (error.code === "github_sub_issue_forbidden" || error.code === "github_sub_issue_unsupported");
 }

@@ -140,6 +140,17 @@ test("issueme_list_labels supports name filtering and empty repository label set
 	assertNoToken(empty);
 });
 
+test("issueme_list_labels rejects malformed and mixed label discovery members", async () => {
+	for (const payload of [[{}], [label("bug"), {}]]) {
+		await assert.rejects(
+			() => executeListLabelsTool(async () => jsonResponse(payload), {}),
+			(error) => error instanceof GitHubApiError
+				&& error.code === "github_response_shape_invalid"
+				&& /malformed label collection member/.test(error.message),
+		);
+	}
+});
+
 test("issueme_list_labels validates shared filter and limit inputs before fetching", async () => {
 	let calls = 0;
 	await assert.rejects(

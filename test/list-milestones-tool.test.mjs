@@ -125,6 +125,17 @@ test("issueme_list_milestones supports empty repository milestone sets", async (
 	assertNoToken(empty);
 });
 
+test("issueme_list_milestones rejects malformed and mixed milestone discovery members", async () => {
+	for (const payload of [[{}], [milestone(1, "v1.0"), {}]]) {
+		await assert.rejects(
+			() => executeListMilestonesTool(async () => jsonResponse(payload), {}),
+			(error) => error instanceof GitHubApiError
+				&& error.code === "github_response_shape_invalid"
+				&& /malformed milestone collection member/.test(error.message),
+		);
+	}
+});
+
 test("issueme_list_milestones surfaces API failures safely", async () => {
 	await assert.rejects(
 		() => executeListMilestonesTool(async () => jsonResponse({ message: `server saw ${TOKEN}` }, { status: 500, statusText: "Server Error" }), {}),

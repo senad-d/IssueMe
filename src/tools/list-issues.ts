@@ -2,7 +2,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
-import { MAX_TOOL_ISSUES } from "../constants.ts";
+import { MAX_TOOL_ISSUES, MAX_TOOL_LABELS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueListDirection, GitHubIssueListSort, GitHubIssueListState } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
@@ -15,7 +15,7 @@ const DEFAULT_ISSUE_LIST_LIMIT = 25;
 const ListIssuesParams = Type.Object(
 	{
 		state: Type.Optional(StringEnum(["open", "closed", "all"] as const, { description: "Issue state. Default open." })),
-		labels: Type.Optional(Type.Array(Type.String(), { description: "Required label names." })),
+		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Required label names. Max ${MAX_TOOL_LABELS}.` })),
 		assignee: Type.Optional(Type.String({ description: "Assigned login, none, or *." })),
 		creator: Type.Optional(Type.String({ description: "Creator login; alias of author." })),
 		author: Type.Optional(Type.String({ description: "Alias for creator; do not conflict." })),

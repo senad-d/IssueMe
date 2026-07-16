@@ -177,6 +177,26 @@ test("issueme_reopen_issue surfaces permission API failures without leaking toke
 	});
 });
 
+test("issueme_reopen_issue returns retry-safe partial success for malformed accepted reopen responses", async () => {
+	const calls = [];
+	await withMockedReopenTool(async (input, init) => {
+		const url = new URL(input.toString());
+		calls.push(`${init.method} ${url.pathname}`);
+		if (url.pathname === "/repos/owner/repo/issues/7" && init.method === "GET") {
+			return jsonResponse(githubIssue(7, "Malformed Reopen", { state: "closed", closed_at: "2026-06-27T00:01:00Z" }));
+		}
+		if (url.pathname === "/repos/owner/repo/issues/7" && init.method === "PATCH") return jsonResponse({});
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.pathname}`);
+	}, async ({ projectRoot, reopenTool }) => {
+		const result = await executeReopen(reopenTool, projectRoot, { number: 7 });
+		assert.equal(result.details.result, "partial_success");
+		assert.equal(result.details.status, "reopen_issue_response_partial_success");
+		assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+		assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+		assert.deepEqual(calls, ["GET /repos/owner/repo/issues/7", "PATCH /repos/owner/repo/issues/7"]);
+	});
+});
+
 test("issueme_reopen_issue reports partial success when cache refresh fails after remote reopen", async () => {
 	const calls = [];
 	let issueGetCount = 0;

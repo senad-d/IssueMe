@@ -5,6 +5,7 @@ import { Type, type Static } from "typebox";
 import { MAX_TOOL_MILESTONES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState } from "../github/client.ts";
+import { assertGitHubMilestoneDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { normalizeBoundedToolLimit } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
@@ -104,35 +105,20 @@ interface NormalizedMilestoneIdentity {
 }
 
 function summarizeMilestones(milestones: GitHubMilestoneResponse[]): ToolMilestoneSummary[] {
-	return milestones.map(normalizeMilestoneSummary).filter(isToolMilestoneSummary);
-}
-
-function isToolMilestoneSummary(milestone: ToolMilestoneSummary | undefined): milestone is ToolMilestoneSummary {
-	if (milestone) return true;
-	return false;
+	return milestones.map(normalizeMilestoneSummary);
 }
 
 function isStringValue(value: string | undefined): value is string {
 	return typeof value === "string";
 }
 
-function normalizeMilestoneSummary(milestone: GitHubMilestoneResponse): ToolMilestoneSummary | undefined {
-	const identity = normalizeMilestoneIdentity(milestone);
-	if (identity) return buildMilestoneSummary(identity, milestone);
-	return undefined;
-}
-
-function normalizeMilestoneIdentity(milestone: GitHubMilestoneResponse): NormalizedMilestoneIdentity | undefined {
-	const number = normalizeMilestoneNumber(milestone.number);
-	const title = normalizeMilestoneText(milestone.title);
-	const state = normalizeMilestoneState(milestone.state);
-	if (typeof number === "number" && typeof title === "string" && typeof state === "string") return { number, title, state };
-	return undefined;
-}
-
-function normalizeMilestoneNumber(value: unknown): number | undefined {
-	if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
-	return undefined;
+function normalizeMilestoneSummary(milestone: GitHubMilestoneResponse): ToolMilestoneSummary {
+	assertGitHubMilestoneDiscoveryResponse(milestone);
+	return buildMilestoneSummary({
+		number: milestone.number,
+		title: milestone.title.trim(),
+		state: milestone.state,
+	}, milestone);
 }
 
 function normalizeMilestoneText(value: unknown): string | undefined {
@@ -140,11 +126,6 @@ function normalizeMilestoneText(value: unknown): string | undefined {
 		const trimmed = value.trim();
 		if (trimmed) return trimmed;
 	}
-	return undefined;
-}
-
-function normalizeMilestoneState(value: unknown): "open" | "closed" | undefined {
-	if (value === "open" || value === "closed") return value;
 	return undefined;
 }
 

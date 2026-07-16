@@ -85,6 +85,10 @@ function assertVisibleLineBounds(lines, width) {
 	}
 }
 
+function assertNoTerminalControls(lines) {
+	for (const line of lines) assert.doesNotMatch(line, /[\u0000-\u001F\u007F-\u009F]/u);
+}
+
 function themeRecorder() {
 	const roles = [];
 	const codes = { accent: "36", dim: "2", muted: "90", warning: "33" };
@@ -195,6 +199,31 @@ test("configuration TUI renderer keeps Unicode input within terminal display wid
 			const lines = renderConfigTuiSnapshot("/tmp/issueme-project", config, width, state);
 			assertVisibleLineBounds(lines, width);
 		}
+	}
+});
+
+test("configuration TUI renderer sanitizes invalid in-memory data before plain-theme rendering", () => {
+	const config = sampleConfig({
+		issueDirectory: "issues/\u001b[2Jspoof",
+		allowedIssueCreator: "all\u0007",
+		defaultLabels: ["bug\u001b]0;spoof\u0007", "triage\u0001"],
+		defaultAssignees: ["octo\u0085cat"],
+		defaultSkillPath: "skills/\u009b31m/SKILL.md",
+	});
+	const states = [
+		{ focus: "settings", selectedCategory: 0 },
+		{ focus: "settings", selectedCategory: 1 },
+		{ focus: "settings", selectedCategory: 2 },
+		{ focus: "settings", editing: true, editBuffer: "draft\u001b[2J\u0007" },
+		{ focus: "settings", searchActive: true, search: "label\u009b31m" },
+		{ focus: "settings", validationError: "invalid\u001b]0;spoof\u0007" },
+	];
+
+	for (const state of states) {
+		const lines = renderConfigTuiSnapshot("/tmp/issueme-project", config, 120, state);
+		assertNoTerminalControls(lines);
+		assertVisibleLineBounds(lines, 120);
+		assert.match(lines.join("\n"), /�/);
 	}
 });
 

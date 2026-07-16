@@ -145,7 +145,6 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 		"GET /repos/owner/repo/issues/1/comments",
 		"GET /repos/owner/repo/issues/2",
 		"GET /repos/owner/repo/issues/2",
-		"GET /repos/owner/repo/labels/triage",
 		"POST /repos/owner/repo/issues/2/labels",
 		"GET /repos/owner/repo/issues/2",
 		"GET /repos/owner/repo/issues/2/comments",
@@ -160,6 +159,61 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 	assert.deepEqual(result.details.paths, ["issues/1-first-target.json", "issues/2-second-target.json"]);
 	assert.match(result.content[0].text, /explicit issueNumbers only/);
 	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues validates one repeated label once across 50 issues", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push(`${method} ${url.pathname}`);
+		if (/^\/repos\/owner\/repo\/issues\/\d+$/.test(url.pathname) && method === "GET") {
+			const number = Number(url.pathname.split("/").at(-1));
+			return jsonResponse(githubIssue(number, `Target ${number}`, { labels: ["triage"] }));
+		}
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") return jsonResponse({ name: "triage" });
+		if (/^\/repos\/owner\/repo\/issues\/\d+\/labels$/.test(url.pathname) && method === "POST") return jsonResponse([{ name: "triage" }]);
+		if (/^\/repos\/owner\/repo\/issues\/\d+\/comments$/.test(url.pathname) && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected 50-issue bulk request: ${method} ${url.pathname}`);
+	});
+	const issueNumbers = Array.from({ length: 50 }, (_, index) => index + 1);
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers, action: "add_labels", labels: ["triage"] });
+
+	assert.equal(result.details.result, "success");
+	assert.deepEqual(result.details.counts, { requested: 50, succeeded: 50, partial: 0, failed: 0, skipped: 0 });
+	assert.equal(calls.filter((call) => call === "GET /repos/owner/repo/labels/triage").length, 1);
+	assert.equal(calls.filter((call) => /POST \/repos\/owner\/repo\/issues\/\d+\/labels/.test(call)).length, 50);
+});
+
+test("issueme_bulk_update_issues fails fast when repository collection preflight is rate limited", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push(`${method} ${url.pathname}`);
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(githubIssue(1, "Rate Limited"));
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") {
+			return jsonResponse({ message: "rate limited" }, {
+				status: 403,
+				statusText: "Forbidden",
+				headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "12345" },
+			});
+		}
+		throw new Error(`Unexpected rate-limit bulk request: ${method} ${url.pathname}`);
+	});
+
+	await assert.rejects(
+		() => executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"], continueOnError: true }),
+		(error) => error?.safeDetails?.rateLimit?.remaining === "0" && error.safeDetails?.rateLimit?.retryPolicy === "fail_fast",
+	);
+	assert.deepEqual(calls, [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/triage",
+	]);
 });
 
 test("issueme_bulk_update_issues reports partial success if aborted before cache refresh write", async () => {
@@ -207,6 +261,27 @@ test("issueme_bulk_update_issues reports partial success if aborted before cache
 	assert.match(result.details.bulkResults[0].message, /remotely, but local cache refresh failed/);
 	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues preserves accepted mutation settlement when response data is malformed", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push(`${method} ${url.pathname}`);
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(githubIssue(1, "Malformed Bulk"));
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") return jsonResponse({ name: "triage" });
+		if (url.pathname === "/repos/owner/repo/issues/1/labels" && method === "POST") return jsonResponse({});
+		throw new Error(`Unexpected bulk malformed response request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"] });
+	assert.equal(result.details.result, "partial_success");
+	assert.deepEqual(result.details.bulkResults.map((entry) => entry.status), ["partial_success", "skipped"]);
+	assert.equal(result.details.bulkResults[0].error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.details.bulkResults[0].message, /Do not repeat the mutation blindly/);
+	assert.equal(calls.some((call) => call.includes("/issues/2")), false);
 });
 
 test("issueme_bulk_update_issues adds explicitly listed issues to a project and returns item details", async () => {
@@ -346,14 +421,12 @@ test("issueme_bulk_update_issues stops sequential mutation flow on an already-ab
 		return jsonResponse(githubIssue(1, "Should Not Fetch"));
 	});
 
-	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"] }, controller.signal);
+	await assert.rejects(
+		() => executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "add_labels", labels: ["triage"], continueOnError: true }, controller.signal),
+		(error) => error?.code === "github_request_aborted" && error.safeDetails?.mutationSettlement === "not_started",
+	);
 
 	assert.equal(calls, 0);
-	assert.equal(result.details.result, "error");
-	assert.equal(result.details.error.code, "github_request_aborted");
-	assert.deepEqual(result.details.counts, { requested: 2, succeeded: 0, partial: 0, failed: 1, skipped: 1 });
-	assert.deepEqual(result.details.bulkResults.map((item) => item.status), ["failed", "skipped"]);
-	assertNoToken(result);
 });
 
 test("issueme_bulk_update_issues reports per-issue closed failures and continues only when requested", async () => {
@@ -407,6 +480,7 @@ test("issueme_bulk_update_issues reports per-issue closed failures and continues
 	assert.deepEqual(calls.filter((call) => call.path.includes("/issues/2/")).map((call) => call.method), []);
 	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/issues/2/assignees"), false);
 	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/issues/3/assignees"), true);
+	assert.equal(calls.filter((call) => call.path === "/repos/owner/repo/assignees/octocat").length, 1);
 	assertNoToken(result);
 });
 
@@ -530,7 +604,9 @@ test("issueme_bulk_update_issues rejects unsafe bulk shapes before runtime resol
 		{ issueNumbers: [0], action: "add_labels", labels: ["bug"] },
 		{ issueNumbers: [1, 1], action: "add_labels", labels: ["bug"] },
 		{ issueNumbers: [1], action: "add_labels", labels: [" "] },
+		{ issueNumbers: [1], action: "add_labels", labels: Array.from({ length: 26 }, (_, index) => `label-${index}`) },
 		{ issueNumbers: [1], action: "assign", assignees: ["bad login"] },
+		{ issueNumbers: [1], action: "assign", assignees: Array.from({ length: 26 }, (_, index) => `user-${index}`) },
 		{ issueNumbers: [1], action: "set_milestone", milestoneNumber: 0 },
 		{ issueNumbers: [1], action: "add_to_project" },
 		{ issueNumbers: [1], action: "close", labels: ["bug"] },

@@ -196,7 +196,7 @@ test("sub-issue tools reject invalid relationship parameters before runtime reso
 	assert.equal(runtimeCalls, 0);
 });
 
-test("sub-issue tools report remove failures and refresh-cache partial success without live APIs", async () => {
+test("sub-issue tools throw unexpected remove failures and report refresh-cache partial success without live APIs", async () => {
 	const removeClient = {
 		repository: TEST_REPOSITORY_OBJECT,
 		async ensureIssueOpen(issueNumber) {
@@ -207,11 +207,11 @@ test("sub-issue tools report remove failures and refresh-cache partial success w
 		},
 	};
 	const removeTools = registerSubIssueToolsWithRuntime(toolRuntimeWithClient(removeClient));
-	const removeResult = await executeRegisteredTool(removeTools, "issueme_remove_sub_issue", { parentNumber: 1, childNumber: 2 }, { cwd: await tempProject("issueme-relationship-remove-" ) });
-	assert.equal(removeResult.details.result, "error");
-	assert.equal(removeResult.details.status, "sub_issue_remove_failed");
-	assert.equal(removeResult.details.cacheUpdated, false);
-	assert.match(removeResult.content[0].text, /did not fall back to body-only references/i);
+	const removeRoot = await tempProject("issueme-relationship-remove-");
+	await assert.rejects(
+		() => executeRegisteredTool(removeTools, "issueme_remove_sub_issue", { parentNumber: 1, childNumber: 2 }, { cwd: removeRoot }),
+		/native remove failed/,
+	);
 
 	const listClient = {
 		repository: TEST_REPOSITORY_OBJECT,
@@ -233,7 +233,7 @@ test("sub-issue tools report remove failures and refresh-cache partial success w
 	assert.equal(listResult.details.needsSync, true);
 	assert.equal(listResult.details.error.details.partialSuccessStatus, "sub_issue_cache_refresh_failed");
 	assert.match(listResult.content[0].text, /cache refresh failed/i);
-	assertNoSecretLeak({ removeResult, listResult });
+	assertNoSecretLeak({ listResult });
 });
 
 test("development-link tool formatting covers missing PR branch/base and commit message", async () => {

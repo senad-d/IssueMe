@@ -147,6 +147,28 @@ test("post-mutation cache failures return partial_success without Pi isError", a
 	assertNoToken(result);
 });
 
+test("accepted create responses with malformed issue data return retry-safe partial success", async () => {
+	const projectRoot = await tempProject();
+	let createRequests = 0;
+	const createTool = registerOne(registerCreateIssueTool, runtimeOptions(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		if (url.pathname === "/repos/owner/repo/issues" && init.method === "POST") {
+			createRequests += 1;
+			return jsonResponse({}, { status: 201, statusText: "Created" });
+		}
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.pathname}`);
+	}));
+
+	const result = await executeAsPiTool(createTool, projectRoot, { title: "Malformed accepted create", body: "Body", labels: [], assignees: [] });
+	assert.equal(result.isError, false);
+	assert.equal(result.result.details.result, "partial_success");
+	assert.equal(result.result.details.status, "create_issue_response_partial_success");
+	assert.equal(result.result.details.needsSync, true);
+	assert.equal(result.result.details.error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.result.content[0].text, /Do not repeat the mutation blindly/);
+	assert.equal(createRequests, 1);
+});
+
 test("idempotent no-ops remain successful structured results", async () => {
 	const projectRoot = await tempProject();
 	const closeTool = registerOne(registerCloseIssueTool, runtimeOptions(async (input, init = {}) => {

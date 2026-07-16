@@ -2,6 +2,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { MAX_TOOL_ASSIGNEES } from "../constants.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
 import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyGitHubLogins, sanitizeGitHubLoginList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
@@ -10,7 +11,7 @@ const AssignIssueParams = Type.Object(
 	{
 		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
 		action: StringEnum(["add", "remove", "set"] as const, { description: "Assignment action; set [] clears all." }),
-		assignees: Type.Array(Type.String(), { description: "Usernames." }),
+		assignees: Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Usernames. Max ${MAX_TOOL_ASSIGNEES}.` }),
 	},
 	{ additionalProperties: false },
 );

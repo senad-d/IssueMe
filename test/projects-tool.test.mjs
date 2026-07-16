@@ -317,6 +317,25 @@ test("issueme_add_issue_to_project adds or confirms an issue project item idempo
 	assertNoToken(result);
 });
 
+test("issueme_add_issue_to_project returns retry-safe partial success for malformed accepted mutation data", async () => {
+	const result = await executeProjectTool("issueme_add_issue_to_project", async (url, init) => {
+		const path = new URL(url.toString()).pathname;
+		if (path === "/repos/owner/repo/issues/7") return jsonResponse(openIssue());
+		const body = JSON.parse(init.body);
+		if (body.operationName === "IssueMeValidateProjectV2ForAdd") {
+			return jsonResponse({ data: { node: project(1, "Roadmap") } });
+		}
+		assert.equal(body.operationName, "IssueMeAddIssueToProjectV2");
+		return jsonResponse({ data: { addProjectV2ItemById: {} } });
+	}, { issueNumber: 7, projectId: "PVT_1" });
+
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "add_issue_to_project_response_partial_success");
+	assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+	assertNoToken(result);
+});
+
 test("issueme_add_issue_to_project preflights repository, organization, and user project identity", async () => {
 	const scenarios = [
 		{

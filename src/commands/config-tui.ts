@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG_PATH } from "../constants.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { validateIssueMeConfig } from "../config/config.ts";
 import { IssueMeError } from "../errors.ts";
+import { containsTerminalControl, sanitizeTerminalText } from "../utils/terminal-text.ts";
 
 export type ConfigPane = "categories" | "settings";
 export type ConfigViewMode = "wide" | "narrow-category" | "narrow-settings" | "tiny";
@@ -336,7 +337,7 @@ export class IssueMeConfigTui {
 
 	private currentRows(): { title: string; settings: ConfigTuiSetting[]; selectedIndex: number } {
 		if (this.state.searchActive) {
-			const query = this.state.search.trim().toLowerCase();
+			const query = sanitizeTerminalText(this.state.search).trim().toLowerCase();
 			const settings = CONFIG_TUI_CATEGORIES.flatMap((category) => category.settings.map((setting) => ({ ...setting, label: `${setting.label} (${category.label})` })));
 			const filtered = query ? settings.filter((setting) => setting.label.toLowerCase().includes(query)) : settings;
 			return { title: query ? `SEARCH ${query}` : "SEARCH", settings: filtered, selectedIndex: Math.min(this.selectedSettingIndex(), Math.max(0, filtered.length - 1)) };
@@ -360,9 +361,9 @@ export class IssueMeConfigTui {
 
 	private valueText(setting: ConfigTuiSetting): string {
 		const value = this.draft[setting.id];
-		if (Array.isArray(value)) return value.length ? value.join(", ") : setting.emptyLabel;
-		if (typeof value === "string") return value || setting.emptyLabel;
-		return value ?? setting.emptyLabel;
+		if (Array.isArray(value)) return sanitizeTerminalText(value.length ? value.join(", ") : setting.emptyLabel);
+		if (typeof value === "string") return sanitizeTerminalText(value || setting.emptyLabel);
+		return sanitizeTerminalText(value ?? setting.emptyLabel);
 	}
 
 	private valueStyled(setting: ConfigTuiSetting, width: number): string {
@@ -372,11 +373,11 @@ export class IssueMeConfigTui {
 	}
 
 	private footerText(): string {
-		if (this.state.validationError) return `${this.warning(this.state.validationError)} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
+		if (this.state.validationError) return `${this.warning(sanitizeTerminalText(this.state.validationError))} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.state.editing) return `${this.selectionCounter()} • ${this.editingFooterText()} • Enter update • Esc cancel`;
-		if (this.state.status) return `${this.state.status} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
+		if (this.state.status) return `${sanitizeTerminalText(this.state.status)} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		if (this.state.searchActive) {
-			const searchText = this.state.search ? `Search: ${this.state.search}` : "Search: type to filter all settings";
+			const searchText = this.state.search ? `Search: ${sanitizeTerminalText(this.state.search)}` : "Search: type to filter all settings";
 			return `${searchText} • ${this.selectionCounter()} • ${this.selectedDescription()}`;
 		}
 		if (this.hasChanges()) return `Modified • saves automatically on exit • ${this.selectionCounter()} • ${this.selectedDescription()}`;
@@ -386,7 +387,7 @@ export class IssueMeConfigTui {
 	private editingFooterText(): string {
 		if (!this.state.editBuffer) return "Type value";
 		const replacementHint = this.state.editBufferSelected ? " (type to replace)" : "";
-		return `Editing ${this.state.editBuffer}${replacementHint}`;
+		return `Editing ${sanitizeTerminalText(this.state.editBuffer)}${replacementHint}`;
 	}
 
 	private selectedDescription(): string {
@@ -910,7 +911,7 @@ function printableInput(data: string): string | undefined {
 }
 
 function isPrintable(data: string): boolean {
-	return data.length > 0 && !/[\u0000-\u001F\u007F]/.test(data);
+	return data.length > 0 && !containsTerminalControl(data);
 }
 
 function decodePlainKittyPrintable(data: string): string | undefined {
@@ -921,7 +922,8 @@ function decodePlainKittyPrintable(data: string): string | undefined {
 	const codepoint = shiftedCodepoint ?? primaryCodepoint;
 	if (!Number.isFinite(codepoint) || codepoint < 0x20 || codepoint === 0x7F) return undefined;
 	try {
-		return String.fromCodePoint(codepoint);
+		const decoded = String.fromCodePoint(codepoint);
+		return containsTerminalControl(decoded) ? undefined : decoded;
 	} catch {
 		return undefined;
 	}

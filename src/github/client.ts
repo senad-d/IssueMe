@@ -1,11 +1,12 @@
-import { GITHUB_API_BASE_URL, MAX_TOOL_ISSUES } from "../constants.ts";
-import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
+import { GITHUB_API_BASE_URL, MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_LABELS } from "../constants.ts";
+import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, markMutationSettlement } from "../errors.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ProjectV2OwnerType, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { isValidGitHubLogin } from "../utils/github-login.ts";
+import { assertCollectionItemLimit } from "../utils/validation.ts";
 import { buildIssueDevelopmentLinksQuery, normalizeIssueDevelopmentLinkLimit, normalizeIssueDevelopmentLinksResult } from "./development-links-client.ts";
 import { mapGitHubGraphQLError } from "./graphql-errors.ts";
-import { assigneeMatchesFilters, buildAssigneeListQuery, buildIssueListQuery, buildIssueSearchRequestQuery, buildLabelListQuery, buildMilestoneListQuery, commentBelongsToIssue, isIssueSearchResponse, isPullRequestIssueResponse, issueResponseToSafeSummary, labelMatchesFilters, normalizeIssueSearchResponse, normalizeIssueUpdateInput, normalizeOptionalTextFilter, normalizePaginationLimit, normalizePositiveCommentId, normalizePositiveIssueNumber, normalizePositiveMilestoneNumber } from "./issues-client.ts";
-import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, buildProjectV2AddValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemValidationQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2IterationLimit, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, normalizeProjectV2ItemMutationResult } from "./projects-client.ts";
+import { assertGitHubAssigneeDiscoveryResponse, assertGitHubLabelDiscoveryResponse, assertGitHubMilestoneDiscoveryResponse, assigneeMatchesFilters, buildAssigneeListQuery, buildIssueListQuery, buildIssueSearchRequestQuery, buildLabelListQuery, buildMilestoneListQuery, commentBelongsToIssue, isIssueSearchResponse, isPullRequestIssueResponse, issueResponseToSafeSummary, labelMatchesFilters, normalizeIssueSearchResponse, normalizeIssueUpdateInput, normalizeOptionalTextFilter, normalizePaginationLimit, normalizePositiveCommentId, normalizePositiveIssueNumber, normalizePositiveMilestoneNumber } from "./issues-client.ts";
+import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, buildProjectV2AddValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemValidationQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2IterationLimit, normalizeProjectV2ItemMutationResult, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, requireProjectV2Summary } from "./projects-client.ts";
 import { compactObject, connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject } from "./shared.ts";
 import { assertReorderableSubIssueList, buildSubIssueRelationshipsQuery, moveNativeSubIssue, normalizeNativeSubIssueRelationshipResult, normalizeReprioritizeSubIssueResult, normalizeSubIssueMutationResult, normalizeSubIssueRelationshipLimit, normalizeSubIssueReorderNumbers, requireIssueNodeId } from "./sub-issues-client.ts";
 import { GitHubTransport, parseNextLink } from "./transport.ts";
@@ -18,6 +19,16 @@ export interface IssueCreateInput {
 	body?: string;
 	labels?: string[];
 	assignees?: string[];
+}
+
+export interface GitHubIssueCollectionPreflight {
+	readonly labels: ReadonlySet<string>;
+	readonly assignees: ReadonlySet<string>;
+}
+
+interface MutableGitHubIssueCollectionPreflight {
+	labels: Set<string>;
+	assignees: Set<string>;
 }
 
 export type GitHubIssueCloseReason = "completed" | "not_planned";
@@ -235,10 +246,17 @@ export interface GitHubIssueDevelopmentLinksResult {
 export class GitHubClient {
 	readonly repository: GitHubRepository;
 	private readonly transport: GitHubTransport;
+	private readonly issueCollectionPreflights = new WeakSet<GitHubIssueCollectionPreflight>();
 
 	constructor(options: GitHubClientOptions) {
 		this.repository = options.repository;
 		this.transport = new GitHubTransport(options);
+	}
+
+	createIssueCollectionPreflight(): GitHubIssueCollectionPreflight {
+		const preflight: MutableGitHubIssueCollectionPreflight = { labels: new Set(), assignees: new Set() };
+		this.issueCollectionPreflights.add(preflight);
+		return preflight;
 	}
 
 	async listOpenIssues(signal?: AbortSignal): Promise<GitHubIssueResponse[]> {
@@ -274,6 +292,7 @@ export class GitHubClient {
 		const queryFilter = normalizeOptionalTextFilter(filters.query, "label query");
 		const result = await this.paginateFiltered<GitHubLabelResponse>(this.repoPath("/labels"), buildLabelListQuery(limit), signal, {
 			limit,
+			assertItem: assertGitHubLabelDiscoveryResponse,
 			filter: (label) => labelMatchesFilters(label, nameFilter, queryFilter),
 		});
 		return { labels: result.items, truncated: result.truncated };
@@ -281,7 +300,10 @@ export class GitHubClient {
 
 	async listMilestones(filters: GitHubRepositoryMilestoneListFilters = {}, signal?: AbortSignal): Promise<GitHubRepositoryMilestoneListResult> {
 		const limit = normalizePaginationLimit(filters.limit);
-		const result = await this.paginateFiltered<GitHubMilestoneResponse>(this.repoPath("/milestones"), buildMilestoneListQuery(filters, limit), signal, { limit });
+		const result = await this.paginateFiltered<GitHubMilestoneResponse>(this.repoPath("/milestones"), buildMilestoneListQuery(filters, limit), signal, {
+			limit,
+			assertItem: assertGitHubMilestoneDiscoveryResponse,
+		});
 		return { milestones: result.items, truncated: result.truncated };
 	}
 
@@ -291,6 +313,7 @@ export class GitHubClient {
 		const queryFilter = normalizeOptionalTextFilter(filters.query, "assignee query");
 		const result = await this.paginateFiltered<GitHubUserResponse>(this.repoPath("/assignees"), buildAssigneeListQuery(limit), signal, {
 			limit,
+			assertItem: assertGitHubAssigneeDiscoveryResponse,
 			filter: (assignee) => assigneeMatchesFilters(assignee, loginFilter, queryFilter),
 		});
 		return { assignees: result.items, truncated: result.truncated };
@@ -321,8 +344,7 @@ export class GitHubClient {
 			const connection = extractProjectV2Connection(data, scope);
 			const rawProjects = extractConnectionNodes(connection);
 			const visibleProjects = rawProjects
-				.map(normalizeProjectV2Summary)
-				.filter((project): project is ToolProjectSummary => project !== undefined)
+				.map(requireProjectV2Summary)
 				.filter((project) => includeClosed || project.closed !== true);
 			const availableSlots = limit - projects.length;
 			projects.push(...visibleProjects.slice(0, availableSlots));
@@ -405,6 +427,7 @@ export class GitHubClient {
 			buildAddIssueToProjectV2Mutation(),
 			{ projectId, contentId },
 			signal,
+			true,
 		);
 		return normalizeProjectV2ItemMutationResult(data, "addProjectV2ItemById", this.repository.fullName);
 	}
@@ -422,6 +445,7 @@ export class GitHubClient {
 			buildUpdateProjectV2ItemFieldValueMutation(),
 			{ projectId, itemId, fieldId, value },
 			signal,
+			true,
 		);
 		return normalizeProjectV2ItemMutationResult(data, "updateProjectV2ItemFieldValue", this.repository.fullName);
 	}
@@ -430,7 +454,8 @@ export class GitHubClient {
 		return this.request<GitHubMilestoneResponse>("POST", this.repoPath("/milestones"), {
 			body: compactObject(input),
 			signal,
-			validate: isObject,
+			validate: isRepositoryMilestoneMutationResponse,
+			mutation: true,
 		});
 	}
 
@@ -439,7 +464,8 @@ export class GitHubClient {
 		return this.request<GitHubMilestoneResponse>("PATCH", this.repoPath(`/milestones/${milestoneNumber}`), {
 			body: compactObject(input),
 			signal,
-			validate: isObject,
+			validate: isRepositoryMilestoneMutationResponse,
+			mutation: true,
 		});
 	}
 
@@ -448,6 +474,7 @@ export class GitHubClient {
 		await this.request<void>("DELETE", this.repoPath(`/milestones/${milestoneNumber}`), {
 			signal,
 			validate: (value) => value === undefined,
+			mutation: true,
 		});
 	}
 
@@ -455,7 +482,8 @@ export class GitHubClient {
 		return this.request<GitHubLabelResponse>("POST", this.repoPath("/labels"), {
 			body: compactObject(input),
 			signal,
-			validate: isObject,
+			validate: isRepositoryLabelMutationResponse,
+			mutation: true,
 		});
 	}
 
@@ -472,7 +500,8 @@ export class GitHubClient {
 		return this.request<GitHubLabelResponse>("PATCH", this.repoPath(`/labels/${encodeURIComponent(name)}`), {
 			body: compactObject(input),
 			signal,
-			validate: isObject,
+			validate: isRepositoryLabelMutationResponse,
+			mutation: true,
 		});
 	}
 
@@ -480,6 +509,7 @@ export class GitHubClient {
 		await this.request<void>("DELETE", this.repoPath(`/labels/${encodeURIComponent(name)}`), {
 			signal,
 			validate: (value) => value === undefined,
+			mutation: true,
 		});
 	}
 
@@ -510,10 +540,13 @@ export class GitHubClient {
 	}
 
 	async createIssue(input: IssueCreateInput, signal?: AbortSignal): Promise<GitHubIssueResponse> {
+		assertCollectionItemLimit(input.labels, "labels", MAX_TOOL_LABELS);
+		assertCollectionItemLimit(input.assignees, "assignees", MAX_TOOL_ASSIGNEES);
 		return this.request<GitHubIssueResponse>("POST", this.repoPath("/issues"), {
 			body: compactObject(input),
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -574,13 +607,18 @@ export class GitHubClient {
 		const issueByNumber = new Map(relationship.subIssues.map((issue) => [issue.number, issue]));
 		let currentOrder = [...relationship.subIssues];
 		const mutations: NativeSubIssueMutationResult[] = [];
-		for (let index = 0; index < desiredNumbers.length; index++) {
-			const result = await this.reprioritizeDesiredSubIssue(parentIssueId, desiredNumbers, index, issueByNumber, currentOrder, signal);
-			currentOrder = result.currentOrder;
-			if (result.mutation) mutations.push(result.mutation);
+		try {
+			for (let index = 0; index < desiredNumbers.length; index++) {
+				const result = await this.reprioritizeDesiredSubIssue(parentIssueId, desiredNumbers, index, issueByNumber, currentOrder, signal);
+				currentOrder = result.currentOrder;
+				if (result.mutation) mutations.push(result.mutation);
+			}
+			const refreshed = await this.refreshSubIssueRelationshipAfterReorder(normalizedParentNumber, relationship, mutations, signal);
+			return { relationship: refreshed, mutations };
+		} catch (error) {
+			if (mutations.length > 0) throw markMutationSettlement(error, "remote_success_known");
+			throw error;
 		}
-		const refreshed = await this.refreshSubIssueRelationshipAfterReorder(normalizedParentNumber, relationship, mutations, signal);
-		return { relationship: refreshed, mutations };
 	}
 
 	private async reprioritizeDesiredSubIssue(
@@ -667,16 +705,19 @@ export class GitHubClient {
 		return normalizeIssueDevelopmentLinksResult(data, this.repository.fullName, normalizedIssueNumber, limit);
 	}
 
-	async updateIssue(issueNumber: number, input: IssueUpdateInput, signal?: AbortSignal): Promise<GitHubIssueResponse> {
+	async updateIssue(issueNumber: number, input: IssueUpdateInput, signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubIssueResponse> {
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
 		const normalizedInput = normalizeIssueUpdateInput(input);
+		assertCollectionItemLimit(normalizedInput.labels, "labels", MAX_TOOL_LABELS);
+		assertCollectionItemLimit(normalizedInput.assignees, "assignees", MAX_TOOL_ASSIGNEES);
 		await this.ensureIssueOpen(normalizedIssueNumber, signal);
-		if (normalizedInput.labels !== undefined) await this.assertRepositoryLabelsExist(normalizedInput.labels, signal);
-		if (normalizedInput.assignees !== undefined) await this.assertRepositoryAssigneesAssignable(normalizedInput.assignees, signal);
+		if (normalizedInput.labels !== undefined) await this.assertRepositoryLabelsExist(normalizedInput.labels, signal, preflight);
+		if (normalizedInput.assignees !== undefined) await this.assertRepositoryAssigneesAssignable(normalizedInput.assignees, signal, preflight);
 		return this.request<GitHubIssueResponse>("PATCH", this.repoPath(`/issues/${normalizedIssueNumber}`), {
 			body: compactObject(normalizedInput),
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -687,6 +728,7 @@ export class GitHubClient {
 			body: { body },
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -698,6 +740,7 @@ export class GitHubClient {
 			body: { body },
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -708,6 +751,7 @@ export class GitHubClient {
 		await this.request<void>("DELETE", this.repoPath(`/issues/comments/${normalizedCommentId}`), {
 			signal,
 			validate: (value) => value === undefined,
+			mutation: true,
 		});
 		return comment;
 	}
@@ -722,50 +766,58 @@ export class GitHubClient {
 		}
 	}
 
-	async addAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal): Promise<GitHubIssueResponse> {
+	async addAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubIssueResponse> {
+		assertCollectionItemLimit(assignees, "assignees", MAX_TOOL_ASSIGNEES);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
 		await this.ensureIssueOpen(normalizedIssueNumber, signal);
-		await this.assertRepositoryAssigneesAssignable(assignees, signal);
+		await this.assertRepositoryAssigneesAssignable(assignees, signal, preflight);
 		return this.request<GitHubIssueResponse>("POST", this.repoPath(`/issues/${normalizedIssueNumber}/assignees`), {
 			body: { assignees },
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
 	async removeAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal): Promise<GitHubIssueResponse> {
+		assertCollectionItemLimit(assignees, "assignees", MAX_TOOL_ASSIGNEES);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
 		await this.ensureIssueOpen(normalizedIssueNumber, signal);
 		return this.request<GitHubIssueResponse>("DELETE", this.repoPath(`/issues/${normalizedIssueNumber}/assignees`), {
 			body: { assignees },
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
-	async setAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal): Promise<GitHubIssueResponse> {
-		return this.updateIssue(issueNumber, { assignees }, signal);
+	async setAssignees(issueNumber: number, assignees: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubIssueResponse> {
+		return this.updateIssue(issueNumber, { assignees }, signal, preflight);
 	}
 
-	async addLabels(issueNumber: number, labels: string[], signal?: AbortSignal): Promise<GitHubLabelListResponse> {
+	async addLabels(issueNumber: number, labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubLabelListResponse> {
+		assertCollectionItemLimit(labels, "labels", MAX_TOOL_LABELS);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
 		await this.ensureIssueOpen(normalizedIssueNumber, signal);
-		await this.assertRepositoryLabelsExist(labels, signal);
+		await this.assertRepositoryLabelsExist(labels, signal, preflight);
 		return this.request<GitHubLabelListResponse>("POST", this.repoPath(`/issues/${normalizedIssueNumber}/labels`), {
 			body: { labels },
 			signal,
 			validate: Array.isArray,
+			mutation: true,
 		});
 	}
 
-	async setLabels(issueNumber: number, labels: string[], signal?: AbortSignal): Promise<GitHubLabelListResponse> {
+	async setLabels(issueNumber: number, labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubLabelListResponse> {
+		assertCollectionItemLimit(labels, "labels", MAX_TOOL_LABELS);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
 		await this.ensureIssueOpen(normalizedIssueNumber, signal);
-		await this.assertRepositoryLabelsExist(labels, signal);
+		await this.assertRepositoryLabelsExist(labels, signal, preflight);
 		return this.request<GitHubLabelListResponse>("PUT", this.repoPath(`/issues/${normalizedIssueNumber}/labels`), {
 			body: { labels },
 			signal,
 			validate: Array.isArray,
+			mutation: true,
 		});
 	}
 
@@ -776,7 +828,7 @@ export class GitHubClient {
 			return await this.request<GitHubLabelListResponse | undefined>(
 				"DELETE",
 				this.repoPath(`/issues/${normalizedIssueNumber}/labels/${encodeURIComponent(label)}`),
-				{ signal, validate: (value) => value === undefined || Array.isArray(value) },
+				{ signal, validate: (value) => value === undefined || Array.isArray(value), mutation: true },
 			);
 		} catch (error) {
 			if (error instanceof GitHubApiError && error.status === 404) return undefined;
@@ -791,6 +843,7 @@ export class GitHubClient {
 			body: compactObject({ state: "closed", state_reason: input.reason }),
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -800,6 +853,7 @@ export class GitHubClient {
 			body: { state: "open", state_reason: "reopened" },
 			signal,
 			validate: isObject,
+			mutation: true,
 		});
 	}
 
@@ -876,6 +930,7 @@ export class GitHubClient {
 			}`,
 			{ issueId: parentIssueId, subIssueId: childIssueId },
 			signal,
+			true,
 		);
 		return normalizeSubIssueMutationResult(data, mutationField, this.repository.fullName);
 	}
@@ -895,15 +950,19 @@ export class GitHubClient {
 			}`,
 			compactObject({ issueId: parentIssueId, subIssueId: child.id, beforeId: position.beforeId, afterId: position.afterId }),
 			signal,
+			true,
 		);
 		return normalizeReprioritizeSubIssueResult(data, this.repository.fullName, child);
 	}
 
-	private async assertRepositoryLabelsExist(labels: string[], signal?: AbortSignal): Promise<void> {
+	private async assertRepositoryLabelsExist(labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<void> {
+		const validated = this.mutableIssueCollectionPreflight(preflight)?.labels;
 		const missing: string[] = [];
 		for (const label of new Set(labels)) {
+			if (validated?.has(label)) continue;
 			const existing = await this.getRepositoryLabel(label, signal);
-			if (!existing) missing.push(label);
+			if (existing) validated?.add(label);
+			else missing.push(label);
 		}
 		if (missing.length > 0) {
 			throw new IssueMeError(
@@ -915,10 +974,13 @@ export class GitHubClient {
 		}
 	}
 
-	private async assertRepositoryAssigneesAssignable(assignees: string[], signal?: AbortSignal): Promise<void> {
+	private async assertRepositoryAssigneesAssignable(assignees: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<void> {
+		const validated = this.mutableIssueCollectionPreflight(preflight)?.assignees;
 		const invalid: string[] = [];
 		for (const assignee of new Set(assignees)) {
-			if (!await this.isRepositoryAssigneeAssignable(assignee, signal)) invalid.push(assignee);
+			if (validated?.has(assignee)) continue;
+			if (await this.isRepositoryAssigneeAssignable(assignee, signal)) validated?.add(assignee);
+			else invalid.push(assignee);
 		}
 		if (invalid.length > 0) {
 			throw new IssueMeError(
@@ -930,8 +992,13 @@ export class GitHubClient {
 		}
 	}
 
-	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
-		return this.transport.graphqlRequest<T>(operationName, query, variables, signal, mapGitHubGraphQLError);
+	private mutableIssueCollectionPreflight(preflight: GitHubIssueCollectionPreflight | undefined): MutableGitHubIssueCollectionPreflight | undefined {
+		if (!preflight || !this.issueCollectionPreflights.has(preflight)) return undefined;
+		return preflight as MutableGitHubIssueCollectionPreflight;
+	}
+
+	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal, mutation = false): Promise<T> {
+		return this.transport.graphqlRequest<T>(operationName, query, variables, signal, mapGitHubGraphQLError, mutation);
 	}
 
 	private repoPath(path: string): string {
@@ -951,7 +1018,7 @@ export class GitHubClient {
 		path: string,
 		query: Record<string, string>,
 		signal?: AbortSignal,
-		options: PaginationOptions & { filter?: (item: T) => boolean } = {},
+		options: PaginationOptions & { filter?: (item: T) => boolean; assertItem?: (item: T, path: string) => void } = {},
 	): Promise<{ items: T[]; truncated: boolean }> {
 		return this.transport.paginateFiltered<T>(path, query, signal, options);
 	}
@@ -997,7 +1064,7 @@ export class GitHubClient {
 	private async request<T>(
 		method: string,
 		pathOrUrl: string,
-		options: { body?: unknown; signal?: AbortSignal; alreadyAbsolute?: boolean; validate?: (value: unknown) => boolean } = {},
+		options: { body?: unknown; signal?: AbortSignal; alreadyAbsolute?: boolean; validate?: (value: unknown) => boolean; mutation?: boolean } = {},
 	): Promise<T> {
 		return this.transport.request<T>(method, pathOrUrl, options);
 	}
@@ -1009,6 +1076,18 @@ export class GitHubClient {
 	): Promise<{ data: T; headers: Headers }> {
 		return this.transport.requestWithHeaders<T>(method, pathOrUrl, options);
 	}
+}
+
+function isRepositoryLabelMutationResponse(value: unknown): boolean {
+	return isObject(value) && typeof value.name === "string" && value.name.trim().length > 0;
+}
+
+function isRepositoryMilestoneMutationResponse(value: unknown): boolean {
+	if (!isObject(value)) return false;
+	const validNumber = typeof value.number === "number" && Number.isSafeInteger(value.number) && value.number > 0;
+	const validTitle = typeof value.title === "string" && value.title.trim().length > 0;
+	const validState = value.state === "open" || value.state === "closed";
+	return validNumber && validTitle && validState;
 }
 
 function appendIssueSearchPageItems(values: GitHubIssueResponse[], items: GitHubIssueResponse[], limit: number | undefined): boolean {

@@ -115,6 +115,17 @@ test("issueme_manage_label creates, updates, and deletes repository labels", asy
 	assertNoToken({ created, updated, deleted });
 });
 
+test("issueme_manage_label returns retry-safe partial success for malformed accepted responses", async () => {
+	const result = await executeManageLabelTool(
+		async () => jsonResponse({}, { status: 201, statusText: "Created" }),
+		{ action: "create", name: "triage", color: "d73a4a" },
+	);
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "label_create_response_partial_success");
+	assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+});
+
 test("issueme_manage_label rejects invalid names, colors, and unsafe delete inputs before fetch", async () => {
 	let calls = 0;
 	const fetchFn = async () => {

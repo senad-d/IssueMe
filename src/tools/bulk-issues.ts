@@ -2,9 +2,9 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
-import { MAX_TOOL_ISSUES } from "../constants.ts";
-import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
-import type { GitHubIssueCloseReason, GitHubProjectV2ItemMutationResult } from "../github/client.ts";
+import { MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_LABELS } from "../constants.ts";
+import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } from "../errors.ts";
+import type { GitHubIssueCloseReason, GitHubIssueCollectionPreflight, GitHubProjectV2ItemMutationResult } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueMeToolResult, SafeToolError, ToolBulkIssueResultSummary, ToolIssueSummary } from "../types.ts";
@@ -15,6 +15,7 @@ import {
 	createIssueMeRuntime,
 	issueCreatorScopeLabel,
 	partialSuccessToolError,
+	REMOTE_MUTATION_RETRY_SAFE_GUIDANCE,
 	refreshAndCacheIssue,
 	requireNonEmptyGitHubLogins,
 	requireNonEmptyStrings,
@@ -39,8 +40,8 @@ const BulkIssueParams = Type.Object(
 			{ minItems: 1, maxItems: MAX_TOOL_ISSUES, description: "Explicit issue numbers. No search/query targets." },
 		),
 		action: BulkIssueAction,
-		labels: Type.Optional(Type.Array(Type.String(), { description: "Label names for add_labels." })),
-		assignees: Type.Optional(Type.Array(Type.String(), { description: "Usernames for assign." })),
+		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Label names for add_labels. Max ${MAX_TOOL_LABELS}.` })),
+		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Usernames for assign. Max ${MAX_TOOL_ASSIGNEES}.` })),
 		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number for set_milestone." })),
 		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID for add_to_project; one-line and at most 512 characters." })),
 		reason: Type.Optional(BulkCloseReason),
@@ -121,23 +122,38 @@ async function runBulkIssueOperation(
 		skipped: 0,
 	};
 	let firstError: SafeToolError | undefined;
+	assertBulkMutationNotStarted(signal);
+	const collectionPreflight = runtime.client.createIssueCollectionPreflight?.();
 
 	for (let index = 0; index < params.issueNumbers.length; index++) {
 		const issueNumber = params.issueNumbers[index];
 		try {
-			assertNotAborted(signal);
-			const result = await applyBulkAction(ctx, runtime, params, issueNumber, signal);
+			assertBulkMutationNotStarted(signal);
+			const result = await applyBulkAction(ctx, runtime, params, issueNumber, signal, collectionPreflight);
 			results.push(result);
 			if (result.status === "success") counts.succeeded += 1;
 			else if (result.status === "partial_success") {
 				counts.partial += 1;
 				firstError ??= result.error;
-				if (!params.continueOnError) {
-					appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue had partial remote success and continueOnError is false.");
+				if (!params.continueOnError || result.error?.code === ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED) {
+					appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue had partial remote success or cancellation made later mutations unsafe.");
 					break;
 				}
 			}
 		} catch (error) {
+			if (isRemoteMutationSuccessKnown(error)) {
+				const partial = bulkResponseProcessingPartialResult(issueNumber, params, error);
+				results.push(partial);
+				counts.partial += 1;
+				firstError ??= partial.error;
+				if (!params.continueOnError) {
+					appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue had accepted remote work with an unverifiable response.");
+					break;
+				}
+				continue;
+			}
+			const fatalPreSettlementFailure = isFatalBulkPreSettlementFailure(error);
+			if (fatalPreSettlementFailure && counts.succeeded === 0 && counts.partial === 0) throw error;
 			const safeError = safeToolError(error);
 			firstError ??= safeError;
 			counts.failed += 1;
@@ -151,14 +167,54 @@ async function runBulkIssueOperation(
 				needsSync: true,
 				error: safeError,
 			});
-			if (!params.continueOnError) {
-				appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue failed and continueOnError is false.");
+			if (fatalPreSettlementFailure || !params.continueOnError) {
+				appendSkippedResults(results, counts, params, index + 1, "Skipped because the previous issue failed or cancellation made later mutations unsafe.");
 				break;
 			}
 		}
 	}
 
 	return { results, counts, ...(firstError ? { firstError } : {}) };
+}
+
+function assertBulkMutationNotStarted(signal: AbortSignal | undefined): void {
+	try {
+		assertNotAborted(signal);
+	} catch (error) {
+		throw markMutationSettlement(error, "not_started");
+	}
+}
+
+function bulkResponseProcessingPartialResult(
+	issueNumber: number,
+	params: NormalizedBulkIssueParams,
+	error: unknown,
+): ToolBulkIssueResultSummary {
+	const safeError = partialSuccessToolError(error, "bulk_mutation_response_partial_success");
+	const settledError: SafeToolError = {
+		...safeError,
+		recoveryHint: REMOTE_MUTATION_RETRY_SAFE_GUIDANCE,
+		details: {
+			...safeError.details,
+			mutationSettlement: "remote_success_known",
+			retrySafeGuidance: REMOTE_MUTATION_RETRY_SAFE_GUIDANCE,
+		},
+	};
+	return {
+		number: issueNumber,
+		action: params.action,
+		status: "partial_success",
+		message: `${formatSuccessMessage(params.action, issueNumber)} may have completed remotely, but IssueMe could not verify the mutation response. ${REMOTE_MUTATION_RETRY_SAFE_GUIDANCE}`,
+		changedFields: params.changedFields,
+		cacheUpdated: false,
+		needsSync: true,
+		error: settledError,
+	};
+}
+
+function isFatalBulkPreSettlementFailure(error: unknown): boolean {
+	return error instanceof GitHubApiError
+		|| error instanceof IssueMeError && error.code === ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED;
 }
 
 function appendSkippedResults(
@@ -188,16 +244,17 @@ async function applyBulkAction(
 	params: NormalizedBulkIssueParams,
 	issueNumber: number,
 	signal?: AbortSignal,
+	collectionPreflight?: GitHubIssueCollectionPreflight,
 ): Promise<ToolBulkIssueResultSummary> {
 	if (params.action === "close") return closeIssueForBulk(runtime, params, issueNumber, signal);
 
 	await assertBulkIssueAllowedForOpenMutation(runtime, issueNumber, params.action, signal);
 	if (params.action === "add_labels") {
-		await runtime.client.addLabels(issueNumber, params.labels ?? [], signal);
+		await runtime.client.addLabels(issueNumber, params.labels ?? [], signal, collectionPreflight);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
 	}
 	if (params.action === "assign") {
-		const issue = await runtime.client.addAssignees(issueNumber, params.assignees ?? [], signal);
+		const issue = await runtime.client.addAssignees(issueNumber, params.assignees ?? [], signal, collectionPreflight);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, issue, signal);
 	}
 	if (params.action === "set_milestone") {
@@ -244,7 +301,7 @@ async function refreshIssueAfterRemoteSuccess(
 			needsSync: false,
 		};
 	} catch (error) {
-		const safeError = partialSuccessToolError(error);
+		const safeError = partialSuccessToolError(markMutationSettlement(error, "remote_success_known"));
 		return {
 			number: issueNumber,
 			action: params.action,
@@ -286,7 +343,13 @@ async function closeIssueForBulk(
 	assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "bulk_close", issueNumber });
 	const alreadyClosed = current.state === "closed";
 	const issue = alreadyClosed ? current : await runtime.client.closeIssue(issueNumber, { reason: params.reason }, signal);
-	const issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
+	let issueSummary: ToolIssueSummary;
+	try {
+		issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
+	} catch (error) {
+		if (!alreadyClosed) return bulkResponseProcessingPartialResult(issueNumber, params, markMutationSettlement(error, "remote_success_known"));
+		throw error;
+	}
 	try {
 		assertNotAborted(signal);
 		const removed = await removeIssueByNumber(runtime.projectRoot, runtime.config, issueNumber, runtime.repository, signal);
@@ -303,7 +366,8 @@ async function closeIssueForBulk(
 			needsSync: false,
 		};
 	} catch (error) {
-		const safeError = partialSuccessToolError(error, alreadyClosed ? "already_closed_partial_success" : "closed_now_partial_success");
+		const settledError = alreadyClosed ? error : markMutationSettlement(error, "remote_success_known");
+		const safeError = partialSuccessToolError(settledError, alreadyClosed ? "already_closed_partial_success" : "closed_now_partial_success");
 		return {
 			number: issueNumber,
 			action: params.action,

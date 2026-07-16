@@ -19,8 +19,8 @@ import {
 	MAX_TOOL_TEXT_CHARS,
 	PROJECT_TRUST_REQUIREMENT,
 } from "../constants.ts";
-import { loadIssueMeConfig } from "../config/config.ts";
-import { getIssueMeErrorTaxonomy, ISSUEME_ERROR_CODES, IssueMeError, isNodeError } from "../errors.ts";
+import { assertIssueMeConfigCollectionLimits, loadIssueMeConfig } from "../config/config.ts";
+import { getIssueMeErrorTaxonomy, ISSUEME_ERROR_CODES, IssueMeError, isNodeError, mutationSettlementOf } from "../errors.ts";
 import { GitHubClient, type FetchLike } from "../github/client.ts";
 import { parseGitHubRepository, resolveCurrentRepository } from "../github/repository.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
@@ -28,6 +28,7 @@ import { relativeIssuePath, writeIssueRecord } from "../issues/store.ts";
 import type { GitHubIssueResponse, GitHubRepository, IssueMeConfig, IssueMeToolDetails, IssueMeToolResult, IssueRecord, IssueRelationshipSummary, IssueWriteResult, SafeToolError, ToolAssigneeSummary, ToolBulkIssueResultStatus, ToolBulkIssueResultSummary, ToolCommentSummary, ToolFileActionSummary, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolLabelSummary, ToolMilestoneSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
 import { assertNotAborted } from "../utils/abort.ts";
 import { ALL_ISSUE_CREATORS, GITHUB_LOGIN_PATTERN, isValidGitHubLogin, issueCreatorEquals, normalizeAllowedIssueCreatorForLoad } from "../utils/github-login.ts";
+import { assertCollectionItemLimit } from "../utils/validation.ts";
 import { resolveGitHubToken } from "../utils/env.ts";
 import { resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
@@ -67,6 +68,7 @@ export async function createIssueMeRuntime(ctx: ExtensionContext, optionsProvide
 	const options = await resolveRuntimeOptions(ctx, optionsProvider);
 	const projectRoot = options.projectRoot ?? await getIssueMeProjectRoot(ctx.cwd);
 	const config = options.config ?? await loadIssueMeConfig(projectRoot);
+	assertIssueMeConfigCollectionLimits(config);
 	allowedIssueCreator(config);
 	const env = options.env ?? process.env;
 	const client = options.client ?? await createRuntimeGitHubClient(projectRoot, env, options);
@@ -458,7 +460,8 @@ export function listChangedFields(input: Record<string, unknown>): string[] {
 		.map(([key]) => key);
 }
 
-export function sanitizeStringList(values: readonly string[] | undefined, fieldName = "values"): string[] {
+export function sanitizeStringList(values: readonly string[] | undefined, fieldName = "values", maxItems = MAX_TOOL_LABELS): string[] {
+	assertCollectionItemLimit(values, fieldName, maxItems);
 	const normalized: string[] = [];
 	for (const value of values ?? []) {
 		const trimmed = value.trim();
@@ -475,7 +478,7 @@ export function sanitizeStringList(values: readonly string[] | undefined, fieldN
 }
 
 export function sanitizeGitHubLoginList(values: readonly string[] | undefined, fieldName = "assignees"): string[] {
-	const normalized = sanitizeStringList(values, fieldName);
+	const normalized = sanitizeStringList(values, fieldName, MAX_TOOL_ASSIGNEES);
 	for (const login of normalized) {
 		if (!GITHUB_LOGIN_PATTERN.test(login)) {
 			throw new IssueMeError("invalid_tool_input", `${fieldName} entries must be valid GitHub usernames.`, { field: fieldName });
@@ -568,6 +571,34 @@ export function partialSuccessToolText(
 		status,
 		message: safeError.message,
 		error: safeError,
+	});
+}
+
+export const REMOTE_MUTATION_RETRY_SAFE_GUIDANCE = "Do not repeat the mutation blindly; inspect GitHub remote state, run issueme_sync_issues when issue/cache state is involved, and retry only work confirmed missing.";
+
+export function remoteMutationPartialSuccessToolText(
+	text: string,
+	error: unknown,
+	details: IssueMeToolDetails = {},
+	status = "remote_mutation_response_partial_success",
+) {
+	const safeError = partialSuccessToolError(error, status);
+	const errorDetails = cloneRecord(safeError.details);
+	errorDetails.mutationSettlement = mutationSettlementOf(error) ?? "remote_success_known";
+	errorDetails.retrySafeGuidance = REMOTE_MUTATION_RETRY_SAFE_GUIDANCE;
+	const settledError: SafeToolError = {
+		...safeError,
+		recoveryHint: REMOTE_MUTATION_RETRY_SAFE_GUIDANCE,
+		details: errorDetails,
+	};
+	return toolText(`${text}\nRetry-safe guidance: ${REMOTE_MUTATION_RETRY_SAFE_GUIDANCE}`, {
+		...details,
+		result: "partial_success",
+		cacheUpdated: false,
+		needsSync: true,
+		status,
+		message: settledError.message,
+		error: settledError,
 	});
 }
 

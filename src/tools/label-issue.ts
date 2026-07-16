@@ -2,13 +2,14 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
+import { MAX_TOOL_LABELS } from "../constants.ts";
 import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const LabelIssueParams = Type.Object(
 	{
 		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
 		action: StringEnum(["add", "remove", "set"] as const, { description: "Label action; set [] clears all." }),
-		labels: Type.Array(Type.String(), { description: "Label names." }),
+		labels: Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Label names. Max ${MAX_TOOL_LABELS}.` }),
 	},
 	{ additionalProperties: false },
 );

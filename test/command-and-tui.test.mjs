@@ -379,6 +379,31 @@ test("/issueme info reports invalid allowedIssueCreator safely without widening 
 	assert.equal(pi.messages[0].message.details.allowedIssueCreator, "unavailable until config is fixed");
 }));
 
+test("/issueme info reports non-object config roots as unavailable without scanning cache files", async () => withCleanGitHubEnv(async () => {
+	const root = await tempProject();
+	const configPath = join(root, ".pi", "agent", "issueme.json");
+	await mkdir(join(root, ".pi", "agent"), { recursive: true });
+	await writeFile(join(root, "issues"), "cache scan must stay skipped\n", "utf8");
+	const pi = fakePi();
+	registerIssueMeCommand(pi);
+
+	for (const invalidRoot of [[], null, 42, "not-an-object"]) {
+		await writeFile(configPath, `${JSON.stringify(invalidRoot)}\n`, "utf8");
+		await pi.commands.get("issueme").handler("info", fakeCtx(root));
+		const message = pi.messages.at(-1).message;
+		assert.match(message.content, /IssueMe config error: IssueMe config root must be a plain JSON object\./);
+		assert.match(message.content, /Config status: error/);
+		assert.match(message.content, /Issue directory: unavailable until config is fixed/);
+		assert.match(message.content, /Allowed issue creator: unavailable until config is fixed/);
+		assert.match(message.content, /Cached open issue files: 0/);
+		assert.equal(message.details.configStatus, "error");
+		assert.equal(message.details.configError.code, "config_root_invalid");
+		assert.equal(message.details.configError.details.field, "config");
+		assert.equal(message.details.issueDirectory, "unavailable until config is fixed");
+		assert.equal(message.details.allowedIssueCreator, "unavailable until config is fixed");
+	}
+}));
+
 test("/issueme info exercises a safe non-TUI command path without project secrets", async () => withCleanGitHubEnv(async () => {
 	const root = await tempProject();
 	const pi = fakePi();

@@ -108,6 +108,12 @@ export function assertMaxLength(value: string, field: string, maxLength: number,
 	if (value.length > maxLength) throw invalidToolInput(message, { field, maxLength, ...details });
 }
 
+export function assertCollectionItemLimit(values: readonly unknown[] | undefined, field: string, maxItems: number): void {
+	if (values !== undefined && values.length > maxItems) {
+		throw invalidToolInput(`${field} can include at most ${maxItems} items.`, { field, max: maxItems });
+	}
+}
+
 export function normalizeOptionalIsoDateOrTimestamp(value: string | undefined, field: string, options: IsoDateTimeValidationOptions = {}): string | undefined {
 	const normalized = normalizeOptionalTrimmedText(value, field, { ...options, oneLine: true, maxLength: options.maxLength ?? 64 });
 	if (!normalized) return undefined;

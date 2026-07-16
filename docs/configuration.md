@@ -35,8 +35,8 @@ Supported settings:
 | --- | --- |
 | `issueDirectory` | Project-relative directory for local issue JSON files. Defaults to `issues`. |
 | `allowedIssueCreator` | `all` or one GitHub username. Limits which issues IssueMe processes; it is not GitHub access control. |
-| `defaultLabels` | Labels used by create tools when labels are omitted. Explicit `[]` overrides defaults. |
-| `defaultAssignees` | Assignees used by create tools when assignees are omitted. Explicit `[]` overrides defaults. |
+| `defaultLabels` | Up to 25 labels used by create tools when labels are omitted. Explicit `[]` overrides defaults. |
+| `defaultAssignees` | Up to 25 assignees used by create tools when assignees are omitted. Explicit `[]` overrides defaults. |
 | `defaultSkillPath` | Project-local skill path used by `/issueme start` when no path is provided. |
 
 IssueMe validates config before saving:
@@ -44,7 +44,8 @@ IssueMe validates config before saving:
 - rejects secret-like keys at any nesting level;
 - rejects path traversal, project-root issue directories, and protected directories such as `.git`, the pi config directory, `node_modules`, `dist`, `build`, and `coverage`;
 - refuses symlinked IssueMe config files or config parent directories that could escape the project;
-- deduplicates and trims labels/assignees;
+- limits raw default label and assignee arrays to 25 entries each before deduplication, failing closed when manually edited config exceeds either limit;
+- deduplicates and trims labels/assignees within those limits;
 - rejects null bytes and multiline entries in default labels/assignees;
 - requires default assignees to be valid GitHub usernames;
 - accepts `allowedIssueCreator` as `all` or one valid GitHub username;

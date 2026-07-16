@@ -65,12 +65,12 @@ async function tempProject(config) {
 	return root;
 }
 
-function registerTools() {
+function registerTools(options) {
 	const pi = fakePi();
-	registerCreateIssueTool(pi);
-	registerUpdateIssueTool(pi);
-	registerAssignIssueTool(pi);
-	registerLabelIssueTool(pi);
+	registerCreateIssueTool(pi, options);
+	registerUpdateIssueTool(pi, options);
+	registerAssignIssueTool(pi, options);
+	registerLabelIssueTool(pi, options);
 	return pi.tools;
 }
 
@@ -213,6 +213,23 @@ test("invalid loaded allowedIssueCreator blocks tools before GitHub requests", a
 	}, { allowedIssueCreator: "bad login" });
 });
 
+test("non-object loaded config roots block tools before GitHub requests", async () => {
+	for (const invalidRoot of [[], null, 42, "not-an-object"]) {
+		const requests = [];
+		await withMockedIssueTools(async (input, init) => {
+			const url = new URL(input.toString());
+			requests.push(`${init.method} ${url.pathname}`);
+			return jsonResponse(issueFromPayload());
+		}, async ({ projectRoot, tools }) => {
+			await assert.rejects(
+				() => execute(tools.get("issueme_create_issue"), projectRoot, { title: "Should not create", body: "Body" }),
+				(error) => error?.code === "config_root_invalid" && error.safeDetails?.field === "config",
+			);
+			assert.deepEqual(requests, []);
+		}, invalidRoot);
+	}
+});
+
 test("IssueMe create, update, assign, and label tools trim, de-duplicate, and drop blank list values consistently", async () => {
 	const requests = [];
 	await withMockedIssueTools(async (input, init) => {
@@ -246,6 +263,33 @@ test("IssueMe create, update, assign, and label tools trim, de-duplicate, and dr
 	assert.deepEqual(requestBodies.find(([key]) => key === "PATCH /repos/owner/repo/issues/1")?.[1].assignees, ["octocat", "hubot"]);
 	assert.deepEqual(requestBodies.find(([key]) => key === "POST /repos/owner/repo/issues/1/assignees")?.[1].assignees, ["octocat", "hubot"]);
 	assert.deepEqual(requestBodies.find(([key]) => key === "POST /repos/owner/repo/issues/1/labels")?.[1].labels, ["bug", "triaged"]);
+});
+
+test("collection limits reject direct tool execution before runtime resolution", async () => {
+	const projectRoot = await tempProject();
+	let runtimeCalls = 0;
+	const tools = registerTools({
+		runtime: () => {
+			runtimeCalls += 1;
+			throw new Error("runtime resolution must not run for over-limit input");
+		},
+	});
+	const tooManyLabels = Array.from({ length: 26 }, (_, index) => `label-${index}`);
+	const tooManyAssignees = Array.from({ length: 26 }, (_, index) => `user-${index}`);
+	for (const [name, params, field] of [
+		["issueme_create_issue", { title: "Create", body: "Body", labels: tooManyLabels }, "labels"],
+		["issueme_create_issue", { title: "Create", body: "Body", assignees: tooManyAssignees }, "assignees"],
+		["issueme_update_issue", { number: 1, labels: tooManyLabels }, "labels"],
+		["issueme_update_issue", { number: 1, assignees: tooManyAssignees }, "assignees"],
+		["issueme_assign_issue", { number: 1, action: "set", assignees: tooManyAssignees }, "assignees"],
+		["issueme_label_issue", { number: 1, action: "set", labels: tooManyLabels }, "labels"],
+	]) {
+		await assert.rejects(
+			() => execute(tools.get(name), projectRoot, params),
+			(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === field && error.safeDetails?.max === 25,
+		);
+	}
+	assert.equal(runtimeCalls, 0);
 });
 
 test("set-style updates honor explicit empty arrays for labels and assignees", async () => {

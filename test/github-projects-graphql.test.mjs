@@ -94,6 +94,14 @@ function projectWithoutVisibilityHandler() {
 	});
 }
 
+function projectListResponse(nodes) {
+	return graphQLResponse({
+		repository: {
+			projectsV2: graphQLConnection(nodes),
+		},
+	});
+}
+
 function iterationWithoutMetadataHandler() {
 	return graphQLResponse({
 		repository: {
@@ -133,6 +141,22 @@ test("GitHubClient Projects v2 list scans user pages to the cap after closed-boa
 	assert.deepEqual(recorder.calls[0].json.variables, { owner: "octocat", first: 2, query: "board" });
 	assert.equal(recorder.calls[1].json.variables.after, "cursor-1");
 	assertNoSecretLeak(result);
+});
+
+test("GitHubClient Projects v2 list rejects malformed nodes and accepts valid empty collections", async () => {
+	for (const nodes of [[{}], [projectV2Node(), {}]]) {
+		await assert.rejects(
+			() => runProjectTool("issueme_list_projects", () => projectListResponse(nodes), { limit: 2 }),
+			(error) => error instanceof GitHubApiError
+				&& error.code === "github_response_shape_invalid"
+				&& /malformed project collection member/.test(error.message),
+		);
+	}
+
+	const empty = await runProjectTool("issueme_list_projects", () => projectListResponse([]), { limit: 2 });
+	assert.equal(empty.details.result, "success");
+	assert.deepEqual(empty.details.projects, []);
+	assert.equal(empty.details.truncated, false);
 });
 
 test("Projects v2 normalizers reject invalid owners and missing field value objects", () => {

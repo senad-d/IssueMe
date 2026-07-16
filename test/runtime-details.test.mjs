@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
+	DEFAULT_CONFIG_PATH,
 	MAX_CACHE_COMMENTS,
 	MAX_TOOL_CHANGED_FIELDS,
 	MAX_TOOL_ERROR_DETAIL_ITEMS,
@@ -237,6 +239,53 @@ test("createIssueMeRuntime covers trust, injected options, async providers, repo
 		(error) => assertIssueMeError(error, "invalid_github_repository"),
 	);
 	assert.throws(() => normalizeRuntimeRepository({ owner: "owner", repo: "repo", fullName: "owner/other" }), (error) => assertIssueMeError(error, "invalid_github_repository"));
+});
+
+test("createIssueMeRuntime rejects non-object loaded config roots before repository or GitHub setup", async () => {
+	for (const invalidRoot of [[], null, 42, "not-an-object"]) {
+		const projectRoot = await createGitProject();
+		const configPath = join(projectRoot, DEFAULT_CONFIG_PATH);
+		await mkdir(dirname(configPath), { recursive: true });
+		await writeFile(configPath, `${JSON.stringify(invalidRoot)}\n`, "utf8");
+		let requestCount = 0;
+		await assert.rejects(
+			() => createIssueMeRuntime(ctxFor(projectRoot), {
+				projectRoot,
+				repository: "not-a-repository",
+				token: RUNTIME_TOKEN,
+				fetchFn: async () => {
+					requestCount += 1;
+					return new Response(null, { status: 500 });
+				},
+			}),
+			(error) => error?.code === "config_root_invalid" && error.safeDetails?.field === "config",
+		);
+		assert.equal(requestCount, 0);
+	}
+});
+
+test("createIssueMeRuntime rejects over-limit injected config before repository or GitHub setup", async () => {
+	const projectRoot = await createGitProject();
+	let requestCount = 0;
+	for (const config of [
+		issueMeConfig({ defaultLabels: Array.from({ length: 26 }, () => "duplicate") }),
+		issueMeConfig({ defaultAssignees: Array.from({ length: 26 }, () => "octocat") }),
+	]) {
+		await assert.rejects(
+			() => createIssueMeRuntime(ctxFor(projectRoot), {
+				projectRoot,
+				config,
+				repository: "not-a-repository",
+				token: RUNTIME_TOKEN,
+				fetchFn: async () => {
+					requestCount += 1;
+					return new Response(null, { status: 500 });
+				},
+			}),
+			(error) => error?.code === "config_tui_invalid_setting" && error.safeDetails?.max === 25,
+		);
+	}
+	assert.equal(requestCount, 0);
 });
 
 test("creator-scope helpers cover existing issue, authenticated user, unknown creator, and invalid config outcomes", async () => {

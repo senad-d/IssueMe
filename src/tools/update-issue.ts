@@ -1,6 +1,7 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { MAX_TOOL_ASSIGNEES, MAX_TOOL_LABELS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
@@ -11,8 +12,8 @@ const UpdateIssueParams = Type.Object(
 		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
 		title: Type.Optional(Type.String({ description: "New title. Non-empty." })),
 		body: Type.Optional(Type.String({ description: "New body. Empty clears intentionally." })),
-		labels: Type.Optional(Type.Array(Type.String(), { description: "Complete label set." })),
-		assignees: Type.Optional(Type.Array(Type.String(), { description: "Complete assignee set." })),
+		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Complete label set. Max ${MAX_TOOL_LABELS}.` })),
+		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Complete assignee set. Max ${MAX_TOOL_ASSIGNEES}.` })),
 		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number." })),
 		clearMilestone: Type.Optional(Type.Boolean({ description: "True clears milestone." })),
 	},

@@ -6,6 +6,13 @@ import { ISSUEME_COMMAND_CONTRACTS, ISSUEME_TOOL_CONTRACTS } from "../src/contra
 import { registerIssueMeTools } from "../src/tools/issueme-tools.ts";
 import { ISSUEME_TOOL_NAMES } from "../src/tools/inventory.ts";
 
+const DISCOVERY_CONTRACT_NAMES = [
+	"issueme_list_labels",
+	"issueme_list_milestones",
+	"issueme_list_assignees",
+	"issueme_list_projects",
+];
+
 function fakePi() {
 	const tools = new Map();
 	return {
@@ -23,6 +30,16 @@ test("public tool contract matrix covers every registered IssueMe tool in invent
 		assert.ok(contract.validationGates.length > 0, `${contract.name} must document validation gates`);
 		assert.ok(contract.resultPolicy.length > 0, `${contract.name} must document result/failure policy`);
 		assert.ok(contract.coverage.length > 0, `${contract.name} must document focused coverage`);
+	}
+});
+
+test("public discovery contracts distinguish valid empty collections from malformed members", () => {
+	for (const name of DISCOVERY_CONTRACT_NAMES) {
+		const contract = ISSUEME_TOOL_CONTRACTS.find((candidate) => candidate.name === name);
+		assert.ok(contract, `${name} must have a public contract`);
+		assert.equal(contract.validationGates.some((gate) => /collection member identity shape/i.test(gate)), true);
+		assert.match(contract.resultPolicy, /malformed/);
+		assert.match(contract.resultPolicy, /valid empty/);
 	}
 });
 

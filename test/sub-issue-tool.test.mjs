@@ -248,6 +248,28 @@ async function readJson(path) {
 	return JSON.parse(await readFile(path, "utf8"));
 }
 
+test("issueme_create_sub_issue rejects over-limit collections before runtime resolution", async () => {
+	const projectRoot = await tempProject();
+	let runtimeCalls = 0;
+	const pi = fakePi();
+	registerIssueMeTools(pi, {
+		runtime: () => {
+			runtimeCalls += 1;
+			throw new Error("runtime resolution must not run for over-limit input");
+		},
+	});
+	for (const [field, values] of [
+		["labels", Array.from({ length: 26 }, (_, index) => `label-${index}`)],
+		["assignees", Array.from({ length: 26 }, (_, index) => `user-${index}`)],
+	]) {
+		await assert.rejects(
+			() => execute(pi.tools.get("issueme_create_sub_issue"), projectRoot, { parentNumber: 1, title: "Child", body: "Body", [field]: values }),
+			(error) => error?.code === "invalid_tool_input" && error.safeDetails?.field === field && error.safeDetails?.max === 25,
+		);
+	}
+	assert.equal(runtimeCalls, 0);
+});
+
 test("issueme_create_sub_issue creates an issue, links it natively, and caches relationship metadata", async () => {
 	const projectRoot = await tempProject();
 	const mock = makeSubIssueFetch();
@@ -474,12 +496,11 @@ test("restricted issueme_reorder_sub_issues refuses disallowed visible children 
 	});
 	const tools = registerInjectedTools(mock.fetchFn, restrictedConfig);
 
-	const result = await execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [3, 2] });
+	await assert.rejects(
+		() => execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [3, 2] }),
+		(error) => error?.code === "issue_creator_not_allowed" && error.safeDetails?.issueNumber === 3,
+	);
 
-	assert.equal(result.details.result, "error");
-	assert.equal(result.details.creatorScope, "hubot");
-	assert.equal(result.details.error.code, "issue_creator_not_allowed");
-	assert.equal(result.details.error.details.issueNumber, 3);
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body.operationName === "IssueMeReprioritizeSubIssue"), false);
 	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
 });
@@ -494,11 +515,11 @@ test("issueme_reorder_sub_issues rejects incomplete or invalid child lists befor
 	});
 	const tools = registerInjectedTools(mock.fetchFn);
 
-	const result = await execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [2, 999] });
+	await assert.rejects(
+		() => execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [2, 999] }),
+		(error) => error?.code === "invalid_tool_input" && /every current native sub-issue/i.test(error.message),
+	);
 
-	assert.equal(result.details.result, "error");
-	assert.equal(result.details.error.code, "invalid_tool_input");
-	assert.match(result.content[0].text, /every current native sub-issue/i);
 	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body.operationName === "IssueMeReprioritizeSubIssue"), false);
 });
 
@@ -529,6 +550,91 @@ test("issueme_reorder_sub_issues reports permission and cache-refresh failures s
 	assert.equal(partialResult.details.needsSync, true);
 	assert.equal(partialResult.details.error.details.partialSuccessStatus, "sub_issue_cache_refresh_failed");
 	assert.match(partialResult.content[0].text, /order changed on GitHub, but local cache refresh failed/i);
+});
+
+test("native sub-issue mutations return retry-safe partial success for malformed accepted responses", async () => {
+	for (const scenario of [
+		{ toolName: "issueme_add_sub_issue", operationName: "IssueMeAddSubIssue", field: "addSubIssue", params: { parentNumber: 1, childNumber: 2 }, status: "sub_issue_attach_response_partial_success" },
+		{ toolName: "issueme_remove_sub_issue", operationName: "IssueMeRemoveSubIssue", field: "removeSubIssue", params: { parentNumber: 1, childNumber: 2 }, status: "sub_issue_remove_response_partial_success" },
+	]) {
+		const projectRoot = await tempProject();
+		const mock = makeSubIssueFetch();
+		const tools = registerInjectedTools(async (input, init = {}) => {
+			const body = init.body === undefined ? undefined : JSON.parse(init.body);
+			if (body?.operationName === scenario.operationName) return jsonResponse({ data: { [scenario.field]: {} } });
+			return mock.fetchFn(input, init);
+		});
+		const result = await execute(tools.get(scenario.toolName), projectRoot, scenario.params);
+		assert.equal(result.details.result, "partial_success", scenario.toolName);
+		assert.equal(result.details.status, scenario.status, scenario.toolName);
+		assert.equal(result.details.error.details.mutationSettlement, "remote_success_known", scenario.toolName);
+		assert.match(result.content[0].text, /Do not repeat the mutation blindly/, scenario.toolName);
+	}
+
+	const projectRoot = await tempProject();
+	const children = [githubIssue(2, "First Child"), githubIssue(3, "Priority Child")];
+	const mock = makeSubIssueFetch({
+		issues: children,
+		childrenByParent: [[1, [2, 3]]],
+		parentByChild: children.map((issue) => [issue.number, 1]),
+	});
+	const tools = registerInjectedTools(async (input, init = {}) => {
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		if (body?.operationName === "IssueMeReprioritizeSubIssue") return jsonResponse({ data: { reprioritizeSubIssue: {} } });
+		return mock.fetchFn(input, init);
+	});
+	const result = await execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [3, 2] });
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "sub_issue_reorder_response_partial_success");
+	assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+	assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+});
+
+test("native sub-issue aborts and 5xx failures before settlement use the error channel", async () => {
+	for (const scenario of [
+		{ toolName: "issueme_add_sub_issue", operationName: "IssueMeAddSubIssue", params: { parentNumber: 1, childNumber: 2 } },
+		{ toolName: "issueme_remove_sub_issue", operationName: "IssueMeRemoveSubIssue", params: { parentNumber: 1, childNumber: 2 } },
+	]) {
+		const projectRoot = await tempProject();
+		const mock = makeSubIssueFetch();
+		const tools = registerInjectedTools(async (input, init = {}) => {
+			const body = init.body === undefined ? undefined : JSON.parse(init.body);
+			if (body?.operationName === scenario.operationName) return jsonResponse({ message: "server failed" }, { status: 503, statusText: "Service Unavailable" });
+			return mock.fetchFn(input, init);
+		});
+		await assert.rejects(
+			() => execute(tools.get(scenario.toolName), projectRoot, scenario.params),
+			(error) => error?.code === "github_api_error" && error.status === 503 && error.safeDetails?.mutationSettlement === "no_remote_success_known",
+		);
+	}
+
+	const projectRoot = await tempProject();
+	const children = [githubIssue(2, "First Child"), githubIssue(3, "Priority Child")];
+	const mock = makeSubIssueFetch({
+		issues: children,
+		childrenByParent: [[1, [2, 3]]],
+		parentByChild: children.map((issue) => [issue.number, 1]),
+	});
+	const tools = registerInjectedTools(async (input, init = {}) => {
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		if (body?.operationName === "IssueMeReprioritizeSubIssue") return jsonResponse({ message: "server failed" }, { status: 503, statusText: "Service Unavailable" });
+		return mock.fetchFn(input, init);
+	});
+	await assert.rejects(
+		() => execute(tools.get("issueme_reorder_sub_issues"), projectRoot, { parentNumber: 1, orderedChildNumbers: [3, 2] }),
+		(error) => error?.code === "github_api_error" && error.status === 503,
+	);
+
+	const controller = new AbortController();
+	controller.abort();
+	const abortedMock = makeSubIssueFetch();
+	const abortedTools = registerInjectedTools(abortedMock.fetchFn);
+	const abortedRoot = await tempProject();
+	await assert.rejects(
+		() => execute(abortedTools.get("issueme_add_sub_issue"), abortedRoot, { parentNumber: 1, childNumber: 2 }, controller.signal),
+		(error) => error?.code === "github_request_aborted",
+	);
+	assert.equal(abortedMock.calls.length, 0);
 });
 
 test("restricted issueme_list_sub_issues refuses disallowed child details before returning output", async () => {

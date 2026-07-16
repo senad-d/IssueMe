@@ -1,6 +1,6 @@
 import { GITHUB_API_BASE_URL } from "../constants.ts";
-import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
-import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
+import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
+import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
 import { normalizeOptionalIsoDateOrTimestamp, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import { normalizeGraphQLIssueCreator } from "./graphql-normalizers.ts";
 import type { GitHubIssueListDirection, GitHubIssueListFilters, GitHubIssueListSort, GitHubIssueListState, GitHubIssueSearchFilters, GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState, GitHubRepositoryMilestoneListFilters, IssueUpdateInput } from "./client.ts";
@@ -79,6 +79,29 @@ export function buildMilestoneListQuery(filters: GitHubRepositoryMilestoneListFi
 
 export function buildAssigneeListQuery(limit: number | undefined): Record<string, string> {
 	return { per_page: String(Math.min(limit ?? 100, 100)) };
+}
+
+export function assertGitHubLabelDiscoveryResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubLabelResponse & { name: string } {
+	if (isObject(value) && typeof value.name === "string" && value.name.trim()) return;
+	throw githubDiscoveryResponseShapeError("label", path);
+}
+
+export function assertGitHubMilestoneDiscoveryResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubMilestoneResponse & { number: number; title: string; state: "open" | "closed" } {
+	if (isObject(value) && typeof value.number === "number" && Number.isSafeInteger(value.number) && value.number > 0
+		&& typeof value.title === "string" && value.title.trim() && (value.state === "open" || value.state === "closed")) return;
+	throw githubDiscoveryResponseShapeError("milestone", path);
+}
+
+export function assertGitHubAssigneeDiscoveryResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubUserResponse & { login: string } {
+	if (isObject(value) && typeof value.login === "string" && value.login.trim()) return;
+	throw githubDiscoveryResponseShapeError("assignee", path);
+}
+
+function githubDiscoveryResponseShapeError(kind: "label" | "milestone" | "assignee", path: string): GitHubApiError {
+	return new GitHubApiError(`GitHub REST API returned a malformed ${kind} collection member.`, {
+		code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+		path,
+	});
 }
 
 export function labelMatchesFilters(label: GitHubLabelResponse, nameFilter: string | undefined, queryFilter: string | undefined): boolean {

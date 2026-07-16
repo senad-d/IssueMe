@@ -8,6 +8,9 @@ import {
 	IssueMeError,
 	getIssueMeErrorRecoveryHint,
 	getIssueMeErrorTaxonomy,
+	isRemoteMutationSuccessKnown,
+	markMutationSettlement,
+	mutationSettlementOf,
 } from "../src/errors.ts";
 import { partialSuccessToolError, safeToolError } from "../src/tools/runtime.ts";
 
@@ -91,6 +94,18 @@ test("GitHubApiError and closed issue errors include actionable safe details", (
 	assert.equal(closedError.category, "closed_issue");
 	assert.equal(closedError.safeDetails.status, ISSUEME_ERROR_CODES.CLOSED_ISSUE_MUTATION_REFUSED);
 	assert.match(closedError.recoveryHint, /not mutate closed issues|open issue/i);
+});
+
+test("mutation settlement markers preserve the strongest known remote phase", () => {
+	const error = new GitHubApiError("Mutation request failed.", { mutationSettlement: "not_started" });
+	assert.equal(mutationSettlementOf(error), "not_started");
+	markMutationSettlement(error, "indeterminate");
+	assert.equal(mutationSettlementOf(error), "indeterminate");
+	markMutationSettlement(error, "remote_success_known");
+	markMutationSettlement(error, "no_remote_success_known");
+	assert.equal(mutationSettlementOf(error), "remote_success_known");
+	assert.equal(error.safeDetails.mutationSettlement, "remote_success_known");
+	assert.equal(isRemoteMutationSuccessKnown(error), true);
 });
 
 test("partial success errors retain the local cause and add sync recovery guidance", () => {

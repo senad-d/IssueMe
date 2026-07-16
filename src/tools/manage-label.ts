@@ -2,11 +2,11 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
-import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError } from "../errors.ts";
+import { ISSUEME_ERROR_CODES, GitHubApiError, IssueMeError, isRemoteMutationSuccessKnown } from "../errors.ts";
 import type { GitHubRepositoryLabelCreateInput, GitHubRepositoryLabelUpdateInput } from "../github/client.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, assertOneLine, normalizeRequiredTrimmedText } from "../utils/validation.ts";
-import { createIssueMeRuntime, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { createIssueMeRuntime, remoteMutationPartialSuccessToolText, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const MAX_LABEL_NAME_CHARS = 50;
 const MAX_LABEL_DESCRIPTION_CHARS = 100;
@@ -76,6 +76,14 @@ export function registerManageLabelTool(pi: ExtensionAPI, options: IssueMeToolRe
 					const summary = { name: normalized.name };
 					return toolText(formatManagedLabelText("deleted", runtime.repository, summary, normalized), managedLabelDetails(runtime.repository, "label_deleted", summary, normalized.changedFields));
 				} catch (error) {
+					if (isRemoteMutationSuccessKnown(error)) {
+						return remoteMutationPartialSuccessToolText(
+							`GitHub accepted the repository label ${normalized.action} request for "${normalized.name}", but IssueMe could not verify the mutation response.`,
+							error,
+							{ repository: runtime.repository, labels: [knownLabelApiErrorSummary(normalized)], changedFields: normalized.changedFields },
+							`label_${normalized.action}_response_partial_success`,
+						);
+					}
 					const handled = handledKnownLabelApiResult(error, runtime.repository, normalized);
 					if (handled) return handled;
 					throw error;

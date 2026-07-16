@@ -159,12 +159,12 @@ export function requireIssueNodeId(issue: GitHubIssueResponse, label: string): s
 export function normalizeSubIssueMutationResult(data: SubIssueMutationData, field: "addSubIssue" | "removeSubIssue", repository: string): NativeSubIssueMutationResult {
 	const payload = data[field];
 	if (!isObject(payload)) {
-		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	const parent = normalizeNativeSubIssueSummary(payload.issue, repository);
 	const child = normalizeNativeSubIssueSummary(payload.subIssue, repository);
 	if (!parent || !child) {
-		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned incomplete issue data.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned incomplete issue data.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	return { parent, child };
 }
@@ -172,11 +172,11 @@ export function normalizeSubIssueMutationResult(data: SubIssueMutationData, fiel
 export function normalizeReprioritizeSubIssueResult(data: SubIssueMutationData, repository: string, child: NativeSubIssueSummary): NativeSubIssueMutationResult {
 	const payload = data.reprioritizeSubIssue;
 	if (!isObject(payload)) {
-		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	const parent = normalizeNativeSubIssueSummary(payload.issue, repository);
 	if (!parent) {
-		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned incomplete parent issue data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError("GitHub GraphQL reprioritizeSubIssue mutation returned incomplete parent issue data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	return { parent, child };
 }

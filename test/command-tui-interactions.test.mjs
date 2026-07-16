@@ -150,6 +150,13 @@ test("IssueMeConfigTui handles empty search, invalid printable keys, save valida
 	kitty.handleInput("\u001b[999999999999999999999u");
 	assert.match(kitty.render(80).join("\n"), /Editing issues/);
 
+	const controlInput = new IssueMeConfigTui(root, issueMeConfig(), plainTheme, () => {}, () => {}, { focus: "settings" });
+	controlInput.handleInput("\r");
+	controlInput.handleInput("cache\u009b31m");
+	const controlInputLines = controlInput.render(80);
+	assert.match(controlInputLines.join("\n"), /Editing issues/);
+	for (const line of controlInputLines) assert.doesNotMatch(line, /[\u0000-\u001F\u007F-\u009F]/u);
+
 	const malformedAnsiTheme = {
 		fg: (_role, text) => `\u001b[;m${text}`,
 		bold: (text) => `\u001b[1;xm${text}`,
@@ -158,6 +165,30 @@ test("IssueMeConfigTui handles empty search, invalid printable keys, save valida
 	const styledLines = styled.render(24);
 	assert.ok(styledLines.every((line) => typeof line === "string"));
 });
+
+test("/issueme config rejects terminal-control TUI output without persisting it", async () => withCleanGitHubEnv(async () => {
+	const root = await createGitProject();
+	const pi = createFakePi();
+	registerIssueMeCommand(pi);
+	const ctx = createFakeCommandContext(root, {
+		mode: "tui",
+		hasUI: true,
+		customResult: issueMeConfig({ defaultLabels: ["bug\u001b]0;spoof\u0007"] }),
+	});
+
+	await assert.rejects(
+		() => commandHandler(pi)("", ctx),
+		(error) => error?.code === "config_tui_invalid_setting" && error.safeDetails?.field === "defaultLabels",
+	);
+	await assert.rejects(
+		() => readFile(join(root, DEFAULT_CONFIG_PATH), "utf8"),
+		(error) => error?.code === "ENOENT",
+	);
+	assert.equal(pi.messages.length, 0);
+	assert.equal(ctx.notifications.at(-1).level, "error");
+	assert.match(ctx.notifications.at(-1).message, /config not saved/i);
+	assertNoSecretLeak({ notifications: ctx.notifications, messages: pi.messages });
+}));
 
 test("/issueme config persists only non-secret TUI output on a successful save", async () => withCleanGitHubEnv(async () => {
 	const root = await createGitProject();

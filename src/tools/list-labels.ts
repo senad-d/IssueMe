@@ -2,6 +2,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
+import { assertGitHubLabelDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
 import { normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
@@ -70,21 +71,16 @@ function normalizeListLabelsParams(params: ListLabelsToolParams): NormalizedList
 }
 
 function summarizeLabels(labels: GitHubLabelResponse[]): ToolLabelSummary[] {
-	return labels.map(normalizeLabelSummary).filter(isToolLabelSummary);
-}
-
-function isToolLabelSummary(label: ToolLabelSummary | undefined): label is ToolLabelSummary {
-	if (label) return true;
-	return false;
+	return labels.map(normalizeLabelSummary);
 }
 
 function isStringValue(value: string | undefined): value is string {
 	return typeof value === "string";
 }
 
-function normalizeLabelSummary(label: GitHubLabelResponse): ToolLabelSummary | undefined {
-	const name = typeof label.name === "string" ? label.name.trim() : "";
-	if (!name) return undefined;
+function normalizeLabelSummary(label: GitHubLabelResponse): ToolLabelSummary {
+	assertGitHubLabelDiscoveryResponse(label);
+	const name = label.name.trim();
 	const description = typeof label.description === "string" && label.description.trim() ? label.description.trim() : undefined;
 	const color = typeof label.color === "string" && label.color.trim() ? label.color.trim() : undefined;
 	const url = typeof label.url === "string" && label.url.trim() ? label.url.trim() : undefined;

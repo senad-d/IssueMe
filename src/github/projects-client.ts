@@ -278,6 +278,15 @@ export function normalizeProjectV2Summary(value: unknown): ToolProjectSummary | 
 	};
 }
 
+export function requireProjectV2Summary(value: unknown): ToolProjectSummary {
+	const project = normalizeProjectV2Summary(value);
+	if (project) return project;
+	throw new GitHubApiError("GitHub GraphQL Projects v2 query returned a malformed project collection member.", {
+		code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+		path: `${GITHUB_API_BASE_URL}/graphql`,
+	});
+}
+
 function normalizeProjectV2OwnerSummary(value: unknown): { owner: string; ownerType: ProjectV2OwnerType } | undefined {
 	if (!isObject(value)) return undefined;
 	const type = value.__typename;
@@ -377,12 +386,12 @@ function applyProjectV2FieldCollections(summary: ToolProjectFieldSummary, collec
 export function normalizeProjectV2ItemMutationResult(data: ProjectV2ItemMutationData, field: "addProjectV2ItemById" | "updateProjectV2ItemFieldValue", repository: string): GitHubProjectV2ItemMutationResult {
 	const payload = data[field];
 	if (!isObject(payload)) {
-		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	const itemNode = field === "addProjectV2ItemById" ? payload.item : payload.projectV2Item;
 	const item = normalizeProjectV2ItemSummary(itemNode, repository);
 	if (!item) {
-		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned incomplete project item data.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+		throw new GitHubApiError(`GitHub GraphQL ${field} mutation returned incomplete project item data.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
 	}
 	return { item };
 }

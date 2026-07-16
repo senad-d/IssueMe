@@ -156,6 +156,30 @@ test("issueme_close_issue reports closed remote issue when local cache removal f
 	});
 });
 
+test("issueme_close_issue treats malformed accepted close responses as retry-safe partial success", async () => {
+	const calls = [];
+	await withMockedTools(async (input, init) => {
+		const url = new URL(input.toString());
+		calls.push(`${init.method} ${url.pathname}`);
+		if (url.pathname === "/repos/owner/repo/issues/12" && init.method === "GET") {
+			return jsonResponse(githubIssue({ number: 12, title: "Malformed Close", html_url: "https://github.com/owner/repo/issues/12" }));
+		}
+		if (url.pathname === "/repos/owner/repo/issues/12" && init.method === "PATCH") return jsonResponse({});
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.pathname}`);
+	}, async ({ projectRoot, tools }) => {
+		const result = await execute(tools.get("issueme_close_issue"), projectRoot, { number: 12 });
+		assert.equal(result.details.result, "partial_success");
+		assert.equal(result.details.status, "close_issue_response_partial_success");
+		assert.equal(result.details.error.details.mutationSettlement, "remote_success_known");
+		assert.match(result.content[0].text, /Do not repeat the mutation blindly/);
+		assert.deepEqual(calls, [
+			"GET /repos/owner/repo/issues/12",
+			"GET /repos/owner/repo/issues/12",
+			"PATCH /repos/owner/repo/issues/12",
+		]);
+	});
+});
+
 function restoreEnv(name, value) {
 	if (value === undefined) delete process.env[name];
 	else process.env[name] = value;

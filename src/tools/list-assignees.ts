@@ -2,6 +2,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES } from "../constants.ts";
+import { assertGitHubAssigneeDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubUserResponse, IssueMeToolDetails, ToolAssigneeSummary } from "../types.ts";
 import { normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
@@ -70,22 +71,16 @@ function normalizeListAssigneesParams(params: ListAssigneesToolParams): Normaliz
 }
 
 function summarizeAssignees(assignees: GitHubUserResponse[]): ToolAssigneeSummary[] {
-	return assignees.map(normalizeAssigneeSummary).filter(isToolAssigneeSummary);
-}
-
-function isToolAssigneeSummary(assignee: ToolAssigneeSummary | undefined): assignee is ToolAssigneeSummary {
-	if (assignee) return true;
-	return false;
+	return assignees.map(normalizeAssigneeSummary);
 }
 
 function isStringValue(value: string | undefined): value is string {
 	return typeof value === "string";
 }
 
-function normalizeAssigneeSummary(assignee: GitHubUserResponse): ToolAssigneeSummary | undefined {
-	const login = normalizeAssigneeText(assignee.login);
-	if (login) return buildAssigneeSummary(login, assignee);
-	return undefined;
+function normalizeAssigneeSummary(assignee: GitHubUserResponse): ToolAssigneeSummary {
+	assertGitHubAssigneeDiscoveryResponse(assignee);
+	return buildAssigneeSummary(assignee.login.trim(), assignee);
 }
 
 function normalizeAssigneeText(value: unknown): string | undefined {

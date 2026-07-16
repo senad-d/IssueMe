@@ -18,13 +18,17 @@ export interface IssueMeErrorTaxonomyEntry {
 	recoveryHint: string;
 }
 
+export type MutationSettlement = "not_started" | "no_remote_success_known" | "remote_success_known" | "indeterminate";
+
 export interface IssueMeErrorOptions {
 	category?: IssueMeErrorCategory;
 	recoveryHint?: string;
+	mutationSettlement?: MutationSettlement;
 }
 
 export const ISSUEME_ERROR_CODES = {
 	CONFIG_PARSE_FAILED: "config_parse_failed",
+	CONFIG_ROOT_INVALID: "config_root_invalid",
 	CONFIG_READ_FAILED: "config_read_failed",
 	CONFIG_SAVE_FAILED: "config_save_failed",
 	CONFIG_SECRET_KEY_REFUSED: "config_secret_key_refused",
@@ -99,6 +103,10 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 	[ISSUEME_ERROR_CODES.CONFIG_PARSE_FAILED]: {
 		category: "config",
 		recoveryHint: `Fix JSON syntax in ${DEFAULT_CONFIG_PATH} or delete it to use IssueMe defaults.`,
+	},
+	[ISSUEME_ERROR_CODES.CONFIG_ROOT_INVALID]: {
+		category: "config",
+		recoveryHint: `Replace ${DEFAULT_CONFIG_PATH} with a JSON object or delete it to use IssueMe defaults.`,
 	},
 	[ISSUEME_ERROR_CODES.CONFIG_READ_FAILED]: {
 		category: "config",
@@ -327,6 +335,7 @@ export class IssueMeError extends Error {
 	readonly category: IssueMeErrorCategory;
 	readonly recoveryHint: string;
 	readonly safeDetails: Record<string, unknown>;
+	mutationSettlement: MutationSettlement | undefined;
 
 	constructor(code: string, message: string, safeDetails?: Record<string, unknown>, options: IssueMeErrorOptions = {}) {
 		super(message);
@@ -335,8 +344,37 @@ export class IssueMeError extends Error {
 		const taxonomy = getIssueMeErrorTaxonomy(code);
 		this.category = options.category ?? taxonomy.category;
 		this.recoveryHint = options.recoveryHint ?? taxonomy.recoveryHint;
-		this.safeDetails = buildSafeDetails(safeDetails, this.category, this.recoveryHint);
+		this.mutationSettlement = options.mutationSettlement;
+		this.safeDetails = buildSafeDetails(withMutationSettlement(safeDetails, options.mutationSettlement), this.category, this.recoveryHint);
 	}
+}
+
+export function markMutationSettlement(error: unknown, settlement: MutationSettlement): IssueMeError {
+	if (error instanceof IssueMeError) {
+		const resolved = resolveMutationSettlement(error.mutationSettlement, settlement);
+		error.mutationSettlement = resolved;
+		error.safeDetails.mutationSettlement = resolved;
+		return error;
+	}
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+		"GitHub accepted the mutation, but IssueMe could not process the response safely.",
+		{ mutationSettlement: settlement },
+		{
+			category: "github_api",
+			mutationSettlement: settlement,
+			recoveryHint: "Do not repeat the mutation blindly; inspect GitHub remote state and synchronize IssueMe before retrying only missing work.",
+		},
+	);
+}
+
+export function mutationSettlementOf(error: unknown): MutationSettlement | undefined {
+	if (error instanceof IssueMeError) return error.mutationSettlement;
+	return undefined;
+}
+
+export function isRemoteMutationSuccessKnown(error: unknown): boolean {
+	return mutationSettlementOf(error) === "remote_success_known";
 }
 
 export class ClosedIssueMutationError extends IssueMeError {
@@ -368,6 +406,7 @@ export interface GitHubApiErrorOptions {
 	rateLimit?: Record<string, unknown>;
 	code?: string;
 	recoveryHint?: string;
+	mutationSettlement?: MutationSettlement;
 }
 
 export class GitHubApiError extends IssueMeError {
@@ -381,6 +420,7 @@ export class GitHubApiError extends IssueMeError {
 			{
 				category: "github_api",
 				recoveryHint: options?.recoveryHint ?? recoveryHintForGitHubApi(options),
+				mutationSettlement: options?.mutationSettlement,
 			},
 		);
 		this.name = "GitHubApiError";
@@ -416,6 +456,24 @@ function recoveryHintForGitHubApi(options: GitHubApiErrorOptions | undefined): s
 	if (options?.status === 404) return "Confirm the repository/issue exists and the token can access it, then rerun or sync.";
 	if (options?.status === 422) return "Adjust the requested issue fields, labels, assignees, or milestone and rerun the tool.";
 	return DEFAULT_RECOVERY_HINTS.github_api;
+}
+
+function withMutationSettlement(
+	details: Record<string, unknown> | undefined,
+	settlement: MutationSettlement | undefined,
+): Record<string, unknown> | undefined {
+	if (settlement === undefined) return details;
+	return { ...details, mutationSettlement: settlement };
+}
+
+function resolveMutationSettlement(
+	current: MutationSettlement | undefined,
+	next: MutationSettlement,
+): MutationSettlement {
+	if (current === "remote_success_known" || next === "remote_success_known") return "remote_success_known";
+	if (current === "indeterminate" || next === "indeterminate") return "indeterminate";
+	if (current === "no_remote_success_known" || next === "no_remote_success_known") return "no_remote_success_known";
+	return "not_started";
 }
 
 function buildSafeDetails(

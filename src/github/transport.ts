@@ -1,5 +1,5 @@
 import { GITHUB_API_BASE_URL, GITHUB_API_VERSION } from "../constants.ts";
-import { GitHubApiError, ISSUEME_ERROR_CODES } from "../errors.ts";
+import { GitHubApiError, ISSUEME_ERROR_CODES, markMutationSettlement, mutationSettlementOf } from "../errors.ts";
 import type { GitHubRepository } from "../types.ts";
 import { redactSecrets } from "../utils/env.ts";
 import { isObject } from "./shared.ts";
@@ -37,9 +37,13 @@ type RequestOptions = {
 	signal?: AbortSignal;
 	alreadyAbsolute?: boolean;
 	validate?: (value: unknown) => boolean;
+	mutation?: boolean;
 };
 
-type PaginationFilterOptions<T> = PaginationOptions & { filter?: (item: T) => boolean };
+type PaginationFilterOptions<T> = PaginationOptions & {
+	filter?: (item: T) => boolean;
+	assertItem?: (item: T, path: string) => void;
+};
 
 export class GitHubTransport {
 	readonly repository: GitHubRepository;
@@ -66,6 +70,7 @@ export class GitHubTransport {
 		variables: Record<string, unknown>,
 		signal?: AbortSignal,
 		mapGraphQLError?: GitHubGraphQLErrorMapper,
+		mutation = false,
 	): Promise<T> {
 		let envelope: GraphQLResponse<T>;
 		try {
@@ -73,11 +78,12 @@ export class GitHubTransport {
 				body: { query, variables, operationName },
 				signal,
 				validate: isObject,
+				mutation,
 			});
 		} catch (error) {
 			if (error instanceof GitHubApiError && error.status === 403) {
 				const mapped = mapGraphQLError?.({ operationName, detail: error.message, status: error.status });
-				if (mapped) throw mapped;
+				if (mapped) throw copyMutationSettlement(error, mapped);
 			}
 			throw error;
 		}
@@ -86,14 +92,19 @@ export class GitHubTransport {
 		if (errors.length > 0) {
 			const safeGraphQLErrorDetails = redactSecrets(formatGraphQLErrors(errors), [this.token, ...collectRequestStringValues(variables)]);
 			const mapped = mapGraphQLError?.({ operationName, detail: safeGraphQLErrorDetails, errors });
-			if (mapped) throw mapped;
-			throw new GitHubApiError(redactSecrets(`GitHub GraphQL API ${operationName} failed: ${safeGraphQLErrorDetails}`, [this.token, ...collectRequestStringValues(variables)]), {
+			if (mapped) throw markGraphQLMutationFailure(mapped, mutation);
+			const error = new GitHubApiError(redactSecrets(`GitHub GraphQL API ${operationName} failed: ${safeGraphQLErrorDetails}`, [this.token, ...collectRequestStringValues(variables)]), {
 				code: ISSUEME_ERROR_CODES.GITHUB_API_ERROR,
 				path: `${GITHUB_API_BASE_URL}/graphql`,
 			});
+			throw markGraphQLMutationFailure(error, mutation);
 		}
 		if (!isObject(envelope.data)) {
-			throw new GitHubApiError("GitHub GraphQL API returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+			throw new GitHubApiError("GitHub GraphQL API returned an unexpected response shape.", {
+				code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+				path: `${GITHUB_API_BASE_URL}/graphql`,
+				mutationSettlement: mutation ? "remote_success_known" : undefined,
+			});
 		}
 		return envelope.data as T;
 	}
@@ -117,6 +128,7 @@ export class GitHubTransport {
 		let nextUrl: string | undefined = this.buildUrl(path, query).toString();
 		while (nextUrl) {
 			const response = await this.fetchPaginationPage<T>(nextUrl, signal);
+			assertPaginationPageItems(response.data, options.assertItem, safePath(new URL(nextUrl)));
 			const next = parseNextLink(response.headers.get("link"));
 			const page = collectFilteredPaginationItems(response.data, values.length, options);
 			values.push(...page.items);
@@ -151,14 +163,14 @@ export class GitHubTransport {
 	): Promise<{ data: T; headers: Headers }> {
 		const url = this.buildRequestUrl(pathOrUrl, options.alreadyAbsolute);
 		this.assertAllowedRequestUrl(url, "GitHub REST API URL");
-		assertGitHubRequestNotAborted(options.signal, url);
+		assertGitHubRequestNotAborted(options.signal, url, options.mutation === true);
 		const body = serializeRequestBody(options.body);
 		const headers = buildGitHubRequestHeaders(url, this.token, this.userAgent, body !== undefined);
 		const response = await this.fetchGitHubResponse(url, method, headers, body, options);
 		const text = await readResponseText(response);
-		if (!response.ok) throw this.buildHttpError(response, text, url, options.body);
-		const data = parseGitHubResponseData(response, text, url);
-		validateGitHubResponseData(data, response.status, url, options.validate);
+		if (!response.ok) throw this.buildHttpError(response, text, url, options.body, options.mutation === true);
+		const data = parseGitHubResponseData(response, text, url, options.mutation === true);
+		validateGitHubResponseData(data, response.status, url, options.validate, options.mutation === true);
 		return { data: data as T, headers: response.headers };
 	}
 
@@ -166,17 +178,18 @@ export class GitHubTransport {
 		try {
 			return await this.fetchFn(url, { method, headers, body, signal: options.signal });
 		} catch (error) {
-			throw gitHubNetworkError(error, options.signal, url, this.token, options.body);
+			throw gitHubNetworkError(error, options.signal, url, this.token, options.body, options.mutation === true);
 		}
 	}
 
-	private buildHttpError(response: Response, text: string, url: URL, requestBody?: unknown): GitHubApiError {
+	private buildHttpError(response: Response, text: string, url: URL, requestBody: unknown, mutation: boolean): GitHubApiError {
 		const rateLimit = readRateLimit(response.headers);
 		return new GitHubApiError(this.formatError(response, text, requestBody), {
 			code: rateLimit.limited ? ISSUEME_ERROR_CODES.GITHUB_RATE_LIMIT : ISSUEME_ERROR_CODES.GITHUB_API_ERROR,
 			status: response.status,
 			path: safePath(url),
 			rateLimit,
+			mutationSettlement: mutation ? "no_remote_success_known" : undefined,
 		});
 	}
 
@@ -246,6 +259,17 @@ export class GitHubTransport {
 	}
 }
 
+function copyMutationSettlement(source: unknown, target: GitHubApiError): GitHubApiError {
+	const settlement = mutationSettlementOf(source);
+	if (settlement) return markMutationSettlement(target, settlement) as GitHubApiError;
+	return target;
+}
+
+function markGraphQLMutationFailure(error: GitHubApiError, mutation: boolean): GitHubApiError {
+	if (!mutation) return error;
+	return markMutationSettlement(error, "no_remote_success_known") as GitHubApiError;
+}
+
 function serializeRequestBody(body: unknown): string | undefined {
 	return body === undefined ? undefined : JSON.stringify(body);
 }
@@ -262,18 +286,29 @@ function buildGitHubRequestHeaders(url: URL, token: string, userAgent: string, h
 	return headers;
 }
 
-function assertGitHubRequestNotAborted(signal: AbortSignal | undefined, url: URL): void {
-	if (signal?.aborted) throw new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
+function assertGitHubRequestNotAborted(signal: AbortSignal | undefined, url: URL, mutation: boolean): void {
+	if (signal?.aborted) {
+		throw new GitHubApiError("GitHub request aborted.", {
+			code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED,
+			path: safePath(url),
+			mutationSettlement: mutation ? "not_started" : undefined,
+		});
+	}
 }
 
-function gitHubNetworkError(error: unknown, signal: AbortSignal | undefined, url: URL, token: string, requestBody: unknown): GitHubApiError {
+function gitHubNetworkError(error: unknown, signal: AbortSignal | undefined, url: URL, token: string, requestBody: unknown, mutation: boolean): GitHubApiError {
 	if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
-		return new GitHubApiError("GitHub request aborted.", { code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED, path: safePath(url) });
+		return new GitHubApiError("GitHub request aborted.", {
+			code: ISSUEME_ERROR_CODES.GITHUB_REQUEST_ABORTED,
+			path: safePath(url),
+			mutationSettlement: mutation ? "indeterminate" : undefined,
+		});
 	}
 	const message = error instanceof Error ? error.message : String(error);
 	return new GitHubApiError(redactSecrets(`GitHub network request failed: ${message}`, [token, ...collectRequestStringValues(requestBody)]), {
 		code: ISSUEME_ERROR_CODES.GITHUB_NETWORK_ERROR,
 		path: safePath(url),
+		mutationSettlement: mutation ? "indeterminate" : undefined,
 	});
 }
 
@@ -281,19 +316,34 @@ async function readResponseText(response: Response): Promise<string> {
 	return response.status === 204 ? "" : await response.text();
 }
 
-function parseGitHubResponseData(response: Response, text: string, url: URL): unknown {
+function parseGitHubResponseData(response: Response, text: string, url: URL, mutation: boolean): unknown {
 	if (!text) return undefined;
 	try {
 		return JSON.parse(text) as unknown;
 	} catch {
-		throw new GitHubApiError("GitHub REST API returned invalid JSON.", { code: ISSUEME_ERROR_CODES.GITHUB_INVALID_JSON, status: response.status, path: safePath(url) });
+		throw new GitHubApiError("GitHub REST API returned invalid JSON.", {
+			code: ISSUEME_ERROR_CODES.GITHUB_INVALID_JSON,
+			status: response.status,
+			path: safePath(url),
+			mutationSettlement: mutation ? "remote_success_known" : undefined,
+		});
 	}
 }
 
-function validateGitHubResponseData(data: unknown, status: number, url: URL, validate: ((value: unknown) => boolean) | undefined): void {
+function validateGitHubResponseData(data: unknown, status: number, url: URL, validate: ((value: unknown) => boolean) | undefined, mutation: boolean): void {
 	if (validate && !validate(data)) {
-		throw new GitHubApiError("GitHub REST API returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, status, path: safePath(url) });
+		throw new GitHubApiError("GitHub REST API returned an unexpected response shape.", {
+			code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+			status,
+			path: safePath(url),
+			mutationSettlement: mutation ? "remote_success_known" : undefined,
+		});
 	}
+}
+
+function assertPaginationPageItems<T>(items: T[], assertItem: ((item: T, path: string) => void) | undefined, path: string): void {
+	if (!assertItem) return;
+	for (const item of items) assertItem(item, path);
 }
 
 function collectFilteredPaginationItems<T>(items: T[], currentCount: number, options: PaginationFilterOptions<T>): { items: T[]; truncated: boolean } {

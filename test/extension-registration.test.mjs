@@ -205,6 +205,23 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.action.enum, ["add_labels", "assign", "set_milestone", "add_to_project", "close"]);
 	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.reason.enum, ["completed", "not_planned"]);
 	assert.equal(pi.tools.get("issueme_bulk_update_issues").parameters.properties.issueNumbers.maxItems, 50);
+	for (const [toolName, field, maxItems] of [
+		["issueme_list_issues", "labels", 25],
+		["issueme_create_issue", "labels", 25],
+		["issueme_create_issue", "assignees", 25],
+		["issueme_create_sub_issue", "labels", 25],
+		["issueme_create_sub_issue", "assignees", 25],
+		["issueme_update_issue", "labels", 25],
+		["issueme_update_issue", "assignees", 25],
+		["issueme_assign_issue", "assignees", 25],
+		["issueme_label_issue", "labels", 25],
+		["issueme_bulk_update_issues", "labels", 25],
+		["issueme_bulk_update_issues", "assignees", 25],
+	]) {
+		const schema = pi.tools.get(toolName).parameters.properties[field];
+		assert.equal(schema.maxItems, maxItems, `${toolName}.${field} must be bounded`);
+		assert.match(schema.description, new RegExp(`Max ${maxItems}`));
+	}
 	assert.equal(pi.tools.get("issueme_update_comment").parameters.properties.issueNumber.type, "integer");
 	assert.equal(pi.tools.get("issueme_update_comment").parameters.properties.commentId.type, "integer");
 	assert.equal(pi.tools.get("issueme_delete_comment").parameters.properties.issueNumber.type, "integer");

@@ -2,12 +2,12 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
+import { ISSUEME_ERROR_CODES, IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } from "../errors.ts";
 import type { GitHubIssueCloseReason } from "../github/client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
-import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, remoteMutationPartialSuccessToolText, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const CloseIssueParams = Type.Object(
 	{
@@ -32,7 +32,18 @@ export function registerCloseIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const reason = normalizeCloseReason(params.reason);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
-				const result = await closeIssueForTool(runtime, params.number, reason, signal);
+				let result: CloseIssueResult;
+				try {
+					result = await closeIssueForTool(runtime, params.number, reason, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to close issue #${params.number}, but IssueMe could not verify the closed issue response.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: closeIssueChangedFields(reason) },
+						"close_issue_response_partial_success",
+					);
+				}
 				try {
 					const removedPaths = await removeClosedIssueCache(runtime, params.number, signal);
 					return closeIssueSuccessToolText(runtime, result, removedPaths);
@@ -58,12 +69,19 @@ async function closeIssueForTool(runtime: IssueMeRuntime, issueNumber: number, r
 	assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "close_issue" });
 	const alreadyClosed = current.state === "closed";
 	const issue = await closeIssueResponse(runtime, current, issueNumber, reason, signal);
+	let issueSummary: ToolIssueSummary;
+	try {
+		issueSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, []));
+	} catch (error) {
+		if (!alreadyClosed) throw markMutationSettlement(error, "remote_success_known");
+		throw error;
+	}
 	return {
 		number: issueNumber,
 		reason,
 		alreadyClosed,
 		issue,
-		issueSummary: issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, issue, [])),
+		issueSummary,
 		changedFields: closeIssueChangedFields(reason),
 	};
 }

@@ -6,6 +6,26 @@ import { GitHubClient } from "../src/github/client.ts";
 
 const repository = { owner: "owner", repo: "repo", fullName: "owner/repo" };
 const token = "ghp_secret_token";
+const REST_DISCOVERY_CASES = [
+	{
+		name: "labels",
+		resultKey: "labels",
+		validItem: { name: "bug" },
+		run: (client) => client.listLabels({ limit: 1 }),
+	},
+	{
+		name: "milestones",
+		resultKey: "milestones",
+		validItem: { number: 1, title: "v1.0", state: "open" },
+		run: (client) => client.listMilestones({ limit: 1 }),
+	},
+	{
+		name: "assignees",
+		resultKey: "assignees",
+		validItem: { login: "octocat" },
+		run: (client) => client.listAssignees({ limit: 1 }),
+	},
+];
 
 function issue(overrides = {}) {
 	return {
@@ -97,6 +117,25 @@ test("GitHub client maps invalid JSON and unexpected response shapes safely", as
 		fetchFn: async () => jsonResponse({ not: "an array" }),
 	});
 	await assert.rejects(() => badShapeClient.listOpenIssues(), /unexpected response shape/);
+});
+
+test("GitHub client rejects malformed REST discovery members before filtering or limiting", async () => {
+	for (const discoveryCase of REST_DISCOVERY_CASES) {
+		for (const payload of [[{}], [discoveryCase.validItem, {}]]) {
+			const malformedClient = new GitHubClient({ repository, token, fetchFn: async () => jsonResponse(payload) });
+			await assert.rejects(
+				() => discoveryCase.run(malformedClient),
+				(error) => error instanceof GitHubApiError
+					&& error.code === "github_response_shape_invalid"
+					&& error.message.includes(`malformed ${discoveryCase.name.slice(0, -1)} collection member`),
+			);
+		}
+
+		const emptyClient = new GitHubClient({ repository, token, fetchFn: async () => jsonResponse([]) });
+		const empty = await discoveryCase.run(emptyClient);
+		assert.deepEqual(empty[discoveryCase.resultKey], []);
+		assert.equal(empty.truncated, false);
+	}
 });
 
 test("GitHub client exposes actionable rate-limit details without leaking token or request body", async () => {

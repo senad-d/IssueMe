@@ -40,6 +40,25 @@ function sampleIssue(overrides = {}) {
 	};
 }
 
+function configWithDisplayPayload(field, payload) {
+	if (field === "issueDirectory") return { issueDirectory: `issues/${payload}spoof` };
+	if (field === "allowedIssueCreator") return { allowedIssueCreator: `octo${payload}cat` };
+	if (field === "defaultLabels") return { defaultLabels: [`bug${payload}spoof`] };
+	if (field === "defaultAssignees") return { defaultAssignees: [`octo${payload}cat`] };
+	if (field === "defaultSkillPath") return { defaultSkillPath: `skills/${payload}spoof/SKILL.md` };
+	throw new Error(`Unsupported config display field: ${field}`);
+}
+
+function assertConfigControlError(error, field) {
+	assert.equal(error?.code, "config_tui_invalid_setting");
+	assert.equal(error?.category, "config");
+	assert.equal(error.safeDetails?.field, field);
+	assert.match(error.message, /one line/);
+	assert.match(error.message, /terminal control characters/);
+	assert.match(error.message, /null bytes/);
+	return true;
+}
+
 test("project .env token values override process environment", async () => {
 	const cwd = await tempProject();
 	await writeFile(join(cwd, ".env"), "GITHUB_TOKEN=from-project\nGH_TOKEN=from-project-gh\n", "utf8");
@@ -257,6 +276,42 @@ test("config loader/saver handles defaults, non-secret settings, validation, and
 		defaultAssignees: [],
 		defaultSkillPath: null,
 	});
+	const boundaryLabels = Array.from({ length: 25 }, (_, index) => `label-${index}`);
+	const boundaryAssignees = Array.from({ length: 25 }, (_, index) => `user-${index}`);
+	assert.equal((await saveIssueMeConfig(cwd, { allowedIssueCreator: "all", defaultLabels: boundaryLabels, defaultAssignees: boundaryAssignees })).defaultLabels.length, 25);
+	for (const [field, values] of [
+		["defaultLabels", Array.from({ length: 26 }, () => "duplicate")],
+		["defaultAssignees", Array.from({ length: 26 }, () => "octocat")],
+	]) {
+		await assert.rejects(
+			() => saveIssueMeConfig(cwd, { allowedIssueCreator: "all", [field]: values }),
+			(error) => error?.code === "config_tui_invalid_setting" && error.safeDetails?.field === field && error.safeDetails?.max === 25,
+		);
+		await writeFile(getIssueMeConfigPath(cwd), `${JSON.stringify({ [field]: values })}\n`, "utf8");
+		await assert.rejects(
+			() => loadIssueMeConfig(cwd),
+			(error) => error?.code === "config_tui_invalid_setting" && error.safeDetails?.field === field && error.safeDetails?.max === 25,
+		);
+	}
+	for (const invalidRoot of [[], null, 42, "not-an-object"]) {
+		await writeFile(getIssueMeConfigPath(cwd), `${JSON.stringify(invalidRoot)}\n`, "utf8");
+		await assert.rejects(() => loadIssueMeConfig(cwd), (error) => {
+			assert.equal(error?.code, "config_root_invalid");
+			assert.equal(error?.category, "config");
+			assert.equal(error.safeDetails?.field, "config");
+			assert.equal(error.message, "IssueMe config root must be a plain JSON object.");
+			return true;
+		});
+		await assert.rejects(() => saveIssueMeConfig(cwd, invalidRoot), (error) => {
+			assert.equal(error?.code, "config_root_invalid");
+			assert.equal(error.safeDetails?.field, "config");
+			return true;
+		});
+	}
+	await assert.rejects(
+		() => saveIssueMeConfig(cwd, new Date(0)),
+		(error) => error?.code === "config_root_invalid" && error.safeDetails?.field === "config",
+	);
 	for (const invalidAllowedIssueCreator of ["bad login", "", null]) {
 		await writeFile(getIssueMeConfigPath(cwd), `${JSON.stringify({ issueDirectory: "issues", allowedIssueCreator: invalidAllowedIssueCreator })}\n`, "utf8");
 		await assert.rejects(() => loadIssueMeConfig(cwd), (error) => {
@@ -282,6 +337,30 @@ test("config loader/saver handles defaults, non-secret settings, validation, and
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultLabels: ["bug\nnext"] }), /one line/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["octocat\0bad"] }), /null bytes/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { defaultAssignees: ["-bad"] }), /valid GitHub usernames/);
+});
+
+test("config load and save reject terminal controls in every user-visible string field", async () => {
+	const cwd = await tempProject();
+	const configPath = getIssueMeConfigPath(cwd);
+	await mkdir(join(cwd, ".pi", "agent"), { recursive: true });
+	const fields = ["issueDirectory", "allowedIssueCreator", "defaultLabels", "defaultAssignees", "defaultSkillPath"];
+	const payloads = [
+		["CSI", "\u001b[2J"],
+		["OSC", "\u001b]0;spoof\u0007"],
+		["BEL", "\u0007"],
+		["C0", "\u0001"],
+		["C1", "\u009b31m"],
+		["newline", "\n"],
+	];
+
+	for (const field of fields) {
+		for (const [name, payload] of payloads) {
+			const input = configWithDisplayPayload(field, payload);
+			await writeFile(configPath, `${JSON.stringify(input)}\n`, "utf8");
+			await assert.rejects(() => loadIssueMeConfig(cwd), (error) => assertConfigControlError(error, field), `${field} should reject ${name} on load`);
+			await assert.rejects(() => saveIssueMeConfig(cwd, input), (error) => assertConfigControlError(error, field), `${field} should reject ${name} on save`);
+		}
+	}
 });
 
 test("issue formatting and store preserve creator metadata while legacy records remain readable", async () => {

@@ -279,6 +279,16 @@ test("runtime list sanitizers and issue body validators normalize edge cases", (
 	assert.throws(() => sanitizeStringList(["bad\0label"], "labels"), (error) => assertIssueMeError(error, "invalid_tool_input"));
 	assert.deepEqual(sanitizeGitHubLoginList([" octocat ", "octocat", "hubot-1"], "assignees"), ["octocat", "hubot-1"]);
 	assert.throws(() => sanitizeGitHubLoginList(["bad_login"], "assignees"), (error) => assertIssueMeError(error, "invalid_tool_input"));
+	assert.equal(sanitizeStringList(Array.from({ length: MAX_TOOL_LABELS }, (_, index) => `label-${index}`), "labels").length, MAX_TOOL_LABELS);
+	assert.throws(
+		() => sanitizeStringList(Array.from({ length: MAX_TOOL_LABELS + 1 }, () => "duplicate"), "labels"),
+		(error) => assertIssueMeError(error, "invalid_tool_input") && error.safeDetails?.max === MAX_TOOL_LABELS,
+	);
+	assert.equal(sanitizeGitHubLoginList(Array.from({ length: MAX_TOOL_ASSIGNEES }, (_, index) => `user-${index}`), "assignees").length, MAX_TOOL_ASSIGNEES);
+	assert.throws(
+		() => sanitizeGitHubLoginList(Array.from({ length: MAX_TOOL_ASSIGNEES + 1 }, () => "octocat"), "assignees"),
+		(error) => assertIssueMeError(error, "invalid_tool_input") && error.safeDetails?.max === MAX_TOOL_ASSIGNEES,
+	);
 	assert.deepEqual(requireNonEmptyStrings(["  docs  "], "labels"), ["docs"]);
 	assert.throws(() => requireNonEmptyStrings(["  "], "labels"), (error) => assertIssueMeError(error, "invalid_tool_input"));
 	assert.deepEqual(requireNonEmptyGitHubLogins(["octocat"], "assignees"), ["octocat"]);

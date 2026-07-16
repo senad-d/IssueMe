@@ -1,14 +1,15 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR } from "../constants.ts";
-import { IssueMeError, isNodeError } from "../errors.ts";
+import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR, MAX_TOOL_ASSIGNEES, MAX_TOOL_LABELS } from "../constants.ts";
+import { ISSUEME_ERROR_CODES, IssueMeError, isNodeError } from "../errors.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { GITHUB_LOGIN_PATTERN, normalizeAllowedIssueCreatorForLoad, normalizeAllowedIssueCreatorForSave } from "../utils/github-login.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
 import { readTrustedTextFile } from "../utils/safe-read.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 import { assertPathInside, assertSafeIssueDirectoryValue, normalizeIssueDirectoryValue, resolveIssueDirectory } from "../utils/slug.ts";
+import { containsTerminalControl } from "../utils/terminal-text.ts";
 
 const SECRET_KEY_PATTERN = /(token|secret|password|credential|api[_-]?key)/i;
 
@@ -82,7 +83,9 @@ function validateLoadedIssueMeConfig(projectRoot: string, input: unknown): Issue
 }
 
 export function normalizeIssueMeConfig(input: unknown, options: { strictAllowedIssueCreator?: boolean } = {}): IssueMeConfig {
-	if (!isObject(input)) return cloneDefaultConfig();
+	assertPlainConfigRoot(input);
+	assertIssueMeConfigCollectionLimits(input);
+	assertConfigDisplayInputSafe(input);
 	const allowedIssueCreator = options.strictAllowedIssueCreator
 		? normalizeAllowedIssueCreatorForSave(input.allowedIssueCreator)
 		: normalizeAllowedIssueCreatorForLoad(input.allowedIssueCreator, { fieldPresent: hasOwn(input, "allowedIssueCreator") });
@@ -93,6 +96,12 @@ export function normalizeIssueMeConfig(input: unknown, options: { strictAllowedI
 		defaultAssignees: normalizeStringArray(input.defaultAssignees, "defaultAssignees"),
 		defaultSkillPath: normalizeNullableString(input.defaultSkillPath),
 	};
+}
+
+export function assertIssueMeConfigCollectionLimits(input: unknown): void {
+	if (!isObject(input)) return;
+	assertConfigCollectionLimit(input.defaultLabels, "defaultLabels", MAX_TOOL_LABELS);
+	assertConfigCollectionLimit(input.defaultAssignees, "defaultAssignees", MAX_TOOL_ASSIGNEES);
 }
 
 export function assertNoSecretLikeKeys(input: unknown, path: string[] = []): void {
@@ -204,12 +213,6 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 		if (typeof item !== "string") continue;
 		const trimmed = item.trim();
 		if (!trimmed) continue;
-		if (trimmed.includes("\0")) {
-			throw new IssueMeError("config_tui_invalid_setting", `${fieldName} must not contain null bytes.`, { field: fieldName });
-		}
-		if (/[\r\n]/.test(trimmed)) {
-			throw new IssueMeError("config_tui_invalid_setting", `${fieldName} entries must fit on one line.`, { field: fieldName });
-		}
 		if (fieldName === "defaultAssignees" && !GITHUB_LOGIN_PATTERN.test(trimmed)) {
 			throw new IssueMeError("config_tui_invalid_setting", "defaultAssignees entries must be valid GitHub usernames.", { field: fieldName });
 		}
@@ -218,8 +221,54 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] {
 	return [...new Set(normalized)];
 }
 
+function assertConfigCollectionLimit(value: unknown, field: string, maxItems: number): void {
+	if (!Array.isArray(value) || value.length <= maxItems) return;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.CONFIG_TUI_INVALID_SETTING,
+		`${field} can include at most ${maxItems} entries.`,
+		{ field, max: maxItems },
+	);
+}
+
+function assertConfigDisplayInputSafe(input: Record<string, unknown>): void {
+	assertConfigDisplayStringSafe(input.issueDirectory, "issueDirectory", "Issue directory");
+	assertConfigDisplayStringSafe(input.allowedIssueCreator, "allowedIssueCreator", "Allowed issue creator");
+	assertConfigDisplayStringArraySafe(input.defaultLabels, "defaultLabels", "Default label entries");
+	assertConfigDisplayStringArraySafe(input.defaultAssignees, "defaultAssignees", "Default assignee entries");
+	assertConfigDisplayStringSafe(input.defaultSkillPath, "defaultSkillPath", "Default skill path");
+}
+
+function assertConfigDisplayStringArraySafe(value: unknown, field: string, label: string): void {
+	if (!Array.isArray(value)) return;
+	for (const item of value) assertConfigDisplayStringSafe(item, field, label);
+}
+
+function assertConfigDisplayStringSafe(value: unknown, field: string, label: string): void {
+	if (typeof value !== "string" || !containsTerminalControl(value)) return;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.CONFIG_TUI_INVALID_SETTING,
+		`${label} must fit on one line and must not contain terminal control characters, including null bytes.`,
+		{ field },
+	);
+}
+
+function assertPlainConfigRoot(input: unknown): asserts input is Record<string, unknown> {
+	if (isPlainObject(input)) return;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.CONFIG_ROOT_INVALID,
+		"IssueMe config root must be a plain JSON object.",
+		{ field: "config" },
+	);
+}
+
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
 	return Object.hasOwn(value, key);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	if (!isObject(value)) return false;
+	const prototype = Object.getPrototypeOf(value) as unknown;
+	return prototype === Object.prototype || prototype === null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
