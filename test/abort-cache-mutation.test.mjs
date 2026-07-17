@@ -159,6 +159,14 @@ const abortScenarios = [
 		mutation: { method: "PATCH", path: "/repos/owner/repo/issues/7" },
 		mutationResponse: () => githubIssue(7, "Cached Close", { state: "closed", closed_at: "2026-06-27T00:03:00Z" }),
 	},
+	{
+		name: "delete issue",
+		tool: "issueme_delete_issue",
+		params: { number: 8, confirmDelete: true },
+		initialRecord: issueRecord(8, "Cached Delete"),
+		mutation: { method: "POST", path: "/graphql" },
+		mutationResponse: () => ({ data: { deleteIssue: { clientMutationId: null } } }),
+	},
 ];
 
 for (const scenario of abortScenarios) {

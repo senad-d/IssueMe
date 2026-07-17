@@ -3,6 +3,7 @@ import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeE
 import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ProjectV2OwnerType, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { isValidGitHubLogin } from "../utils/github-login.ts";
 import { assertCollectionItemLimit } from "../utils/validation.ts";
+import { buildDeleteIssueMutation, normalizeDeleteIssueMutationResult, requireDeletableIssueNodeId } from "./delete-issue-client.ts";
 import { buildIssueDevelopmentLinksQuery, normalizeIssueDevelopmentLinkLimit, normalizeIssueDevelopmentLinksResult } from "./development-links-client.ts";
 import { mapGitHubGraphQLError } from "./graphql-errors.ts";
 import { assertGitHubAssigneeDiscoveryResponse, assertGitHubLabelDiscoveryResponse, assertGitHubMilestoneDiscoveryResponse, assigneeMatchesFilters, buildAssigneeListQuery, buildIssueListQuery, buildIssueSearchRequestQuery, buildLabelListQuery, buildMilestoneListQuery, commentBelongsToIssue, isIssueSearchResponse, isPullRequestIssueResponse, issueResponseToSafeSummary, labelMatchesFilters, normalizeIssueSearchResponse, normalizeIssueUpdateInput, normalizeOptionalTextFilter, normalizePaginationLimit, normalizePositiveCommentId, normalizePositiveIssueNumber, normalizePositiveMilestoneNumber } from "./issues-client.ts";
@@ -548,6 +549,25 @@ export class GitHubClient {
 			validate: isObject,
 			mutation: true,
 		});
+	}
+
+	async deleteIssue(issueNumber: number, signal?: AbortSignal): Promise<GitHubIssueResponse> {
+		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
+		const issue = await this.getIssue(normalizedIssueNumber, signal);
+		await this.deleteIssueByIssueResponse(issue, signal);
+		return issue;
+	}
+
+	async deleteIssueByIssueResponse(issue: GitHubIssueResponse, signal?: AbortSignal): Promise<void> {
+		const issueId = requireDeletableIssueNodeId(issue);
+		const data = await this.graphqlRequest<Record<string, unknown>>(
+			"IssueMeDeleteIssue",
+			buildDeleteIssueMutation(),
+			{ issueId },
+			signal,
+			true,
+		);
+		normalizeDeleteIssueMutationResult(data);
 	}
 
 	async addSubIssue(parentNumber: number, childNumber: number, signal?: AbortSignal): Promise<NativeSubIssueMutationResult> {

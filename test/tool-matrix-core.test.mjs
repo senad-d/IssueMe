@@ -29,6 +29,7 @@ const CORE_TOOL_NAMES = [
 	"issueme_label_issue",
 	"issueme_reopen_issue",
 	"issueme_close_issue",
+	"issueme_delete_issue",
 ];
 
 const MUTATION_METHODS = new Map([
@@ -41,6 +42,7 @@ const MUTATION_METHODS = new Map([
 	["issueme_label_issue", "addLabels"],
 	["issueme_close_issue", "closeIssue"],
 	["issueme_reopen_issue", "reopenIssue"],
+	["issueme_delete_issue", "deleteIssueByIssueResponse"],
 ]);
 
 async function tempProject(prefix = "issueme-tool-matrix-core-") {
@@ -255,6 +257,11 @@ function createCoreClient(options = {}) {
 		async reopenIssue(number) {
 			recordCall(state, "reopenIssue", { number });
 			return updateStoredIssue(state, number, { state: "open", closed_at: null });
+		},
+		async deleteIssueByIssueResponse(issue) {
+			recordCall(state, "deleteIssueByIssueResponse", { number: issue.number });
+			state.issues.delete(issue.number);
+			state.comments.delete(issue.number);
 		},
 	};
 	return client;
@@ -483,6 +490,16 @@ function successCases() {
 				assert.deepEqual(result.details.removedPaths, ["issues/1-matrix-target.json"]);
 			},
 		},
+		{
+			name: "issueme_delete_issue",
+			params: { number: 1, confirmDelete: true },
+			async setup(projectRoot) { await writeLocalIssue(projectRoot, 1, "Matrix Target"); },
+			expected: { cacheUpdated: true, status: "issue_deleted" },
+			assertResult(result) {
+				assert.deepEqual(result.details.changedFields, ["deleted"]);
+				assert.deepEqual(result.details.removedPaths, ["issues/1-matrix-target.json"]);
+			},
+		},
 	];
 }
 
@@ -537,6 +554,7 @@ function validationCases() {
 		{ name: "issueme_label_issue", params: { number: 1, action: "remove", labels: [] }, code: "invalid_tool_input" },
 		{ name: "issueme_reopen_issue", params: { number: 2, comment: " " }, code: "invalid_tool_input" },
 		{ name: "issueme_close_issue", params: { number: 1, reason: "duplicate" }, code: "invalid_tool_input" },
+		{ name: "issueme_delete_issue", params: { number: 1, confirmDelete: false }, code: "invalid_tool_input" },
 	];
 }
 
@@ -565,6 +583,7 @@ function remoteFailureCases() {
 		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] }, failMethod: "addLabels" },
 		{ name: "issueme_reopen_issue", params: { number: 2 }, failMethod: "reopenIssue" },
 		{ name: "issueme_close_issue", params: { number: 1 }, failMethod: "closeIssue" },
+		{ name: "issueme_delete_issue", params: { number: 1, confirmDelete: true }, failMethod: "deleteIssueByIssueResponse" },
 	];
 }
 
@@ -601,6 +620,7 @@ function cachePartialCases() {
 		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] }, status: "partial_success" },
 		{ name: "issueme_reopen_issue", params: { number: 2 }, status: "reopened_partial_success" },
 		{ name: "issueme_close_issue", params: { number: 1 }, status: "closed_now_partial_success" },
+		{ name: "issueme_delete_issue", params: { number: 1, confirmDelete: true }, status: "issue_deleted_partial_success" },
 	];
 }
 
@@ -635,6 +655,7 @@ function creatorGuardCases() {
 		{ name: "issueme_assign_issue", params: { number: 1, action: "add", assignees: ["hubot"] }, expectedGate: "ensureIssueOpen" },
 		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] }, expectedGate: "ensureIssueOpen" },
 		{ name: "issueme_close_issue", params: { number: 1 }, expectedGate: "getIssue" },
+		{ name: "issueme_delete_issue", params: { number: 1, confirmDelete: true }, expectedGate: "getIssue" },
 		{ name: "issueme_reopen_issue", params: { number: 2 }, expectedGate: "getIssue" },
 	];
 }

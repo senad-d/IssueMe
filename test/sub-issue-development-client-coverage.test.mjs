@@ -106,11 +106,15 @@ function assertGitHubShapeError(fn) {
 }
 
 test("GraphQL error mapper handles forbidden status for all IssueMe GraphQL domains", () => {
+	const issueDelete = mapGitHubGraphQLError({ operationName: "IssueMeDeleteIssue", detail: "blocked", status: 403 });
 	const subIssue = mapGitHubGraphQLError({ operationName: "IssueMeListSubIssues", detail: "blocked", status: 403 });
 	const project = mapGitHubGraphQLError({ operationName: "IssueMeUpdateProjectV2ItemFieldValue", detail: "blocked", status: 403 });
 	const development = mapGitHubGraphQLError({ operationName: "IssueMeListIssueDevelopmentLinks", detail: "blocked", status: 403 });
 	const unknown = mapGitHubGraphQLError({ operationName: "OtherOperation", detail: "blocked", status: 403 });
 
+	assert.ok(issueDelete instanceof GitHubApiError);
+	assert.equal(issueDelete.code, "github_issue_delete_forbidden");
+	assert.match(issueDelete.message, /administrator permission/);
 	assert.ok(subIssue instanceof GitHubApiError);
 	assert.equal(subIssue.code, "github_sub_issue_forbidden");
 	assert.match(subIssue.message, /ListSubIssues was forbidden/);

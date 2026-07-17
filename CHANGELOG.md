@@ -5,12 +5,12 @@
 ### Added
 
 - Implemented `/issueme`, `/issueme info`/`help` aliases, and `/issueme start <skill-path>`.
-- Implemented twenty-eight IssueMe tools for listing/searching, focused refresh, syncing, creating, reading, updating, adding/editing/deleting comments, assigning, labeling, assignee discovery, repository label discovery/management, milestone discovery/management, linked development inspection, GitHub Projects v2 discovery/item management, reopening, closing with reasons, explicit-list bulk updates, and inspecting/linking/reordering native GitHub sub-issues.
+- Implemented twenty-nine IssueMe tools for listing/searching, focused refresh, syncing, creating, reading, updating, adding/editing/deleting comments, assigning, labeling, assignee discovery, repository label discovery/management, milestone discovery/management, linked development inspection, GitHub Projects v2 discovery/item management, reopening, closing with reasons, confirmed permanent issue deletion, explicit-list bulk updates, and inspecting/linking/reordering native GitHub sub-issues.
 - Added approved configuration TUI renderer with wide, narrow, tiny, search, edit, validation, and visual snapshot coverage.
 - Added GitHub REST/GraphQL client support with token redaction, pagination/request boundary checks, abort support, rate-limit metadata, response-shape validation, native sub-issue inspection/mutations, and closed-issue mutation guards.
 - Added project-root discovery, `.git` file/worktree repository resolution, project `.env` token precedence, non-secret config persistence, slug/path safety, and local issue JSON storage.
 - Added tests for helpers, GitHub REST behavior, token safety, repository parsing, path safety, config validation, command parsing, TUI rendering, extension registration, schema compatibility, package contents, and local issue files.
-- Added smoke discovery observability for `/issueme` and all twenty-eight `issueme_*` tool registrations without live GitHub calls.
+- Added smoke discovery observability for `/issueme` and all twenty-nine `issueme_*` tool registrations without live GitHub calls.
 
 ### Changed
 
@@ -21,8 +21,9 @@
 - `issueme_update_issue` uses `milestoneNumber` and `clearMilestone` instead of nullable union schema fields.
 - Local issue cache operations are repository-aware, report invalid files safely, preserve `synced_at` when content is unchanged, distinguish renamed files during sync, and filter `issueme_get_issue` local reads to the resolved current repository.
 - `issueme_get_issue` now documents and reports focused any-state refresh behavior, including cache actions and closed-issue stale-file removal; missing explicit local cache paths report the standard not-found error instead of leaking filesystem errors.
-- `issueme_reopen_issue` is the only intentional closed-issue mutation path; it reopens closed issues, optionally comments with a reopen reason, refreshes local cache, and treats already-open issues as no-ops.
+- `issueme_reopen_issue` is the controlled state-preserving closed-issue mutation path; it reopens closed issues, optionally comments with a reopen reason, refreshes local cache, and treats already-open issues as no-ops. Confirmed permanent deletion is the separate irreversible exception.
 - `issueme_close_issue` supports optional GitHub close reasons (`completed` or `not_planned`) while remaining idempotent for already-closed issues and sending no close mutation payload in that case.
+- `issueme_delete_issue` permanently deletes one exact open or closed issue through GitHub GraphQL after explicit confirmation, creator-scope and pull-request preflight, then removes matching local cache files; repository administrator permission is required.
 - `issueme_update_comment` and `issueme_delete_comment` edit/delete existing comments only after verifying the parent issue is open and the comment belongs to that issue, then refresh the parent issue cache.
 - `issueme_label_issue` reports partial success when a multi-label removal fails after an earlier removal was acknowledged.
 - `issueme_update_project_item` rejects impossible Projects v2 date values instead of sending malformed `YYYY-MM-DD` dates to GitHub.

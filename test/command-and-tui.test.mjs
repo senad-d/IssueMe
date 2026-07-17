@@ -484,6 +484,7 @@ test("IssueMe tools require project trust before project-local reads", async () 
 		issueme_label_issue: { number: 1, action: "add", labels: ["bug"] },
 		issueme_reopen_issue: { number: 1 },
 		issueme_close_issue: { number: 1 },
+		issueme_delete_issue: { number: 1, confirmDelete: true },
 		issueme_bulk_update_issues: { issueNumbers: [1], action: "add_labels", labels: ["bug"] },
 	};
 	for (const [name, params] of Object.entries(paramsByTool)) {

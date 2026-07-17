@@ -10,6 +10,7 @@ export function mapGitHubGraphQLError(context: GitHubGraphQLErrorContext): GitHu
 
 function mapForbiddenGraphQLStatusError(context: GitHubGraphQLErrorContext): GitHubApiError | undefined {
 	const operationName = context.operationName;
+	if (isIssueDeleteOperation(operationName)) return issueDeletePermissionError(context.detail);
 	if (isSubIssueOperation(operationName)) return subIssuePermissionError(operationName, context.detail);
 	if (isProjectV2Operation(operationName)) return projectV2PermissionError(operationName, context.detail);
 	if (isDevelopmentLinkOperation(operationName)) return developmentLinksPermissionError(context.detail);
@@ -18,9 +19,16 @@ function mapForbiddenGraphQLStatusError(context: GitHubGraphQLErrorContext): Git
 
 function mapGraphQLErrorDetails(context: GitHubGraphQLErrorContext, errors: unknown[]): GitHubApiError | undefined {
 	const operationName = context.operationName;
+	if (isIssueDeleteOperation(operationName)) return mapIssueDeleteGraphQLError(context.detail, errors);
 	if (isSubIssueOperation(operationName)) return mapSubIssueGraphQLError(operationName, context.detail, errors);
 	if (isProjectV2Operation(operationName)) return mapProjectV2GraphQLError(operationName, context.detail, errors);
 	if (isDevelopmentLinkOperation(operationName)) return mapDevelopmentLinkGraphQLError(context.detail, errors);
+	return undefined;
+}
+
+function mapIssueDeleteGraphQLError(detail: string, errors: unknown[]): GitHubApiError | undefined {
+	if (errors.some(isForbiddenGraphQLError)) return issueDeletePermissionError(detail);
+	if (errors.some(isUnsupportedIssueDeleteGraphQLError)) return issueDeleteUnsupportedError(detail);
 	return undefined;
 }
 
@@ -39,6 +47,10 @@ function mapDevelopmentLinkGraphQLError(detail: string, errors: unknown[]): GitH
 	if (errors.some(isForbiddenGraphQLError)) return developmentLinksPermissionError(detail);
 	if (errors.some(isUnsupportedDevelopmentLinksGraphQLError)) return developmentLinksUnsupportedError(detail);
 	return undefined;
+}
+
+function isIssueDeleteOperation(operationName: string): boolean {
+	return operationName === "IssueMeDeleteIssue";
 }
 
 function isSubIssueOperation(operationName: string): boolean {
@@ -60,6 +72,29 @@ function isProjectV2Operation(operationName: string): boolean {
 
 function isDevelopmentLinkOperation(operationName: string): boolean {
 	return operationName === "IssueMeListIssueDevelopmentLinks";
+}
+
+function issueDeletePermissionError(detail: string): GitHubApiError {
+	return new GitHubApiError(
+		`GitHub GraphQL issue deletion was forbidden. Permanent issue deletion requires repository administrator permission and issue write access. GitHub detail: ${detail}`,
+		{
+			code: ISSUEME_ERROR_CODES.GITHUB_ISSUE_DELETE_FORBIDDEN,
+			status: 403,
+			path: `${GITHUB_API_BASE_URL}/graphql`,
+			recoveryHint: "Use a token user with repository administrator permission and issue write access, then explicitly confirm the exact issue deletion again.",
+		},
+	);
+}
+
+function issueDeleteUnsupportedError(detail: string): GitHubApiError {
+	return new GitHubApiError(
+		`GitHub GraphQL issue deletion is unavailable or unsupported for this repository/API. GitHub detail: ${detail}`,
+		{
+			code: ISSUEME_ERROR_CODES.GITHUB_ISSUE_DELETE_UNSUPPORTED,
+			path: `${GITHUB_API_BASE_URL}/graphql`,
+			recoveryHint: "Use a GitHub environment that supports the GraphQL deleteIssue mutation, or ask a repository administrator to delete the issue in GitHub's UI.",
+		},
+	);
 }
 
 function subIssueOperationActionName(operationName: string): string {
@@ -148,6 +183,17 @@ function isForbiddenGraphQLError(error: unknown): boolean {
 	const code = typeof extensions?.code === "string" ? extensions.code : undefined;
 	const message = typeof error.message === "string" ? error.message : "";
 	return type === "FORBIDDEN" || code === "FORBIDDEN" || /forbidden|resource not accessible/i.test(message);
+}
+
+function isUnsupportedIssueDeleteGraphQLError(error: unknown): boolean {
+	if (!isObject(error)) return false;
+	const type = typeof error.type === "string" ? error.type : undefined;
+	const extensions = isObject(error.extensions) ? error.extensions : undefined;
+	const code = typeof extensions?.code === "string" ? extensions.code : undefined;
+	const message = typeof error.message === "string" ? error.message : "";
+	return type === "undefinedField"
+		|| code === "undefinedField"
+		|| /deleteIssue/i.test(message) && /doesn'?t exist|undefined|unsupported|not supported|not available/i.test(message);
 }
 
 function isUnsupportedSubIssueGraphQLError(error: unknown): boolean {

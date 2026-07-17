@@ -43,6 +43,7 @@ description: Manage this repository's GitHub issues with IssueMe. Use when synci
 - Use `issueme_manage_milestone` only when the user explicitly wants repository milestone planning metadata changed.
 - Do not update, comment on, label, assign, close, bulk-update, change project items for, or change native sub-issue relationships for closed issues.
 - Use `issueme_reopen_issue` only when the user explicitly wants a closed issue reopened.
+- Use `issueme_delete_issue` only for one exact mistakenly created issue after explicit confirmation and an irreversibility warning; prefer closing when repository history should remain.
 - Do not create body-only `blocked by`, `depends on`, or `tracked by` text references as if they were native dependencies.
 - Prefer local `issues/*.json` files for reading full bodies/comments after sync.
 - Close issues only when requested; use close reason `completed` for verified finished work and `not_planned` only when work is explicitly declined, obsolete, or duplicate.
@@ -155,7 +156,7 @@ Use issueme_reorder_sub_issues with parentNumber 42 and orderedChildNumbers [81,
 
 If GitHub returns a permission or unsupported-feature error for native sub-issue GraphQL operations, IssueMe reports it and does not create body-only parent references or body-only ordering fallbacks.
 
-### Close, reopen, and bulk update
+### Close, reopen, delete, and bulk update
 
 ```text
 Use issueme_close_issue with number 123 and reason "completed" after the fix is verified. Use reason "not_planned" only when the user explicitly declines or de-scopes the work.
@@ -164,6 +165,12 @@ Use issueme_close_issue with number 123 and reason "completed" after the fix is 
 ```text
 Use issueme_reopen_issue with number 123 and comment "Reopening because the bug still reproduces on 1.2.3." only after the user explicitly requests reopening.
 ```
+
+```text
+Warn that permanent deletion is irreversible, confirm exact issue #123, then use issueme_delete_issue with number 123 and confirmDelete true only when the issue was created by mistake.
+```
+
+Permanent deletion accepts open or closed issues, refuses pull request numbers, requires repository administrator permission, and removes the local cache after GitHub confirms deletion. Prefer closing unless the issue truly should disappear from repository history.
 
 ```text
 Use issueme_bulk_update_issues with issueNumbers [101, 102, 103], action "add_labels", labels ["triage"], and leave continueOnError omitted so the run stops if any issue fails.

@@ -150,7 +150,7 @@ export function nativeSubIssueToSafeSummary(repository: string, issue: NativeSub
 
 export function requireIssueNodeId(issue: GitHubIssueResponse, label: string): string {
 	if (typeof issue.node_id === "string" && issue.node_id.trim()) return issue.node_id;
-	throw new GitHubApiError(`GitHub ${label} response did not include node_id required for native sub-issue GraphQL mutations.`, {
+	throw new GitHubApiError(`GitHub ${label} response did not include node_id required for the GraphQL mutation.`, {
 		code: ISSUEME_ERROR_CODES.GITHUB_ISSUE_SHAPE_INVALID,
 		recoveryHint: "Retry after refreshing the issue from GitHub; if node_id is still absent, update IssueMe or verify GitHub issue API compatibility.",
 	});

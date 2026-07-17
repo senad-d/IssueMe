@@ -41,7 +41,7 @@ What the smoke checks cover:
 
 | Script | Purpose |
 | --- | --- |
-| `smoke:discover` | Verifies `/issueme` through pi RPC command discovery and verifies all twenty-eight `issueme_*` tool registrations through a local registration probe. |
+| `smoke:discover` | Verifies `/issueme` through pi RPC command discovery and verifies all twenty-nine `issueme_*` tool registrations through a local registration probe. |
 | `smoke:packaged` | Packs to a temporary directory, installs the tarball in a production-style project, and verifies the packed package registers `/issueme` and the tools. |
 | `smoke:handlers` | Safely invokes checkout and packed-package command/tool handler paths with temporary directories, scrubbed IssueMe environment variables, and mocked GitHub fetches. |
 | `smoke:pi-lifecycle` | Drives real pi RPC `/issueme info`, `/issueme`, and `/issueme start` command paths in an offline temporary trusted project. |

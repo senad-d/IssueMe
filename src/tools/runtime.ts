@@ -32,7 +32,7 @@ import { assertCollectionItemLimit } from "../utils/validation.ts";
 import { resolveGitHubToken } from "../utils/env.ts";
 import { resolveIssueMeProjectRoot } from "../utils/project-root.ts";
 
-export const ISSUEME_SHARED_PROMPT_GUIDELINE = "IssueMe shared for issueme_sync_issues and all issueme_* tools: current repository is implicit; issue means GitHub issue; cache means local IssueMe JSON; list/discovery tools are read-only unless sync/refresh; existing-issue mutations require open issues except issueme_reopen_issue.";
+export const ISSUEME_SHARED_PROMPT_GUIDELINE = "IssueMe shared for issueme_sync_issues and all issueme_* tools: current repository is implicit; issue means GitHub issue; cache means local IssueMe JSON; list/discovery tools are read-only unless sync/refresh; existing-issue mutations require open issues except explicit reopen or permanent deletion.";
 
 export function issueMeResultPolicyPromptGuideline(toolName: string): string {
 	return `${toolName}: check details.result, details.status, details.needsSync; partial_success/error may not throw.`;

@@ -31,6 +31,7 @@ const expectedDescriptions = new Map([
 	["issueme_label_issue", "Add, remove, or set issue labels."],
 	["issueme_reopen_issue", "Reopen closed issue, optionally with comment."],
 	["issueme_close_issue", "Close open issue and remove local cache."],
+	["issueme_delete_issue", "Permanently delete one GitHub issue."],
 	["issueme_bulk_update_issues", "Apply one safe mutation to explicit issue numbers."],
 ]);
 
@@ -53,7 +54,8 @@ const firstLiteApproxTokens = {
 };
 
 const maxCombinedApproxTokens = Math.floor(baselineApproxTokens.combined * 0.8);
-const maxLiteRegressionApproxTokens = Math.ceil(firstLiteApproxTokens.combined * 1.5);
+const firstLiteToolCount = 28;
+const maxLiteRegressionApproxTokens = Math.ceil(firstLiteApproxTokens.combined * 1.5 * (expectedDescriptions.size / firstLiteToolCount));
 const maxTopDescriptionWords = 250;
 
 function fakePi() {
@@ -121,7 +123,7 @@ test("IssueMe shared prompt preamble is centralized", () => {
 	assert.equal(shared.length, 1);
 	assert.match(shared[0], /issue means GitHub issue/);
 	assert.match(shared[0], /cache means local IssueMe JSON/);
-	assert.match(shared[0], /existing-issue mutations require open issues except issueme_reopen_issue/);
+	assert.match(shared[0], /existing-issue mutations require open issues except explicit reopen or permanent deletion/);
 });
 
 test("IssueMe tool schema prompt stays under budget", () => {

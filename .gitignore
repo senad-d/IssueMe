@@ -36,3 +36,5 @@ temp/
 
 !.pi/skills/**
 !.pi/issues/**
+
+.orchestrateme

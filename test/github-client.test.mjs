@@ -297,6 +297,7 @@ test("GitHub client rejects unsafe numeric identifiers before request constructi
 		["removeLabel", (client, value) => client.removeLabel(value, "bug"), "issueNumber"],
 		["closeIssue", (client, value) => client.closeIssue(value), "issueNumber"],
 		["reopenIssue", (client, value) => client.reopenIssue(value), "issueNumber"],
+		["deleteIssue", (client, value) => client.deleteIssue(value), "issueNumber"],
 		["addSubIssue parent", (client, value) => client.addSubIssue(value, 2), "parentNumber"],
 		["addSubIssue child", (client, value) => client.addSubIssue(1, value), "childNumber"],
 		["removeSubIssue child", (client, value) => client.removeSubIssue(1, value), "childNumber"],
@@ -389,6 +390,32 @@ test("mutating methods guard immediately before mutation", async () => {
 	await client.updateIssue(1, { title: "New" });
 	assert.deepEqual(calls.map((call) => call.method), ["GET", "PATCH"]);
 	assert.equal(JSON.parse(calls[1].body).title, "New");
+});
+
+test("GitHub client permanently deletes issues through GraphQL deleteIssue", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			const path = new URL(url.toString()).pathname;
+			const body = init.body === undefined ? undefined : JSON.parse(init.body);
+			calls.push({ path, method: init.method, body });
+			if (path === "/repos/owner/repo/issues/3") return jsonResponse(issue({ number: 3, node_id: "I_3", title: "Delete target" }));
+			if (path === "/graphql") return jsonResponse({ data: { deleteIssue: { clientMutationId: null } } });
+			throw new Error(`Unexpected request ${init.method} ${path}`);
+		},
+	});
+
+	const deleted = await client.deleteIssue(3);
+
+	assert.equal(deleted.number, 3);
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/3",
+		"POST /graphql",
+	]);
+	assert.equal(calls[1].body.operationName, "IssueMeDeleteIssue");
+	assert.deepEqual(calls[1].body.variables, { issueId: "I_3" });
 });
 
 test("GitHub client links native sub-issues with GraphQL addSubIssue", async () => {

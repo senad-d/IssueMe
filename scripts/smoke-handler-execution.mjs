@@ -59,6 +59,7 @@ const toolSmokeScenarios = [
   { name: "issueme_label_issue", params: { number: 10, action: "add", labels: ["bug"] } },
   { name: "issueme_reopen_issue", params: { number: 13, comment: "Reopening for smoke verification." } },
   { name: "issueme_close_issue", params: { number: 14, reason: "completed" } },
+  { name: "issueme_delete_issue", params: { number: 16, confirmDelete: true } },
   { name: "issueme_bulk_update_issues", params: { issueNumbers: [15], action: "add_labels", labels: ["ready"] } },
 ];
 
@@ -236,6 +237,7 @@ function createMockGitHubClient() {
     [13, githubIssue(13, "Closed issue to reopen", { state: "closed", closed_at: "2026-06-27T00:05:00Z" })],
     [14, githubIssue(14, "Issue to close")],
     [15, githubIssue(15, "Bulk target")],
+    [16, githubIssue(16, "Issue to delete")],
   ]);
   const project = {
     id: "PVT_repo_1",
@@ -528,6 +530,12 @@ function createMockGitHubClient() {
       record("reopenIssue", issueNumber);
       const issue = getIssueOrThrow(issueNumber);
       return setIssue(issueWith(issue, { state: "open", closed_at: null }));
+    },
+    async deleteIssueByIssueResponse(issue) {
+      record("deleteIssueByIssueResponse", issue.number);
+      getIssueOrThrow(issue.number);
+      issues.delete(issue.number);
+      comments.delete(issue.number);
     },
     async addSubIssueByIssueResponses(parentIssue, childIssue) {
       record("addSubIssueByIssueResponses", `${parentIssue.number}/${childIssue.number}`);

@@ -26,6 +26,7 @@ export const ISSUEME_TOOL_NAMES = [
 	"issueme_label_issue",
 	"issueme_reopen_issue",
 	"issueme_close_issue",
+	"issueme_delete_issue",
 	"issueme_bulk_update_issues",
 ] as const;
 

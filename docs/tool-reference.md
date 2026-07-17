@@ -1,6 +1,6 @@
 # IssueMe Tool Reference
 
-IssueMe registers twenty-eight `issueme_*` tools. All tools require a trusted project before using project-local IssueMe state.
+IssueMe registers twenty-nine `issueme_*` tools. All tools require a trusted project before using project-local IssueMe state.
 
 ## Result and failure signaling
 
@@ -44,8 +44,9 @@ Discovery tools do not refresh or write local cache files except `issueme_list_s
 | `issueme_label_issue` | Add, remove, or set labels on an open issue. Add/set require labels to already exist in repository taxonomy. |
 | `issueme_reopen_issue` | Reopen a closed issue, optionally post a reopen comment, and refresh/write its local JSON file. Already-open issues are idempotent no-ops. |
 | `issueme_close_issue` | Close an open issue, optionally set close reason `completed` or `not_planned`, and remove its local JSON file. Already-closed issues are reported as already closed and are not mutated again. |
+| `issueme_delete_issue` | Permanently delete one exact open or closed GitHub issue through GraphQL and remove its local JSON file. Requires explicit irreversible-delete intent, `confirmDelete: true`, and repository administrator permission; pull request numbers are refused. |
 
-Closed issues are not mutated again except through `issueme_reopen_issue`.
+Closed issues are not mutated again except through explicit `issueme_reopen_issue` or confirmed `issueme_delete_issue` operations.
 
 ## Repository taxonomy tools
 
@@ -103,6 +104,14 @@ Use issueme_get_issue with number 123 and refresh true to update local cache for
 ```text
 Use issueme_update_comment with issueNumber 123, commentId 456789, and body "Corrected progress note...".
 ```
+
+### Permanent issue deletion
+
+```text
+After warning that deletion is irreversible and confirming exact issue #123, use issueme_delete_issue with number 123 and confirmDelete true.
+```
+
+Use `issueme_close_issue` instead when the issue should remain in repository history. Deletion requires repository administrator permission and cannot target pull requests.
 
 ### Projects v2 status update
 

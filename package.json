@@ -1,6 +1,6 @@
 {
   "name": "@senad-d/issueme",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "Agent-friendly GitHub issue management layer for Pi using GitHub APIs and local issue files.",
   "license": "MIT",

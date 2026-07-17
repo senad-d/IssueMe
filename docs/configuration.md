@@ -7,7 +7,7 @@ This guide covers non-secret project config, GitHub token resolution, project tr
 - pi with Node.js 22.19.0 or newer.
 - A trusted project checkout.
 - `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access. Copy `.env.example` to `.env` for safe local placeholders.
-- Additional GitHub permissions/features for Projects v2, native sub-issues, and linked-development GraphQL inspection when those tools are used.
+- Additional GitHub permissions/features for Projects v2, native sub-issues, linked-development GraphQL inspection, and permanent issue deletion when those tools are used. `issueme_delete_issue` requires repository administrator permission.
 
 ## Config file
 
@@ -137,7 +137,7 @@ IssueMe sends a safe `User-Agent` and validates pagination/request URLs before f
 
 REST calls are constrained to the resolved repository path. Issue text search may use GitHub `/search/issues` only with `repo:<owner>/<repo> is:issue` enforced, pull requests excluded, and configured creator scope applied. Label, milestone, assignee, issue, and comment operations use current-repository endpoints.
 
-Native sub-issue inspection, mutations, and reordering use GitHub GraphQL with the `sub_issues` feature header. Linked-development inspection also uses GraphQL issue timeline data and returns only bounded PR/commit/reference metadata; it does not fetch PR bodies or guess from issue body text.
+Permanent issue deletion uses a current-repository REST identity/creator preflight followed by GitHub GraphQL `deleteIssue`; it requires one exact issue number, `confirmDelete: true`, a non-pull-request target, and repository administrator permission. Native sub-issue inspection, mutations, and reordering use GitHub GraphQL with the `sub_issues` feature header. Linked-development inspection also uses GraphQL issue timeline data and returns only bounded PR/commit/reference metadata; it does not fetch PR bodies or guess from issue body text.
 
 Projects v2 discovery and item management use GitHub GraphQL for repository, organization, or user project owner scopes. Item mutations require discovered project/item/field IDs and verify the item belongs to the requested project, current repository, requested issue number, an open issue, and the configured creator scope.
 

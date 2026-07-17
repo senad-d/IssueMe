@@ -144,8 +144,8 @@ invariants:
     - No webhooks, background HTTP servers, timers, sockets, or file watchers from the extension factory.
     - Project-local config, .env, Git metadata, and issue cache are honored only for trusted projects.
     - GitHub tokens are never persisted, logged, returned, or written to tool details.
-    - Closed issues are not mutated; already-closed close requests are safe no-ops with local cleanup only.
-    - Remote GitHub issues are never deleted.
+    - Closed issues are not mutated except through explicit reopen or confirmed permanent deletion; already-closed close requests are safe no-ops with local cleanup only.
+    - Permanent issue deletion requires one exact issue number, explicit irreversible-delete intent, confirmDelete true, creator-scope and pull-request preflight, and repository administrator permission.
     - Local writes are limited to .pi/agent/issueme.json and configured issue-cache JSON files.
     - Issue paths reject traversal, protected directories, symlinked directories, and symlinked files.
     - GitHub request and pagination URLs stay inside the resolved repository boundary.
@@ -187,7 +187,7 @@ routes:
       - scripts/generate-tui-artifacts.mjs
       - scripts/smoke-pi-lifecycle.mjs
   tools_runtime:
-    match: [tool, create issue, sync issues, list issues, search issues, filter issues, list labels, repository label discovery, repository label management, manage label, milestone discovery, milestone management, manage milestone, list milestones, assignee discovery, collaborator discovery, list assignees, list projects, project fields, projects v2, add issue to project, update project item, project item, native sub-issue, list sub-issues, reorder sub-issues, reprioritize sub-issues, relationship refresh, linked pull request, development reference, development link, issue dependency, dependency, blocker, tracked-by, get issue, update issue, comment issue, update comment, delete comment, assign issue, label issue, reopen issue, close issue, close reason, bulk issue, bulk update, bulk operations, executionMode, details, truncation]
+    match: [tool, create issue, delete issue, permanent deletion, sync issues, list issues, search issues, filter issues, list labels, repository label discovery, repository label management, manage label, milestone discovery, milestone management, manage milestone, list milestones, assignee discovery, collaborator discovery, list assignees, list projects, project fields, projects v2, add issue to project, update project item, project item, native sub-issue, list sub-issues, reorder sub-issues, reprioritize sub-issues, relationship refresh, linked pull request, development reference, development link, issue dependency, dependency, blocker, tracked-by, get issue, update issue, comment issue, update comment, delete comment, assign issue, label issue, reopen issue, close issue, close reason, bulk issue, bulk update, bulk operations, executionMode, details, truncation]
     docs:
       - docs/tool-reference.md
       - docs/public-contracts.md
@@ -198,6 +198,7 @@ routes:
       - src/tools/issueme-tools.ts
       - src/tools/runtime.ts
       - src/tools/create-issue.ts
+      - src/tools/delete-issue.ts
       - src/tools/sub-issue.ts
       - src/tools/development-links.ts
       - src/tools/sync-issues.ts

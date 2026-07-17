@@ -6,6 +6,7 @@ import { registerBulkIssueOperationsTool } from "./bulk-issues.ts";
 import { registerCloseIssueTool } from "./close-issue.ts";
 import { registerCommentIssueTool, registerDeleteCommentTool, registerUpdateCommentTool } from "./comment-issue.ts";
 import { registerCreateIssueTool } from "./create-issue.ts";
+import { registerDeleteIssueTool } from "./delete-issue.ts";
 import { registerListIssueDevelopmentLinksTool } from "./development-links.ts";
 import { registerGetIssueTool } from "./get-issue.ts";
 import { registerLabelIssueTool } from "./label-issue.ts";
@@ -44,6 +45,7 @@ export function registerIssueMeTools(pi: ExtensionAPI, options: IssueMeToolRegis
 	registerLabelIssueTool(piWithResultPolicy, options);
 	registerReopenIssueTool(piWithResultPolicy, options);
 	registerCloseIssueTool(piWithResultPolicy, options);
+	registerDeleteIssueTool(piWithResultPolicy, options);
 	registerBulkIssueOperationsTool(piWithResultPolicy, options);
 }
 

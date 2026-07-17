@@ -32,6 +32,7 @@ const sequentialTools = [
 	"issueme_label_issue",
 	"issueme_reopen_issue",
 	"issueme_close_issue",
+	"issueme_delete_issue",
 	"issueme_bulk_update_issues",
 ];
 
@@ -50,6 +51,7 @@ const perIssueMutationTools = [
 	"issueme_label_issue",
 	"issueme_reopen_issue",
 	"issueme_close_issue",
+	"issueme_delete_issue",
 	"issueme_bulk_update_issues",
 ];
 
@@ -202,6 +204,8 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.deepEqual(pi.tools.get("issueme_manage_label").parameters.properties.action.enum, ["create", "update", "delete"]);
 	assert.deepEqual(pi.tools.get("issueme_manage_milestone").parameters.properties.action.enum, ["create", "update", "close", "reopen", "delete"]);
 	assert.deepEqual(pi.tools.get("issueme_close_issue").parameters.properties.reason.enum, ["completed", "not_planned"]);
+	assert.equal(pi.tools.get("issueme_delete_issue").parameters.properties.confirmDelete.type, "boolean");
+	assert.deepEqual(pi.tools.get("issueme_delete_issue").parameters.required, ["number", "confirmDelete"]);
 	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.action.enum, ["add_labels", "assign", "set_milestone", "add_to_project", "close"]);
 	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.reason.enum, ["completed", "not_planned"]);
 	assert.equal(pi.tools.get("issueme_bulk_update_issues").parameters.properties.issueNumbers.maxItems, 50);

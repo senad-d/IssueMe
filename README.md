@@ -16,7 +16,7 @@
 
 ---
 
-IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issues layer. It uses GitHub REST and GraphQL APIs, keeps bounded local JSON cache files for open issues, and exposes tools for syncing, triage, labels, milestones, comments, assignees, Projects v2, native sub-issues, linked-development inspection, and explicit bulk updates.
+IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issues layer. It uses GitHub REST and GraphQL APIs, keeps bounded local JSON cache files for open issues, and exposes tools for syncing, triage, labels, milestones, comments, assignees, Projects v2, native sub-issues, linked-development inspection, confirmed issue deletion, and explicit bulk updates.
 
 <table align="center">
   <tr>
@@ -31,9 +31,9 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 
 - **GitHub API native:** no GitHub CLI dependency and no shell execution for GitHub issue operations.
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
-- **Agent tool suite:** registers twenty-eight `issueme_*` tools for issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, and bulk workflows.
+- **Agent tool suite:** registers twenty-nine `issueme_*` tools for issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `issues/<number>-<title-slug>.json` so agents can inspect full bodies/comments without oversized tool results.
-- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, protects closed issues, bounds results, and requires explicit confirmation for destructive taxonomy operations.
+- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, protects closed issues, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
 
 > **Status:** `0.1.0` is unreleased. Source, tests, this README, [`SECURITY.md`](SECURITY.md), and the files under [`docs/`](docs/) describe current implemented behavior.
@@ -171,11 +171,11 @@ IssueMe provides tools; your project `SKILL.md` should describe your team's issu
 
 ## Agent Tools
 
-IssueMe registers twenty-eight `issueme_*` tools. The most common flow is:
+IssueMe registers twenty-nine `issueme_*` tools. The most common flow is:
 
 1. Discover: `issueme_list_labels`, `issueme_list_milestones`, `issueme_list_assignees`, `issueme_list_projects`, `issueme_get_project_fields`.
 2. Inspect: `issueme_sync_issues`, `issueme_list_issues`, `issueme_get_issue`, `issueme_list_sub_issues`, `issueme_list_issue_development_links`.
-3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, manage label/milestone taxonomy, add/update Projects v2 items, manage native sub-issues, or bulk-update a confirmed list of issue numbers.
+3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update Projects v2 items, manage native sub-issues, or bulk-update a confirmed list of issue numbers.
 
 Use the detailed references when building agent workflows:
 
@@ -209,9 +209,9 @@ Tokens are read but never written to config, cache files, tool output, or logs. 
 ## Safety Model
 
 - IssueMe honors project-local config, tokens, Git metadata, skills, and cache files only when pi reports the project as trusted.
-- Closed issues are not mutated again except through explicit `issueme_reopen_issue`.
-- Remote GitHub issues are never deleted.
-- Repository label and milestone deletion require explicit delete actions and confirmation flags.
+- Closed issues are not mutated again except through explicit `issueme_reopen_issue` or confirmed `issueme_delete_issue` operations.
+- `issueme_delete_issue` permanently deletes only one exact issue after explicit intent, an irreversibility warning, and `confirmDelete: true`; it accepts open or closed issues, refuses pull requests, and requires GitHub repository administrator permission.
+- Repository label, milestone, and issue deletion require explicit actions and confirmation flags.
 - Bulk updates accept only explicit issue number lists, never unconstrained search targets.
 - Native sub-issues use GitHub GraphQL; IssueMe does not silently create body-only parent/dependency/blocker fallbacks.
 - Tool results are bounded and include `details.result`/status metadata; agents should check both pi tool errors and IssueMe result details.
@@ -235,7 +235,7 @@ Read [`SECURITY.md`](SECURITY.md) before installing in sensitive environments.
 | Local issue files look stale | Run `issueme_sync_issues`, or `issueme_get_issue` with `refresh: true` for one known issue. |
 | Expected issue is missing or refused | Check `/issueme info` for **Allowed issue creator** and update it in `/issueme` if needed. |
 | Unknown label, milestone, assignee, project, or field | Use the matching read-only discovery tool before mutating. |
-| Mutation is refused | Confirm the issue is open, in creator scope, and the target IDs/labels/users exist. |
+| Mutation is refused | Confirm the issue is open (unless explicitly reopening or deleting), in creator scope, and the target IDs/labels/users exist. Permanent deletion also requires `confirmDelete: true` and repository administrator permission. |
 | Bulk update stopped | Inspect `details.bulkResults`, sync if cache state is uncertain, then retry only remaining explicit issue numbers. |
 
 More troubleshooting notes live in [`docs/configuration.md`](docs/configuration.md), [`docs/tool-reference.md`](docs/tool-reference.md), and [`SECURITY.md`](SECURITY.md).

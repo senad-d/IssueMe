@@ -32,12 +32,14 @@ src/
 │   ├── label-issue.ts
 │   ├── reopen-issue.ts
 │   ├── close-issue.ts
+│   ├── delete-issue.ts            # confirmed permanent issue deletion
 │   ├── bulk-issues.ts             # guarded explicit-list bulk issue operations
 │   └── runtime.ts                 # shared tool runtime helpers
 ├── github/
 │   ├── client.ts                  # public GitHubClient facade and shared mutation guards
 │   ├── transport.ts               # authenticated REST transport, pagination/search boundaries, rate-limit errors
 │   ├── issues-client.ts           # issue/list/search/comment REST query helpers and validators
+│   ├── delete-issue-client.ts     # GraphQL deleteIssue query/validation helpers
 │   ├── projects-client.ts         # Projects v2 GraphQL queries, normalizers, owner/item guards
 │   ├── sub-issues-client.ts       # native sub-issue GraphQL queries, normalizers, reorder helpers
 │   ├── development-links-client.ts # issue development-link GraphQL queries and normalizers
@@ -97,7 +99,7 @@ No template placeholder command/tool/lifecycle modules remain.
 - `issueme_list_issue_development_links` inspects linked pull requests, PR branch names, commits, and closing/reference metadata read-only through GitHub issue timeline GraphQL data when GitHub exposes it; it verifies target issue creator scope, keeps same-number pull requests distinct by URL, bounds results, fetches no PR bodies, writes no local cache, and documents standalone-branch/private-reference limitations.
 - `issueme_reorder_sub_issues` reorders native child priority with GitHub's `reprioritizeSubIssue` GraphQL mutation, requires every current child number exactly once, refuses closed or out-of-scope parent/child issues, and refreshes local relationship metadata afterward.
 - Native issue dependency/blocker/tracked-by tools are intentionally not registered until GitHub exposes a stable native REST or GraphQL API with documented list/add/remove semantics; IssueMe does not create body-only dependency references as a fallback.
-- `issueme_reopen_issue` is the only intentional closed-issue mutation path; `issueme_close_issue` can set GitHub close reason for open issues but treats already-closed issues as local cleanup only, and other existing-issue mutating tools continue to refuse closed issues.
+- `issueme_reopen_issue` and `issueme_delete_issue` are the only intentional closed-issue mutation exceptions. Permanent deletion requires one exact issue number, explicit intent plus an irreversibility warning, `confirmDelete: true`, creator-scope validation, a non-pull-request target, and GitHub repository administrator permission; it uses GraphQL `deleteIssue` and removes matching local cache files after remote success. `issueme_close_issue` can set GitHub close reason for open issues but treats already-closed issues as local cleanup only.
 - `issueme_bulk_update_issues` applies one limited action (`add_labels`, `assign`, `set_milestone`, `add_to_project`, or `close`) only to explicit issue-number lists, verifies creator scope per issue, runs sequentially, defaults to stop-on-error, and returns bounded per-issue `bulkResults` without accepting search-query mutation targets.
 
 ## Tests and artifacts
@@ -122,7 +124,7 @@ pi --no-extensions -e .
 
 `npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, the package dry-run contents check, the packed production-style smoke check, packed handler smoke, and the real Pi RPC lifecycle smoke. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
 
-Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-eight `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. Use `npm run smoke:pi-lifecycle` to drive `/issueme info`, `/issueme`, and `/issueme start` through real Pi RPC in an offline temporary trusted project with IssueMe environment variables scrubbed; `docs/pi-lifecycle-verification.md` records the manual blocker and steps for terminal-only config TUI lifecycle checks. Discovery probes load registrations only; handler and lifecycle smokes do not call live GitHub, publish, update dependencies, or mutate issues.
+Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-nine `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. Use `npm run smoke:pi-lifecycle` to drive `/issueme info`, `/issueme`, and `/issueme start` through real Pi RPC in an offline temporary trusted project with IssueMe environment variables scrubbed; `docs/pi-lifecycle-verification.md` records the manual blocker and steps for terminal-only config TUI lifecycle checks. Discovery probes load registrations only; handler and lifecycle smokes do not call live GitHub, publish, update dependencies, or mutate issues.
 
 Live GitHub verification is outside the default validation contract. `docs/live-github-verification.md` defines the opt-in matrix, credential preflights, temporary artifact naming, cleanup ledger, Projects v2 prerequisites, and blocked-feature reporting for maintainers who explicitly request live API evidence.
 

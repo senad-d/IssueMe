@@ -58,6 +58,8 @@ export const ISSUEME_ERROR_CODES = {
 	GITHUB_URL_MALFORMED: "github_url_malformed",
 	GITHUB_BOUNDARY_VIOLATION: "github_boundary_violation",
 	GITHUB_ISSUE_SHAPE_INVALID: "github_issue_shape_invalid",
+	GITHUB_ISSUE_DELETE_FORBIDDEN: "github_issue_delete_forbidden",
+	GITHUB_ISSUE_DELETE_UNSUPPORTED: "github_issue_delete_unsupported",
 	GITHUB_SUB_ISSUE_FORBIDDEN: "github_sub_issue_forbidden",
 	GITHUB_SUB_ISSUE_UNSUPPORTED: "github_sub_issue_unsupported",
 	GITHUB_PROJECTS_V2_FORBIDDEN: "github_projects_v2_forbidden",
@@ -223,6 +225,14 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_SHAPE_INVALID]: {
 		category: "github_api",
 		recoveryHint: "Retry sync later or update IssueMe if GitHub issue fields changed shape.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_DELETE_FORBIDDEN]: {
+		category: "github_api",
+		recoveryHint: "Use a token user with repository administrator permission and issue write access, then explicitly confirm the exact issue deletion again.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_DELETE_UNSUPPORTED]: {
+		category: "github_api",
+		recoveryHint: "Use a GitHub environment that supports the GraphQL deleteIssue mutation, or ask a repository administrator to delete the issue in GitHub's UI.",
 	},
 	[ISSUEME_ERROR_CODES.GITHUB_SUB_ISSUE_FORBIDDEN]: {
 		category: "github_api",

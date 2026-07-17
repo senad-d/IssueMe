@@ -349,6 +349,17 @@ export const ISSUEME_TOOL_CONTRACTS = [
 		coverage: ["test/close-tool.test.mjs", "test/tool-integration.test.mjs"],
 	},
 	{
+		name: "issueme_delete_issue",
+		readOnly: false,
+		trustRequired: true,
+		githubApi: "REST issue identity/creator preflight plus GraphQL deleteIssue mutation",
+		localSideEffects: "Removes matching local issue-cache files after confirmed permanent deletion.",
+		executionMode: "sequential",
+		validationGates: ["positive issue number", "confirmDelete true", "project trust", "repository resolution", "token resolution", "issue-not-pull-request check", "creator scope check", "GraphQL issue node ID", "abort checks before local removals"],
+		resultPolicy: "Throws setup, validation, creator-scope, pull-request, permission, unsupported-API, token, repository, and pre-settlement GitHub failures; malformed accepted deletion data or post-delete cache removal failure returns retry-safe partial_success.",
+		coverage: ["test/delete-issue-tool.test.mjs", "test/github-client.test.mjs"],
+	},
+	{
 		name: "issueme_bulk_update_issues",
 		readOnly: false,
 		trustRequired: true,

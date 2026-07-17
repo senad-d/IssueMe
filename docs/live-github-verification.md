@@ -28,6 +28,7 @@ Before any live run:
 5. Confirm the token has the required repository access:
    - metadata/read access for repository discovery;
    - issues read/write access for issue, label, milestone, comment, assignee, close, reopen, bulk, and sub-issue issue-state checks;
+   - repository administrator permission for the optional permanent issue-deletion proof;
    - pull-request/contents metadata read access when positive development-link fixtures are used;
    - Projects read/write access only for the optional Projects v2 phase.
 6. Confirm the operator accepts the run-created resource names below and any Projects v2 cleanup limits.
@@ -64,6 +65,7 @@ The existing `.pi/skills/issueme-e2e-test` skill uses the equivalent `issueme-e2
 | Repository milestones | `issueme_list_milestones`, `issueme_manage_milestone`, `issueme_update_issue`, `issueme_bulk_update_issues` `set_milestone` | Create, update, clear due date/description, close, reopen, assign to run issues, and delete the run milestone. | Issues read/write and milestone administration rights. | Delete only milestones containing the current run id; verify list returns none. |
 | Assignees | `issueme_list_assignees`, `issueme_assign_issue`, `issueme_create_issue`, `issueme_update_issue`, `issueme_bulk_update_issues` `assign` | Discover assignable users, add/remove/set/clear on run issues, and verify invalid-user rejection. | Issues read/write; at least one assignable user for positive coverage. | Clear or leave only accepted run-state assignments before closing run issues. If no assignable user exists, record partial coverage. |
 | Issue create/update/comment/close/reopen | `issueme_create_issue`, `issueme_update_issue`, `issueme_comment_issue`, `issueme_update_comment`, `issueme_delete_comment`, `issueme_close_issue`, `issueme_reopen_issue`, `issueme_bulk_update_issues` `close` | Create run issues, update title/body, create/edit/delete a run comment, close with `completed` and `not_planned`, verify closed-issue mutation refusal, reopen, and close again. | Issues read/write. | Close every run-created issue; never modify pre-existing issues except read-only listing. |
+| Permanent issue deletion | `issueme_delete_issue` | Create one dedicated run issue, verify `confirmDelete: false` is refused, warn that deletion is irreversible, then delete that exact issue with `confirmDelete: true`; verify remote listing and local cache no longer contain it. | Issues read/write plus repository administrator permission and GraphQL `deleteIssue` support. | Delete only the dedicated run-created candidate. If permission/support is unavailable, record blocked coverage and close the candidate; never substitute another issue. |
 | Native sub-issues | `issueme_create_sub_issue`, `issueme_add_sub_issue`, `issueme_remove_sub_issue`, `issueme_reorder_sub_issues`, `issueme_list_sub_issues` | Create parent/child run issues, attach/detach an existing run issue, list children, reorder with every child exactly once, and verify no body-only fallback. | Issues read/write plus repository/account access to GitHub native sub-issue GraphQL fields and mutations. | Detach optional children where possible, then close all run-created parent/child issues. If GitHub rejects the feature or permission, mark blocked with the exact GraphQL error and prerequisite. |
 | Development links | `issueme_list_issue_development_links` | Read timeline development metadata for a run issue. A zero-link result proves the query path; a positive linked PR/branch/commit requires an operator-provided temporary fixture. | Issues read access; pull-request/contents metadata read access for positive fixtures. A temporary PR or branch may be needed outside IssueMe because IssueMe does not create PRs. | No IssueMe remote mutation. Close run-created issues; close/delete any operator-created PR/branch fixture outside IssueMe. If no fixture exists, mark positive-link coverage blocked by missing fixture. |
 | Projects v2 discovery | `issueme_list_projects`, `issueme_get_project_fields` | Discover an explicit repository/organization/user ProjectV2 board and field/options intended for testing. | Projects read access for the target owner plus visibility of the board. | No remote mutation. If no suitable board or access exists, mark Projects v2 blocked with owner/scope/project prerequisites. |
@@ -85,7 +87,7 @@ This must pass without GitHub credentials.
 
 ### Phase 1: non-Projects live E2E skill
 
-Use `.pi/skills/issueme-e2e-test` for the destructive-but-contained non-Projects flow. It already covers temporary issues, labels, milestones, comments, assignees when available, close reasons, native sub-issues, development-link listing, bulk issue operations, expected validation failures, and cleanup.
+Use `.pi/skills/issueme-e2e-test` for the destructive-but-contained non-Projects flow. It covers temporary issues, labels, milestones, comments, assignees when available, close reasons, native sub-issues, development-link listing, bulk issue operations, expected validation failures, and cleanup. Permanent issue deletion should use one dedicated run-created candidate only; if the installed skill version does not yet include that step, run it as a separately approved live check or record it as not covered.
 
 Known exclusions for that skill:
 
@@ -118,10 +120,11 @@ The non-Projects skill calls `issueme_list_issue_development_links`; a zero-link
 
 Always attempt cleanup even after failed checks:
 
-1. Close every run-created open issue, parent issues last when sub-issues exist.
-2. Delete only labels and milestones containing the current run id.
-3. Rerun sync/list checks to verify no open run issues, labels, or milestones remain.
-4. Remove local temporary `.env`, `.pi/agent/issueme.json`, and `issues/` cache files from the disposable project when they are no longer needed.
-5. For Projects v2, remove/reset the project item manually when the board is not disposable.
+1. Verify the dedicated permanent-deletion candidate is absent, or close it and record blocked/failed deletion coverage; never delete a substitute issue.
+2. Close every other run-created open issue, parent issues last when sub-issues exist.
+3. Delete only labels and milestones containing the current run id.
+4. Rerun sync/list checks to verify no open run issues, labels, or milestones remain.
+5. Remove local temporary `.env`, `.pi/agent/issueme.json`, and `issues/` cache files from the disposable project when they are no longer needed.
+6. For Projects v2, remove/reset the project item manually when the board is not disposable.
 
 If cleanup or verification fails, create an actionable task file under `specs/e2e/` with the run id, repository, leftover resource URLs/names, expected behavior, actual result, and acceptance criteria. Never include token values or private issue bodies in the task file.

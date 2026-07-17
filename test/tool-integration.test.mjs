@@ -181,6 +181,13 @@ function makeSuccessFetch() {
 				: jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
 		}
 		if (url.pathname === "/graphql" && method === "POST") {
+			if (body.operationName === "IssueMeDeleteIssue") {
+				const entry = [...issues.entries()].find(([, issue]) => issue.node_id === body.variables.issueId);
+				if (!entry) return jsonResponse({ data: null, errors: [{ type: "NOT_FOUND", message: "Issue not found" }] });
+				issues.delete(entry[0]);
+				comments.delete(entry[0]);
+				return jsonResponse({ data: { deleteIssue: { clientMutationId: null } } });
+			}
 			if (body.operationName === "IssueMeListSubIssues") {
 				const issue = issues.get(body.variables.issueNumber);
 				return jsonResponse({
@@ -461,8 +468,9 @@ test("registered IssueMe tools run with injected config, repository, token, and 
 	results.push(await execute(tools.get("issueme_label_issue"), projectRoot, { number: 10, action: "add", labels: ["bug"] }));
 	results.push(await execute(tools.get("issueme_reopen_issue"), projectRoot, { number: 10 }));
 	results.push(await execute(tools.get("issueme_close_issue"), projectRoot, { number: 10 }));
+	results.push(await execute(tools.get("issueme_delete_issue"), projectRoot, { number: 11, confirmDelete: true }));
 
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["11-created-from-test.json"]);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
 	for (const result of results) {
 		assert.equal(result.details.result, "success");
 		assertNoToken(result);
@@ -471,6 +479,7 @@ test("registered IssueMe tools run with injected config, repository, token, and 
 	assert.ok(mock.calls.every((call) => call.authorization === `Bearer ${TOKEN}`));
 	assert.equal(mock.calls.some((call) => call.path === "/repos/owner/repo/issues" && call.method === "POST"), true);
 	assert.equal(mock.calls.some((call) => call.path === "/repos/owner/repo/issues/10" && call.method === "PATCH" && call.body?.state === "closed"), true);
+	assert.equal(mock.calls.some((call) => call.path === "/graphql" && call.body?.operationName === "IssueMeDeleteIssue"), true);
 });
 
 test("cache-refresh tools stay sequential and order same-issue cache writes with update flows", async () => {
@@ -543,6 +552,7 @@ test("registered IssueMe tools reject unsafe numeric identifiers before requests
 		["issueme_update_comment", { issueNumber: 1, commentId: unsafe, body: "Corrected note" }, "commentId"],
 		["issueme_delete_comment", { issueNumber: 1, commentId: unsafe }, "commentId"],
 		["issueme_close_issue", { number: unsafe }, "issueNumber"],
+		["issueme_delete_issue", { number: unsafe, confirmDelete: true }, "issueNumber"],
 		["issueme_reopen_issue", { number: unsafe }, "issueNumber"],
 		["issueme_add_sub_issue", { parentNumber: unsafe, childNumber: 2 }, "issueNumber"],
 		["issueme_reorder_sub_issues", { parentNumber: unsafe, orderedChildNumbers: [2] }, "parentNumber"],

@@ -73,7 +73,8 @@
 | Tool | `issueme_assign_issue` | Assign/unassign users | Implemented; rejects closed issues and unassignable users for add/set. |
 | Tool | `issueme_label_issue` | Add/remove/set labels | Implemented; rejects closed issues and missing repository labels for add/set. |
 | Tool | `issueme_reopen_issue` | Reopen intentionally selected closed issues | Implemented as the only closed-issue mutation exception, with optional reopen comment and cache refresh. |
-| Tool | `issueme_close_issue` | Close open issue and remove local file | Implemented with optional GitHub close reason; never deletes remote issues. |
+| Tool | `issueme_close_issue` | Close open issue and remove local file | Implemented with optional GitHub close reason; preserves the remote issue. |
+| Tool | `issueme_delete_issue` | Permanently delete one mistaken GitHub issue | Implemented with REST identity/creator preflight plus GraphQL `deleteIssue`; requires explicit irreversible intent, `confirmDelete: true`, non-PR target, and repository administrator permission. |
 | Tool | `issueme_bulk_update_issues` | Apply guarded bulk actions to explicit issue-number lists | Implemented sequentially with bounded per-issue results and no query-derived mutation targets. |
 | Unsupported | Native issue dependency/blocker tools | Manage native depends-on/blocked-by links | Not registered: no stable native GitHub REST/GraphQL API with documented list/add/remove semantics is available; no body-only fallback. |
 | Event | Lifecycle only if needed | Status/cleanup | No background listeners, timers, sockets, or webhooks. |
