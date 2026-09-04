@@ -124,7 +124,7 @@ Always attempt cleanup even after failed checks:
 2. Close every other run-created open issue, parent issues last when sub-issues exist.
 3. Delete only labels and milestones containing the current run id.
 4. Rerun sync/list checks to verify no open run issues, labels, or milestones remain.
-5. Remove local temporary `.env`, `.pi/agent/issueme.json`, and `issues/` cache files from the disposable project when they are no longer needed.
+5. Remove local temporary `.env`, `.pi/agent/issueme.json`, and `.pi/issues/` cache files from the disposable project when they are no longer needed.
 6. For Projects v2, remove/reset the project item manually when the board is not disposable.
 
 If cleanup or verification fails, create an actionable task file under `specs/e2e/` with the run id, repository, leftover resource URLs/names, expected behavior, actual result, and acceptance criteria. Never include token values or private issue bodies in the task file.

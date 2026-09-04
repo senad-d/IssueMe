@@ -127,7 +127,7 @@ test("issueme_delete_issue permanently deletes a confirmed issue and removes its
 	assert.deepEqual(result.details.changedFields, ["deleted"]);
 	assert.deepEqual(result.details.removedPaths, [`issues/${basename(written.path)}`]);
 	assert.equal(result.details.cacheUpdated, true);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), [".gitignore"]);
 	assert.doesNotMatch(JSON.stringify(result), new RegExp(TOKEN));
 });
 

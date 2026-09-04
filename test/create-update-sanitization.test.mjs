@@ -151,7 +151,7 @@ test("restricted issueme_create_issue verifies authenticated user before remote 
 		assert.deepEqual(requests, ["GET /user", "POST /repos/owner/repo/issues"]);
 		assert.equal(result.details.creatorScope, "hubot");
 		assert.equal(result.details.issue.creator, "Hubot");
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "7-restricted-create.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "7-restricted-create.json"), "utf8"));
 		assert.equal(cached.creator, "Hubot");
 	}, restrictedConfig);
 

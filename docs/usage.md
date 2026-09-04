@@ -45,7 +45,7 @@ description: Manage this repository's GitHub issues with IssueMe. Use when synci
 - Use `issueme_reopen_issue` only when the user explicitly wants a closed issue reopened.
 - Use `issueme_delete_issue` only for one exact mistakenly created issue after explicit confirmation and an irreversibility warning; prefer closing when repository history should remain.
 - Do not create body-only `blocked by`, `depends on`, or `tracked by` text references as if they were native dependencies.
-- Prefer local `issues/*.json` files for reading full bodies/comments after sync.
+- Prefer local `.pi/issues/*.json` files for reading full bodies/comments after sync.
 - Close issues only when requested; use close reason `completed` for verified finished work and `not_planned` only when work is explicitly declined, obsolete, or duplicate.
 - Use `issueme_bulk_update_issues` only when exact issue numbers are explicit and confirmed; never infer a bulk mutation directly from an unconstrained search query.
 ````

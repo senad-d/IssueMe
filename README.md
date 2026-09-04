@@ -32,7 +32,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 - **GitHub API native:** no GitHub CLI dependency and no shell execution for GitHub issue operations.
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
 - **Agent tool suite:** registers twenty-nine `issueme_*` tools for issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
-- **Local issue cache:** writes open issues to `issues/<number>-<title-slug>.json` so agents can inspect full bodies/comments without oversized tool results.
+- **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
 - **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, protects closed issues, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
 

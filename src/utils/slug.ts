@@ -74,11 +74,22 @@ export function assertSafeIssueDirectoryValue(issueDirectory: string, options: {
 		if (part === "..") {
 			throw new IssueMeError("unsafe_issue_directory", "Issue directory cannot use path traversal.");
 		}
-		const normalizedPart = part.toLowerCase();
-		if (PROTECTED_DIRECTORY_SET.has(normalizedPart)) {
+	}
+	// The default cache home lives under the Pi config directory (.pi/issues), so
+	// exempt exactly that prefix from the protected-directory check; .pi itself,
+	// .pi/agent, and every other protected segment stay refused.
+	for (const part of isUnderDefaultCacheDirectory(parts) ? parts.slice(DEFAULT_CACHE_DIRECTORY_PARTS.length) : parts) {
+		if (PROTECTED_DIRECTORY_SET.has(part.toLowerCase())) {
 			throw new IssueMeError("unsafe_issue_directory", `Issue directory cannot be or contain protected directory: ${part}.`);
 		}
 	}
+}
+
+const DEFAULT_CACHE_DIRECTORY_PARTS = DEFAULT_ISSUES_DIR.split("/");
+
+function isUnderDefaultCacheDirectory(parts: string[]): boolean {
+	return parts.length >= DEFAULT_CACHE_DIRECTORY_PARTS.length
+		&& DEFAULT_CACHE_DIRECTORY_PARTS.every((part, index) => parts[index]?.toLowerCase() === part.toLowerCase());
 }
 
 export function resolveIssueDirectory(cwd: string, issueDirectory = DEFAULT_ISSUES_DIR): string {

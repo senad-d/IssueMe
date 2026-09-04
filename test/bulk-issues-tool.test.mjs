@@ -407,7 +407,7 @@ test("issueme_bulk_update_issues refuses out-of-scope already-closed close witho
 	assert.equal(result.details.result, "error");
 	assert.equal(result.details.bulkResults[0].status, "failed");
 	assert.equal(result.details.bulkResults[0].error.code, "issue_creator_not_allowed");
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["5-already-closed-intruder.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "5-already-closed-intruder.json"]);
 	assertNoToken(result);
 });
 
@@ -563,7 +563,7 @@ test("issueme_bulk_update_issues keeps local cache when aborted after remote clo
 	assert.equal(result.details.bulkResults[0].error.code, "github_request_aborted");
 	assert.equal(result.details.cacheUpdated, false);
 	assert.equal(result.details.needsSync, true);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["6-close-abort.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "6-close-abort.json"]);
 	assertNoToken(result);
 });
 
@@ -588,7 +588,7 @@ test("issueme_bulk_update_issues treats already closed close actions as idempote
 	assert.deepEqual(result.details.bulkResults[0].changedFields, []);
 	assert.deepEqual(result.details.removedPaths, ["issues/5-already-closed.json"]);
 	assert.match(result.details.bulkResults[0].message, /already closed/);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), [".gitignore"]);
 	assertNoToken(result);
 });
 

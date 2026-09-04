@@ -58,9 +58,9 @@ test("/issueme config reports TUI save failures without persisting unsafe config
 
 test("/issueme info combines unknown-command warnings, repository failures, and invalid cache counts", async () => withCleanGitHubEnv(async () => {
 	const root = await tempProject("issueme-command-info-");
-	await mkdir(join(root, "issues"), { recursive: true });
-	await writeFile(join(root, "issues", "1-bad-json.json"), "{not json", "utf8");
-	await writeFile(join(root, "issues", "not-an-issue.json"), "{}\n", "utf8");
+	await mkdir(join(root, ".pi", "issues"), { recursive: true });
+	await writeFile(join(root, ".pi", "issues", "1-bad-json.json"), "{not json", "utf8");
+	await writeFile(join(root, ".pi", "issues", "not-an-issue.json"), "{}\n", "utf8");
 
 	const pi = createFakePi();
 	registerIssueMeCommand(pi);

@@ -292,7 +292,7 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 	},
 	[ISSUEME_ERROR_CODES.UNSAFE_ISSUE_DIRECTORY]: {
 		category: "local_cache",
-		recoveryHint: "Choose a project-local, non-symlinked issue directory such as issues/ and rerun the operation.",
+		recoveryHint: "Choose a project-local, non-symlinked issue directory such as .pi/issues/ and rerun the operation.",
 	},
 	[ISSUEME_ERROR_CODES.UNSAFE_ISSUE_FILE]: {
 		category: "local_cache",

@@ -9,7 +9,7 @@ import { GitHubClient } from "../src/github/client.ts";
 import { writeIssueRecord } from "../src/issues/store.ts";
 import { registerGetIssueTool } from "../src/tools/get-issue.ts";
 
-const config = { issueDirectory: "issues", allowedIssueCreator: "all", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+const config = { issueDirectory: ".pi/issues", allowedIssueCreator: "all", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
 
 function issue(number, title, overrides = {}) {
 	return {
@@ -167,8 +167,8 @@ test("issueme_get_issue resolves number, filename, slug, and title fragment to t
 		for (const [params, label] of cases) {
 			const result = await executeGet(getTool, projectRoot, params);
 			assert.match(result.content[0].text, /#12 Fix Cache Bug/, label);
-			assert.deepEqual(result.details.paths, ["issues/12-fix-cache-bug.json"], label);
-			assert.equal(result.details.issue.localPath, "issues/12-fix-cache-bug.json", label);
+			assert.deepEqual(result.details.paths, [".pi/issues/12-fix-cache-bug.json"], label);
+			assert.equal(result.details.issue.localPath, ".pi/issues/12-fix-cache-bug.json", label);
 			assert.equal(result.details.issue.number, 12, label);
 		}
 	});
@@ -202,9 +202,9 @@ test("issueme_get_issue reports repository-scoped duplicate cache files with syn
 	await withoutGithubRepository(async () => {
 		const projectRoot = await tempProject();
 		await initGitHubOrigin(projectRoot);
-		await mkdir(join(projectRoot, "issues"));
-		await writeFile(join(projectRoot, "issues", "12-stale.json"), `${JSON.stringify(issue(12, "Stale Cache"))}\n`, "utf8");
-		await writeFile(join(projectRoot, "issues", "12-current.json"), `${JSON.stringify(issue(12, "Current Cache"))}\n`, "utf8");
+		await mkdir(join(projectRoot, ".pi", "issues"), { recursive: true });
+		await writeFile(join(projectRoot, ".pi", "issues", "12-stale.json"), `${JSON.stringify(issue(12, "Stale Cache"))}\n`, "utf8");
+		await writeFile(join(projectRoot, ".pi", "issues", "12-current.json"), `${JSON.stringify(issue(12, "Current Cache"))}\n`, "utf8");
 		const getTool = await registerGetTool();
 
 		await assert.rejects(
@@ -212,7 +212,7 @@ test("issueme_get_issue reports repository-scoped duplicate cache files with syn
 			(error) => {
 				assert.equal(error?.code, "issue_lookup_ambiguous");
 				assert.match(error.message, /issueme_sync_issues|stale duplicate/);
-				assert.deepEqual(error.safeDetails?.paths, ["issues/12-current.json", "issues/12-stale.json"]);
+				assert.deepEqual(error.safeDetails?.paths, [".pi/issues/12-current.json", ".pi/issues/12-stale.json"]);
 				return true;
 			},
 		);
@@ -316,7 +316,7 @@ test("restricted issueme_get_issue refresh refuses out-of-scope remote issues be
 		},
 	);
 	assert.deepEqual(calls, ["/repos/owner/repo/issues/15"]);
-	await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+	await assert.rejects(() => readdir(join(projectRoot, ".pi", "issues")), { code: "ENOENT" });
 });
 
 test("issueme_get_issue refuses local lookup paths that escape through symlinked cache subdirectories", async (t) => {
@@ -324,7 +324,7 @@ test("issueme_get_issue refuses local lookup paths that escape through symlinked
 	const outsideRoot = await tempProject();
 	const outsideIssueDir = join(outsideRoot, "cache");
 	await initGitHubOrigin(projectRoot);
-	await mkdir(join(projectRoot, "issues"));
+	await mkdir(join(projectRoot, ".pi", "issues"), { recursive: true });
 	await mkdir(outsideIssueDir);
 	await writeFile(
 		join(outsideIssueDir, "77-outside.json"),
@@ -332,7 +332,7 @@ test("issueme_get_issue refuses local lookup paths that escape through symlinked
 		"utf8",
 	);
 	try {
-		await symlink(outsideIssueDir, join(projectRoot, "issues", "linked"), "dir");
+		await symlink(outsideIssueDir, join(projectRoot, ".pi", "issues", "linked"), "dir");
 	} catch (error) {
 		if (error && typeof error === "object" && "code" in error && error.code === "EPERM") {
 			t.skip("symlinks are not permitted on this platform");
@@ -343,7 +343,7 @@ test("issueme_get_issue refuses local lookup paths that escape through symlinked
 
 	const getTool = await registerGetTool();
 	await assert.rejects(
-		() => executeGet(getTool, projectRoot, { lookup: "issues/linked/77-outside.json" }),
+		() => executeGet(getTool, projectRoot, { lookup: ".pi/issues/linked/77-outside.json" }),
 		(error) => error?.code === "unsafe_path" && /configured issue directory|current project/.test(error.message),
 	);
 });
@@ -351,11 +351,11 @@ test("issueme_get_issue refuses local lookup paths that escape through symlinked
 test("issueme_get_issue reports missing explicit cache paths as not found", async () => {
 	const projectRoot = await tempProject();
 	await initGitHubOrigin(projectRoot);
-	await mkdir(join(projectRoot, "issues"));
+	await mkdir(join(projectRoot, ".pi", "issues"), { recursive: true });
 	const getTool = await registerGetTool();
 
 	await assert.rejects(
-		() => executeGet(getTool, projectRoot, { lookup: "issues/missing/99-nope.json" }),
+		() => executeGet(getTool, projectRoot, { lookup: ".pi/issues/missing/99-nope.json" }),
 		(error) => error?.code === "issue_not_found" && /local IssueMe cache/.test(error.message),
 	);
 });
@@ -385,15 +385,15 @@ test("issueme_get_issue refresh resolves a local lookup before fetching GitHub a
 		assert.deepEqual(calls, ["/repos/owner/repo/issues/12", "/repos/owner/repo/issues/12/comments"]);
 		assert.match(result.content[0].text, /#12 Fresh Remote Title/);
 		assert.match(result.content[0].text, /Local cache action: renamed/);
-		assert.match(result.content[0].text, /Local file: issues\/12-fresh-remote-title\.json/);
-		assert.deepEqual(result.details.paths, ["issues/12-fresh-remote-title.json"]);
-		assert.deepEqual(result.details.removedPaths, ["issues/12-old-local-title.json"]);
+		assert.match(result.content[0].text, /Local file: \.pi\/issues\/12-fresh-remote-title\.json/);
+		assert.deepEqual(result.details.paths, [".pi/issues/12-fresh-remote-title.json"]);
+		assert.deepEqual(result.details.removedPaths, [".pi/issues/12-old-local-title.json"]);
 		assert.equal(result.details.fileActions[0].action, "renamed");
-		assert.deepEqual(result.details.fileActions[0].removedPaths, ["issues/12-old-local-title.json"]);
+		assert.deepEqual(result.details.fileActions[0].removedPaths, [".pi/issues/12-old-local-title.json"]);
 		assert.equal(result.details.status, "cache_renamed");
-		assert.equal(result.details.issue.localPath, "issues/12-fresh-remote-title.json");
+		assert.equal(result.details.issue.localPath, ".pi/issues/12-fresh-remote-title.json");
 		assert.equal(result.details.cacheUpdated, true);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["12-fresh-remote-title.json"]);
+		assert.deepEqual((await readdir(join(projectRoot, ".pi", "issues"))).sort(), [".gitignore", "12-fresh-remote-title.json"]);
 	} finally {
 		globalThis.fetch = originalFetch;
 		restoreEnv("GH_TOKEN", originalGhToken);
@@ -415,17 +415,17 @@ test("issueme_get_issue refresh creates one open issue file and reports the cach
 		throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
 	}, async () => {
 		const result = await executeGet(getTool, projectRoot, { number: 30, refresh: true });
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "30-single-open-refresh.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "30-single-open-refresh.json"), "utf8"));
 		assert.deepEqual(calls, ["/repos/owner/repo/issues/30", "/repos/owner/repo/issues/30/comments"]);
 		assert.equal(cached.title, "Single Open Refresh");
 		assert.match(result.content[0].text, /#30 Single Open Refresh/);
 		assert.match(result.content[0].text, /Local cache action: created/);
-		assert.deepEqual(result.details.paths, ["issues/30-single-open-refresh.json"]);
+		assert.deepEqual(result.details.paths, [".pi/issues/30-single-open-refresh.json"]);
 		assert.deepEqual(result.details.removedPaths, []);
 		assert.equal(result.details.fileActions[0].action, "created");
-		assert.equal(result.details.fileActions[0].path, "issues/30-single-open-refresh.json");
+		assert.equal(result.details.fileActions[0].path, ".pi/issues/30-single-open-refresh.json");
 		assert.equal(result.details.status, "cache_created");
-		assert.equal(result.details.issue.localPath, "issues/30-single-open-refresh.json");
+		assert.equal(result.details.issue.localPath, ".pi/issues/30-single-open-refresh.json");
 		assert.equal(result.details.cacheUpdated, true);
 	});
 });
@@ -451,7 +451,7 @@ test("issueme_get_issue refresh aborts before writing local cache after remote r
 			(error) => error?.code === "github_request_aborted",
 		);
 		assert.deepEqual(calls, ["/repos/owner/repo/issues/33", "/repos/owner/repo/issues/33/comments"]);
-		await assert.rejects(() => readdir(join(projectRoot, "issues")), { code: "ENOENT" });
+		await assert.rejects(() => readdir(join(projectRoot, ".pi", "issues")), { code: "ENOENT" });
 	});
 });
 
@@ -483,14 +483,14 @@ test("issueme_get_issue refresh returns closed remote details and removes stale 
 		assert.match(result.content[0].text, /Local cache action: removed/);
 		assert.match(result.content[0].text, /Local file: removed \(issue is closed\)/);
 		assert.deepEqual(result.details.paths, []);
-		assert.deepEqual(result.details.removedPaths, ["issues/31-stale-open-title.json"]);
+		assert.deepEqual(result.details.removedPaths, [".pi/issues/31-stale-open-title.json"]);
 		assert.equal(result.details.fileActions[0].action, "removed");
-		assert.deepEqual(result.details.fileActions[0].removedPaths, ["issues/31-stale-open-title.json"]);
+		assert.deepEqual(result.details.fileActions[0].removedPaths, [".pi/issues/31-stale-open-title.json"]);
 		assert.equal(result.details.status, "cache_removed");
 		assert.equal(result.details.issue.state, "closed");
 		assert.equal(result.details.issue.localPath, undefined);
 		assert.equal(result.details.cacheUpdated, true);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+		assert.deepEqual(await readdir(join(projectRoot, ".pi", "issues")), [".gitignore"]);
 	});
 });
 
@@ -527,7 +527,7 @@ test("issueme_get_issue refresh bounds remote comments and reports truncation me
 		throw new Error(`Unexpected GitHub mock request: ${url.toString()}`);
 	}, async () => {
 		const result = await executeGet(getTool, projectRoot, { number: 32, refresh: true });
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "32-comment-heavy.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "32-comment-heavy.json"), "utf8"));
 		assert.deepEqual(calls, ["/repos/owner/repo/issues/32", "/repos/owner/repo/issues/32/comments"]);
 		assert.equal(cached.comments.length, MAX_CACHE_COMMENTS);
 		assert.equal(cached.comments_truncated, true);

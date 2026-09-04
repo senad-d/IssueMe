@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -42,7 +42,8 @@ function fakePi() {
 
 async function tempProjectWithBlockedIssueDirectory() {
 	const root = await mkdtemp(join(tmpdir(), "issueme-partial-success-test-"));
-	await writeFile(join(root, "issues"), "not a directory\n", "utf8");
+	await mkdir(join(root, ".pi"), { recursive: true });
+	await writeFile(join(root, ".pi", "issues"), "not a directory\n", "utf8");
 	return root;
 }
 

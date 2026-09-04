@@ -470,7 +470,7 @@ test("registered IssueMe tools run with injected config, repository, token, and 
 	results.push(await execute(tools.get("issueme_close_issue"), projectRoot, { number: 10 }));
 	results.push(await execute(tools.get("issueme_delete_issue"), projectRoot, { number: 11, confirmDelete: true }));
 
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), [".gitignore"]);
 	for (const result of results) {
 		assert.equal(result.details.result, "success");
 		assertNoToken(result);
@@ -496,7 +496,7 @@ test("cache-refresh tools stay sequential and order same-issue cache writes with
 
 	const syncResult = await execute(tools.get("issueme_sync_issues"), projectRoot, {});
 	assert.equal(syncResult.details.cacheUpdated, true);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-sync-target.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "10-sync-target.json"]);
 
 	const getRefresh = await execute(tools.get("issueme_get_issue"), projectRoot, { number: 10, refresh: true });
 	assert.equal(getRefresh.details.cacheUpdated, true);
@@ -511,7 +511,7 @@ test("cache-refresh tools stay sequential and order same-issue cache writes with
 	assert.equal(updateResult.details.cacheUpdated, true);
 	assert.deepEqual(updateResult.details.paths, ["issues/10-ordered-target.json"]);
 	assert.deepEqual(updateResult.details.removedPaths, ["issues/10-sync-target.json"]);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-ordered-target.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "10-ordered-target.json"]);
 	const finalRecord = await readJson(join(projectRoot, "issues", "10-ordered-target.json"));
 	assert.equal(finalRecord.title, "Ordered Target");
 	assert.deepEqual(finalRecord.labels, ["ready"]);

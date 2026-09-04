@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG_PATH } from "../constants.ts";
+import { DEFAULT_CONFIG_PATH, DEFAULT_ISSUES_DIR } from "../constants.ts";
 import type { IssueMeConfig } from "../types.ts";
 import { validateIssueMeConfig } from "../config/config.ts";
 import { IssueMeError } from "../errors.ts";
@@ -49,7 +49,7 @@ export const CONFIG_TUI_CATEGORIES: ConfigTuiCategory[] = [
 				label: "Issue directory",
 				description: "Project-local directory for IssueMe issue JSON files.",
 				type: "path",
-				emptyLabel: "issues",
+				emptyLabel: DEFAULT_ISSUES_DIR,
 			},
 			{
 				id: "allowedIssueCreator",
@@ -517,7 +517,7 @@ export class IssueMeConfigTui {
 		}
 		const value = raw.trim();
 		if (setting.id === "defaultSkillPath") target.defaultSkillPath = value || null;
-		else if (setting.id === "issueDirectory") target.issueDirectory = value || "issues";
+		else if (setting.id === "issueDirectory") target.issueDirectory = value || DEFAULT_ISSUES_DIR;
 		else if (setting.id === "allowedIssueCreator") target.allowedIssueCreator = value || "all";
 		else throw new IssueMeError("config_tui_invalid_setting", "Unsupported config setting.");
 	}

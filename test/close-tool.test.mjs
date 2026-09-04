@@ -7,7 +7,7 @@ import test from "node:test";
 import { writeIssueRecord } from "../src/issues/store.ts";
 import { registerCloseIssueTool } from "../src/tools/close-issue.ts";
 
-const config = { issueDirectory: "issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
+const config = { issueDirectory: ".pi/issues", defaultLabels: [], defaultAssignees: [], defaultSkillPath: null };
 
 function issueRecord(number, title, overrides = {}) {
 	return {
@@ -126,9 +126,9 @@ test("issueme_close_issue closes open issues and removes matching local cache fi
 		assert.match(result.content[0].text, /Closed issue #5: Close Target/);
 		assert.equal(result.details.status, "closed_now");
 		assert.equal(result.details.issue.state, "closed");
-		assert.deepEqual(result.details.removedPaths, ["issues/5-close-target.json"]);
+		assert.deepEqual(result.details.removedPaths, [".pi/issues/5-close-target.json"]);
 		assert.equal(result.details.cacheUpdated, true);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+		assert.deepEqual(await readdir(join(projectRoot, ".pi", "issues")), [".gitignore"]);
 	});
 });
 
@@ -209,9 +209,9 @@ test("issueme_close_issue treats already-closed issues as no-op remote mutations
 		assert.equal(result.details.status, "already_closed");
 		assert.equal(result.details.issue.state, "closed");
 		assert.deepEqual(result.details.changedFields, []);
-		assert.deepEqual(result.details.removedPaths, ["issues/5-close-target.json"]);
+		assert.deepEqual(result.details.removedPaths, [".pi/issues/5-close-target.json"]);
 		assert.equal(result.details.cacheUpdated, true);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+		assert.deepEqual(await readdir(join(projectRoot, ".pi", "issues")), [".gitignore"]);
 	});
 });
 

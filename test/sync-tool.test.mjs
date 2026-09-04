@@ -108,7 +108,7 @@ test("issueme_sync_issues reports unchanged files on repeated unchanged syncs", 
 		assert.equal(first.details.counts.unchanged, 0);
 		assert.equal(first.details.fileActions[0].action, "created");
 
-		const issuePath = join(projectRoot, "issues", "1-stable-title.json");
+		const issuePath = join(projectRoot, ".pi", "issues", "1-stable-title.json");
 		const firstText = await readFile(issuePath, "utf8");
 		const second = await executeSync(syncTool, projectRoot);
 		const secondText = await readFile(issuePath, "utf8");
@@ -119,7 +119,7 @@ test("issueme_sync_issues reports unchanged files on repeated unchanged syncs", 
 		assert.equal(second.details.counts.unchanged, 1);
 		assert.equal(second.details.counts.removed, 0);
 		assert.equal(second.details.fileActions[0].action, "unchanged");
-		assert.deepEqual(second.details.paths, ["issues/1-stable-title.json"]);
+		assert.deepEqual(second.details.paths, [".pi/issues/1-stable-title.json"]);
 		assert.deepEqual(second.details.removedPaths, []);
 		assert.equal(secondText, firstText);
 		assert.match(second.content[0].text, /unchanged: 1/);
@@ -133,7 +133,7 @@ test("issueme_sync_issues reports title-slug changes as renames instead of dupli
 	], async ({ projectRoot, syncTool }) => {
 		const first = await executeSync(syncTool, projectRoot);
 		assert.equal(first.details.counts.created, 1);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["1-original-title.json"]);
+		assert.deepEqual((await readdir(join(projectRoot, ".pi", "issues"))).sort(), [".gitignore", "1-original-title.json"]);
 
 		const second = await executeSync(syncTool, projectRoot);
 		assert.equal(second.details.counts.created, 0);
@@ -141,11 +141,11 @@ test("issueme_sync_issues reports title-slug changes as renames instead of dupli
 		assert.equal(second.details.counts.updated, 0);
 		assert.equal(second.details.counts.unchanged, 0);
 		assert.equal(second.details.counts.removed, 1);
-		assert.deepEqual(second.details.paths, ["issues/1-renamed-title.json"]);
-		assert.deepEqual(second.details.removedPaths, ["issues/1-original-title.json"]);
+		assert.deepEqual(second.details.paths, [".pi/issues/1-renamed-title.json"]);
+		assert.deepEqual(second.details.removedPaths, [".pi/issues/1-original-title.json"]);
 		assert.equal(second.details.fileActions[0].action, "renamed");
-		assert.deepEqual(second.details.fileActions[0].removedPaths, ["issues/1-original-title.json"]);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["1-renamed-title.json"]);
+		assert.deepEqual(second.details.fileActions[0].removedPaths, [".pi/issues/1-original-title.json"]);
+		assert.deepEqual((await readdir(join(projectRoot, ".pi", "issues"))).sort(), [".gitignore", "1-renamed-title.json"]);
 		assert.match(second.content[0].text, /Created: 0, updated: 0, renamed: 1/);
 	});
 });
@@ -203,7 +203,7 @@ test("restricted issueme_sync_issues applies creator scope and removes stale out
 		assert.deepEqual(result.details.removedPaths, ["issues/2-stale-intruder.json"]);
 		assert.equal(result.details.creatorScope, "hubot");
 		assert.deepEqual(result.details.issues.map((item) => item.creator), ["Hubot"]);
-		assert.deepEqual(await readdir(join(projectRoot, "issues")), ["1-allowed-hubot.json"]);
+		assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "1-allowed-hubot.json"]);
 		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "1-allowed-hubot.json"), "utf8"));
 		assert.equal(cached.creator, "Hubot");
 		assert.doesNotMatch(JSON.stringify(result), /Do not expose|Unexpected Intruder/);
@@ -217,9 +217,9 @@ test("restricted issueme_sync_issues applies creator scope and removes stale out
 
 test("issueme_sync_issues reports invalid cache files safely and leaves them untouched", async () => {
 	await withMockedSync([[githubIssue()]], async ({ projectRoot, syncTool }) => {
-		await mkdir(join(projectRoot, "issues"));
-		const corruptPath = join(projectRoot, "issues", "98-corrupt.json");
-		const invalidPath = join(projectRoot, "issues", "99-invalid.json");
+		await mkdir(join(projectRoot, ".pi", "issues"), { recursive: true });
+		const corruptPath = join(projectRoot, ".pi", "issues", "98-corrupt.json");
+		const invalidPath = join(projectRoot, ".pi", "issues", "99-invalid.json");
 		const corruptText = "{not json PRIVATE ISSUE BODY";
 		const invalidText = `${JSON.stringify({
 			schemaVersion: 1,
@@ -243,14 +243,14 @@ test("issueme_sync_issues reports invalid cache files safely and leaves them unt
 
 		const result = await executeSync(syncTool, projectRoot);
 		assert.equal(result.details.counts.invalid, 2);
-		assert.deepEqual(result.details.invalidFiles.map((file) => file.path).sort(), ["issues/98-corrupt.json", "issues/99-invalid.json"]);
+		assert.deepEqual(result.details.invalidFiles.map((file) => file.path).sort(), [".pi/issues/98-corrupt.json", ".pi/issues/99-invalid.json"]);
 		assert.deepEqual(result.details.invalidFiles.map((file) => file.reason).sort(), ["issue_file_labels_invalid", "issue_file_parse_failed"]);
 		assert.match(result.content[0].text, /Invalid local issue files: 2 left untouched/);
 		assert.doesNotMatch(result.content[0].text, /PRIVATE/);
 		assert.doesNotMatch(JSON.stringify(result.details), /PRIVATE/);
 		assert.equal(await readFile(corruptPath, "utf8"), corruptText);
 		assert.equal(await readFile(invalidPath, "utf8"), invalidText);
-		assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), ["1-stable-title.json", "98-corrupt.json", "99-invalid.json"]);
+		assert.deepEqual((await readdir(join(projectRoot, ".pi", "issues"))).sort(), [".gitignore", "1-stable-title.json", "98-corrupt.json", "99-invalid.json"]);
 	});
 });
 
@@ -313,7 +313,7 @@ test("issueme_sync_issues bounds cached comments and records truncation metadata
 	process.env.GITHUB_REPOSITORY = "owner/repo";
 	try {
 		const result = await executeSync(pi.syncTool, projectRoot);
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "1-stable-title.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "1-stable-title.json"), "utf8"));
 		assert.equal(cached.comments.length, 100);
 		assert.equal(cached.comments_truncated, true);
 		assert.equal(cached.comments_count, 101);

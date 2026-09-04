@@ -283,7 +283,7 @@ test("Pi session serializes same-turn IssueMe write/write cache refreshes for on
 		"tool_execution_end:issueme_update_issue",
 	]);
 	assert.deepEqual(toolResults.map((result) => result.details.result), ["success", "success"]);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-pi-runner-ordered.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "10-pi-runner-ordered.json"]);
 	const finalRecord = await readJson(join(projectRoot, "issues", "10-pi-runner-ordered.json"));
 	assert.equal(finalRecord.title, "Pi Runner Ordered");
 	assert.equal(finalRecord.repository, REPOSITORY);
@@ -312,7 +312,7 @@ test("Pi session serializes same-turn IssueMe write/remove cache races for one i
 	]);
 	assert.deepEqual(toolResults.map((result) => result.details.result), ["success", "success"]);
 	assert.deepEqual(toolResults[1].details.removedPaths, ["issues/10-pi-runner-removed.json"]);
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), []);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), [".gitignore"]);
 	assert.equal(mock.issues.get(10).state, "closed");
 });
 
@@ -332,7 +332,7 @@ test("Pi session abort checkpoint prevents same-turn IssueMe cache removal after
 	assert.equal(toolResults[0].details.cacheUpdated, false);
 	assert.equal(toolResults[0].details.needsSync, true);
 	assert.equal(toolResults[0].details.error.code, "github_request_aborted");
-	assert.deepEqual(await readdir(join(projectRoot, "issues")), ["10-abort-close.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", "10-abort-close.json"]);
 	const cached = await readJson(join(projectRoot, "issues", "10-abort-close.json"));
 	assert.equal(cached.state, "open");
 	assert.equal(mock.issues.get(10).state, "closed");

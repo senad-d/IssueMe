@@ -21,7 +21,7 @@ Default shape:
 
 ```json
 {
-  "issueDirectory": "issues",
+  "issueDirectory": ".pi/issues",
   "allowedIssueCreator": "all",
   "defaultLabels": [],
   "defaultAssignees": [],
@@ -33,7 +33,7 @@ Supported settings:
 
 | Setting | Purpose |
 | --- | --- |
-| `issueDirectory` | Project-relative directory for local issue JSON files. Defaults to `issues`. |
+| `issueDirectory` | Project-relative directory for local issue JSON files. Defaults to `.pi/issues` so the cache stays out of `git status`; legacy explicit `issues` configs keep working. |
 | `allowedIssueCreator` | `all` or one GitHub username. Limits which issues IssueMe processes; it is not GitHub access control. |
 | `defaultLabels` | Up to 25 labels used by create tools when labels are omitted. Explicit `[]` overrides defaults. |
 | `defaultAssignees` | Up to 25 assignees used by create tools when assignees are omitted. Explicit `[]` overrides defaults. |
@@ -42,7 +42,7 @@ Supported settings:
 IssueMe validates config before saving:
 
 - rejects secret-like keys at any nesting level;
-- rejects path traversal, project-root issue directories, and protected directories such as `.git`, the pi config directory, `node_modules`, `dist`, `build`, and `coverage`;
+- rejects path traversal, project-root issue directories, and protected directories such as `.git`, the pi config directory, `node_modules`, `dist`, `build`, and `coverage`; the default `.pi/issues` cache home (and subdirectories under it) is the one allowed exception inside the pi config directory;
 - refuses symlinked IssueMe config files or config parent directories that could escape the project;
 - limits raw default label and assignee arrays to 25 entries each before deduplication, failing closed when manually edited config exceeds either limit;
 - deduplicates and trims labels/assignees within those limits;
@@ -106,17 +106,21 @@ Project-local token files, Git config, `.pi/agent/issueme.json`, skills, and iss
 IssueMe writes one human/LLM-readable JSON file per open in-scope issue:
 
 ```text
-issues/<issue-number>-<issue-title-slug>.json
+.pi/issues/<issue-number>-<issue-title-slug>.json
 ```
 
 Local files can include issue title, state, creator login when known, body, labels, assignees, milestone, native sub-issue metadata, bounded comments, comment-fetch metadata, URL, timestamps, and sync time.
 
-Treat local issue files as potentially sensitive because issue bodies and comments can contain private project information. `issues/` is ignored by git by default and excluded from package dry-runs.
+The cache never dirties `git status`: IssueMe writes a directory-local `.gitignore` (containing `*`) into the issue directory, so cache files stay invisible to git even in repositories that do not ignore `.pi/`.
+
+Older IssueMe versions cached into `issues/` at the project root. When a legacy `issues/` directory with cache files exists and the config still uses the default location, IssueMe copies those files into `.pi/issues` on first use and adds the same self-ignoring `.gitignore` to the legacy directory. Legacy files are never deleted automatically (some may be git-tracked); remove the old `issues/` directory manually once you no longer need it. An explicit `issueDirectory: "issues"` config keeps the legacy location working unchanged.
+
+Treat local issue files as potentially sensitive because issue bodies and comments can contain private project information. The cache is excluded from package dry-runs.
 
 If you intentionally need to commit or share cached issue files, scrub private bodies/comments first, confirm the target repository or archive is appropriate for that data, and force-add only reviewed files:
 
 ```bash
-git add -f issues/<file>.json
+git add -f .pi/issues/<file>.json
 npm run check:pack
 ```
 

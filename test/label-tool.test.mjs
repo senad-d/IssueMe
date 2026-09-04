@@ -109,9 +109,9 @@ test("issueme_label_issue refreshes the issue and returns final labels instead o
 		assert.equal(JSON.parse(calls[2].body).labels[0], "new");
 		assert.match(result.content[0].text, /Labels for issue #1: final, triaged/);
 		assert.deepEqual(result.details.issue.labels, ["final", "triaged"]);
-		assert.deepEqual(result.details.paths, ["issues/1-label-target.json"]);
+		assert.deepEqual(result.details.paths, [".pi/issues/1-label-target.json"]);
 		assert.equal(result.details.cacheUpdated, true);
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "1-label-target.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "1-label-target.json"), "utf8"));
 		assert.deepEqual(cached.labels, ["final", "triaged"]);
 	});
 });
@@ -170,7 +170,7 @@ test("issueme_label_issue treats missing label removal as idempotent and still r
 		assert.match(result.content[0].text, /Labels for issue #1: bug/);
 		assert.deepEqual(result.details.issue.labels, ["bug"]);
 		assert.equal(result.details.cacheUpdated, true);
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "1-label-target.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "1-label-target.json"), "utf8"));
 		assert.deepEqual(cached.labels, ["bug"]);
 	});
 });

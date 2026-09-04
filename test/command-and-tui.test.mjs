@@ -341,7 +341,7 @@ test("/issueme info honors project-local reads only when the project is trusted"
 	assert.match(untrustedText, /Project trusted: no/);
 	assert.match(untrustedText, /Repository: Project trust is required/);
 	assert.match(untrustedText, /Token: missing/);
-	assert.match(untrustedText, /Issue directory: issues/);
+	assert.match(untrustedText, /Issue directory: \.pi\/issues/);
 	assert.match(untrustedText, /Allowed issue creator: all/);
 	assert.match(untrustedText, /Cached open issue files: 0/);
 	assert.doesNotMatch(untrustedText, /project-env|project-secret|custom-cache|senad-d|owner\/repo/);

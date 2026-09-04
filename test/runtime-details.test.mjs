@@ -224,7 +224,7 @@ test("createIssueMeRuntime covers trust, injected options, async providers, repo
 	await writeFile(`${envProject}/.env`, `GH_TOKEN=${RUNTIME_TOKEN}\n`, "utf8");
 	const recorder = createFetchRecorder(() => new Response(JSON.stringify(githubIssue({ number: 3 })), { headers: { "content-type": "application/json" } }));
 	const envRuntime = await createIssueMeRuntime(ctxFor(envProject), { projectRoot: envProject, env: {}, fetchFn: recorder.fetchFn });
-	assert.equal(envRuntime.config.issueDirectory, "issues");
+	assert.equal(envRuntime.config.issueDirectory, ".pi/issues");
 	assert.equal(envRuntime.config.allowedIssueCreator, "all");
 	await envRuntime.client.getIssue(3);
 	assert.equal(recorder.calls[0].headers.Authorization, `Bearer ${RUNTIME_TOKEN}`);

@@ -1,7 +1,8 @@
 import type { Dirent } from "node:fs";
-import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
+import { DEFAULT_ISSUES_DIR, LEGACY_ISSUES_DIR } from "../constants.ts";
 import type {
 	InvalidIssueFileDiagnostic,
 	IssueFileListResult,
@@ -14,6 +15,7 @@ import type {
 import { IssueMeError, isNodeError } from "../errors.ts";
 import {
 	assertPathInside,
+	normalizeIssueDirectoryValue,
 	parseIssueNumberFromFileName,
 	resolveExistingIssueFilePath,
 	resolveIssueDirectory,
@@ -53,6 +55,7 @@ export async function writeIssueRecord(projectRoot: string, config: IssueMeConfi
 	const writeResult = await withCanonicalFileMutationQueue(targetPath, async () => {
 		assertNotAborted(signal);
 		await mkdir(dirname(targetPath), { recursive: true });
+		await ensureCacheDirectoryGitIgnore(dirname(targetPath));
 		const safeDirectory = await ensureIssueDirectorySafe(projectRoot, config, false);
 		await ensureTargetFileSafe(targetPath, safeDirectory, projectRoot);
 		const existingRecord = await readIssueFileIfExists(targetPath, safeDirectory, projectRoot);
@@ -400,10 +403,54 @@ async function ensureIssueDirectorySafe(projectRoot: string, config: IssueMeConf
 		return directory;
 	} catch (error) {
 		if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+		if (await migrateLegacyIssueCache(projectRoot, config, directory, rootRealPath)) return directory;
 		if (!forWrite) return directory;
 		const parentRealPath = await nearestExistingParentRealPath(projectRoot, directory);
 		assertPathInside(rootRealPath, parentRealPath, "Issue directory parent must resolve inside the current project.");
 		return directory;
+	}
+}
+
+/**
+ * One-shot legacy migration: older IssueMe versions cached issues in <project>/issues,
+ * which dirtied product working trees. When the configured directory is the new default
+ * (.pi/issues) and does not exist yet, copy legacy issue JSON files into it and drop a
+ * self-ignoring .gitignore into both directories so neither ever shows in git status.
+ * Legacy files are copied, never deleted: some may be git-tracked and IssueMe is git-free,
+ * so removal stays a deliberate user action. Naive by design; issueme_sync_issues rebuilds
+ * the cache from GitHub if a partial copy is ever interrupted.
+ */
+async function migrateLegacyIssueCache(projectRoot: string, config: IssueMeConfig, directory: string, rootRealPath: string): Promise<boolean> {
+	if (normalizeIssueDirectoryValue(config.issueDirectory) !== DEFAULT_ISSUES_DIR) return false;
+	const legacyDirectory = resolve(projectRoot, LEGACY_ISSUES_DIR);
+	let legacyFiles: Dirent[];
+	try {
+		const legacyStat = await lstat(legacyDirectory);
+		if (!legacyStat.isDirectory()) return false;
+		legacyFiles = (await readdir(legacyDirectory, { withFileTypes: true }))
+			.filter((entry) => entry.isFile() && parseIssueNumberFromFileName(entry.name) !== undefined);
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return false;
+		throw error;
+	}
+	if (legacyFiles.length === 0) return false;
+	const parentRealPath = await nearestExistingParentRealPath(projectRoot, directory);
+	assertPathInside(rootRealPath, parentRealPath, "Issue directory parent must resolve inside the current project.");
+	await mkdir(directory, { recursive: true });
+	for (const entry of legacyFiles) {
+		await copyFile(resolve(legacyDirectory, entry.name), resolve(directory, entry.name));
+	}
+	await ensureCacheDirectoryGitIgnore(directory);
+	await ensureCacheDirectoryGitIgnore(legacyDirectory);
+	return true;
+}
+
+/** Keep the issue cache invisible to git: a directory-local .gitignore ignoring everything, including itself. */
+async function ensureCacheDirectoryGitIgnore(directory: string): Promise<void> {
+	try {
+		await writeFile(resolve(directory, ".gitignore"), "*\n", { flag: "wx" });
+	} catch (error) {
+		if (!(isNodeError(error) && error.code === "EEXIST")) throw error;
 	}
 }
 

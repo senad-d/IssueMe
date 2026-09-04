@@ -224,7 +224,7 @@ for (const scenario of abortScenarios) {
 
 		if (initialPath) {
 			assert.equal(await readFile(initialPath, "utf8"), initialText);
-			assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [basename(initialPath)]);
+			assert.deepEqual((await readdir(join(projectRoot, "issues"))).sort(), [".gitignore", basename(initialPath)]);
 		} else {
 			await assertNoIssueDirectory(projectRoot);
 		}

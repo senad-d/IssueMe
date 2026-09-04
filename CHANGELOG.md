@@ -14,6 +14,7 @@
 
 ### Changed
 
+- The default issue cache moved from `issues/` to `.pi/issues/` so tracker work never dirties the product working tree; `git status` is unaffected by IssueMe caches. IssueMe also writes a directory-local `.gitignore` (`*`) into the issue directory - including explicitly configured legacy `issues/` directories - so cache files stay git-invisible even in repositories that do not ignore `.pi/`. Existing legacy `issues/` caches are migrated by copy into `.pi/issues` on first use (never deleted, since some files may be git-tracked); an explicit `issueDirectory: "issues"` config keeps the legacy location working unchanged.
 - Reduced IssueMe tool context size with compact tool descriptions, shorter schema guidance, centralized shared terms, and budget coverage; tool behavior is unchanged.
 - `/issueme info`, `/issueme help`, `/issueme --help`, and `/issueme -h` now share one help/status surface.
 - `/issueme start` preserves escaped spaces and Windows-style backslashes while sending a canonical readable project-local skill path to the agent.
@@ -49,9 +50,9 @@
 ### Security
 
 - Project-local `.env`, Git config, IssueMe config, and issue cache files are honored only in trusted projects.
-- Issue directory validation rejects project root, traversal, the active Pi project config directory, `.git`, `.pi`, `node_modules`, and symlink escapes, including explicit cache lookups through symlinked subdirectories.
+- Issue directory validation rejects project root, traversal, the active Pi project config directory, `.git`, `.pi`, `node_modules`, and symlink escapes, including explicit cache lookups through symlinked subdirectories; the default `.pi/issues` cache home (and subdirectories under it) is the one allowed exception inside the Pi config directory.
 - IssueMe config reads/writes refuse symlinked config files and symlinked config parent directories.
-- Issue cache files are ignored by git by default because they may contain private bodies/comments, while source directories named `issues` under `src/` remain trackable.
+- Issue cache files are ignored by git by default - via the `.pi/issues` default location plus a self-ignoring directory-local `.gitignore` - because they may contain private bodies/comments, while source directories named `issues` under `src/` remain trackable.
 - Default labels/assignees and explicit label/assignee tool arrays reject null-byte and multiline values before persistence or mutation, and assignee defaults/tool inputs must be valid GitHub usernames.
 
 > IssueMe intentionally does not use GitHub CLI, shell-based GitHub operations, webhooks, background listeners, or telemetry.

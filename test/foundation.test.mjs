@@ -229,7 +229,11 @@ test("slug, issue directory, and issue paths are safe and stable", async () => {
 	assert.throws(() => resolveIssueFilePath(cwd, "../outside", 1, "Oops"), /path traversal|inside the current project/);
 	assert.throws(() => resolveIssueDirectory(cwd, "."), /project root/);
 	assert.throws(() => resolveIssueDirectory(cwd, ".git"), /protected/);
-	assert.throws(() => resolveIssueDirectory(cwd, ".PI/issues"), /protected/);
+	assert.match(resolveIssueDirectory(cwd, ".pi/issues"), /\.pi[/\\]issues$/);
+	assert.match(resolveIssueDirectory(cwd, ".PI/issues/sub"), /\.PI[/\\]issues[/\\]sub$/);
+	assert.throws(() => resolveIssueDirectory(cwd, ".pi"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, ".pi/agent"), /protected/);
+	assert.throws(() => resolveIssueDirectory(cwd, ".pi/issues/.git"), /protected/);
 	assert.throws(() => resolveIssueDirectory(cwd, "node_modules/issues"), /protected/);
 	assert.throws(() => resolveIssueDirectory(cwd, "Build/issues"), /protected/);
 	assert.throws(() => resolveIssueDirectory(cwd, "issues\0bad"), /null byte/);
@@ -246,7 +250,7 @@ test("slug, issue directory, and issue paths are safe and stable", async () => {
 test("config loader/saver handles defaults, non-secret settings, validation, and nested secret-like key refusal", async () => {
 	const cwd = await tempProject();
 	assert.deepEqual(await loadIssueMeConfig(cwd), {
-		issueDirectory: "issues",
+		issueDirectory: ".pi/issues",
 		allowedIssueCreator: "all",
 		defaultLabels: [],
 		defaultAssignees: [],
@@ -327,7 +331,8 @@ test("config loader/saver handles defaults, non-secret settings, validation, and
 		assert.doesNotMatch(error.message, /secret-value/);
 		return true;
 	});
-	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: ".pi/issues" }), /protected/);
+	assert.equal((await saveIssueMeConfig(cwd, { issueDirectory: ".pi/issues" })).issueDirectory, ".pi/issues");
+	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: ".pi/agent" }), /protected/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "../issues" }), /path traversal/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { issueDirectory: "issues\0bad" }), /null byte/);
 	await assert.rejects(() => saveIssueMeConfig(cwd, { allowedIssueCreator: "octocat hubot" }), /one GitHub username/);

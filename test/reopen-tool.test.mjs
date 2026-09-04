@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -70,7 +70,10 @@ async function executeReopen(tool, cwd, params) {
 
 async function withMockedReopenTool(fetchFn, callback, options = {}) {
 	const projectRoot = await tempProject();
-	if (options.blockIssueDirectory) await writeFile(join(projectRoot, "issues"), "not a directory\n", "utf8");
+	if (options.blockIssueDirectory) {
+		await mkdir(join(projectRoot, ".pi"), { recursive: true });
+		await writeFile(join(projectRoot, ".pi", "issues"), "not a directory\n", "utf8");
+	}
 	const reopenTool = registerReopenTool();
 	const originalFetch = globalThis.fetch;
 	const originalGhToken = process.env.GH_TOKEN;
@@ -129,10 +132,10 @@ test("issueme_reopen_issue reopens closed issues, posts an optional comment, and
 		assert.equal(result.details.issue.state, "open");
 		assert.deepEqual(result.details.changedFields, ["state", "comments"]);
 		assert.equal(result.details.comment.id, 77);
-		assert.deepEqual(result.details.paths, ["issues/7-reopen-target.json"]);
+		assert.deepEqual(result.details.paths, [".pi/issues/7-reopen-target.json"]);
 		assert.equal(result.details.cacheUpdated, true);
 
-		const cached = JSON.parse(await readFile(join(projectRoot, "issues", "7-reopen-target.json"), "utf8"));
+		const cached = JSON.parse(await readFile(join(projectRoot, ".pi", "issues", "7-reopen-target.json"), "utf8"));
 		assert.equal(cached.state, "open");
 		assert.equal(cached.comments[0].body, "Reopen with context");
 	});
