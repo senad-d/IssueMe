@@ -41,12 +41,12 @@ Discovery tools do not refresh or write local cache files except `issueme_list_s
 | `issueme_update_comment` | Edit an existing comment after verifying the issue is open and the comment belongs to that issue, then refresh the local file. |
 | `issueme_delete_comment` | Delete a specific existing comment after verifying the issue is open and the comment belongs to that issue, then refresh the local file. |
 | `issueme_assign_issue` | Add, remove, or set assignees on an open issue. Add/set validate that users are assignable; `set` accepts `[]` to clear assignees. |
-| `issueme_label_issue` | Add, remove, or set labels on an open issue. Add/set require labels to already exist in repository taxonomy. |
+| `issueme_label_issue` | Add, remove, or set labels on an open or closed issue. Add/set require labels to already exist in repository taxonomy; closed issues remain absent from local cache. |
 | `issueme_reopen_issue` | Reopen a closed issue, optionally post a reopen comment, and refresh/write its local JSON file. Already-open issues are idempotent no-ops. |
 | `issueme_close_issue` | Close an open issue, optionally set close reason `completed` or `not_planned`, and remove its local JSON file. Already-closed issues are reported as already closed and are not mutated again. |
 | `issueme_delete_issue` | Permanently delete one exact open or closed GitHub issue through GraphQL and remove its local JSON file. Requires explicit irreversible-delete intent, `confirmDelete: true`, and repository administrator permission; pull request numbers are refused. |
 
-Closed issues are not mutated again except through explicit `issueme_reopen_issue` or confirmed `issueme_delete_issue` operations.
+Closed issues remain protected from normal mutations. Label changes through `issueme_label_issue` or bulk `add_labels`, explicit reopen, and confirmed permanent deletion are the documented exceptions.
 
 ## Repository taxonomy tools
 
@@ -81,7 +81,7 @@ IssueMe does not create body-only parent references or body-only ordering fallba
 
 | Tool | Behavior |
 | --- | --- |
-| `issueme_bulk_update_issues` | Apply one limited action (`add_labels`, `assign`, `set_milestone`, `add_to_project`, or `close`) to an explicit list of issue numbers. Executes sequentially, refuses search/query targets, defaults to stop-on-error, and returns bounded per-issue success/failure details. |
+| `issueme_bulk_update_issues` | Apply one limited action (`add_labels`, `assign`, `set_milestone`, `add_to_project`, or `close`) to an explicit list of issue numbers. `add_labels` accepts open or closed issues; other non-close mutations require open issues. Executes sequentially, refuses search/query targets, defaults to stop-on-error, and returns bounded per-issue success/failure details. |
 
 Bulk operations require explicit issue numbers. Inspect `details.bulkResults` before retrying because earlier issues may have succeeded remotely even when a later issue failed.
 

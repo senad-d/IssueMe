@@ -116,6 +116,47 @@ test("issueme_label_issue refreshes the issue and returns final labels instead o
 	});
 });
 
+test("issueme_label_issue updates labels on closed issues without creating a closed-issue cache file", async () => {
+	const calls = [];
+	let mutated = false;
+	await withMockedLabelTool(async (input, init) => {
+		const url = new URL(input.toString());
+		calls.push({ path: url.pathname, method: init.method });
+		if (url.pathname === "/repos/owner/repo/issues/1" && init.method === "GET") {
+			return jsonResponse(githubIssue({
+				state: "closed",
+				closed_at: "2026-06-27T01:00:00Z",
+				labels: mutated ? [{ name: "ready" }] : [],
+			}));
+		}
+		if (url.pathname === "/repos/owner/repo/labels/ready" && init.method === "GET") {
+			return jsonResponse({ name: "ready" });
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/labels" && init.method === "POST") {
+			mutated = true;
+			return jsonResponse([{ name: "ready" }]);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments" && init.method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected GitHub mock request: ${init.method} ${url.toString()}`);
+	}, async ({ projectRoot, labelTool }) => {
+		const result = await executeLabel(labelTool, projectRoot, { number: 1, action: "add", labels: ["ready"] });
+		assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+			"GET /repos/owner/repo/issues/1",
+			"GET /repos/owner/repo/labels/ready",
+			"POST /repos/owner/repo/issues/1/labels",
+			"GET /repos/owner/repo/issues/1",
+			"GET /repos/owner/repo/issues/1/comments",
+		]);
+		assert.match(result.content[0].text, /Labels for issue #1: ready/);
+		assert.equal(result.details.issue.state, "closed");
+		assert.deepEqual(result.details.issue.labels, ["ready"]);
+		assert.deepEqual(result.details.paths, []);
+		assert.deepEqual(result.details.removedPaths, []);
+		assert.equal(result.details.cacheUpdated, true);
+		await assert.rejects(() => readFile(join(projectRoot, ".pi", "issues", "1-label-target.json"), "utf8"), { code: "ENOENT" });
+	});
+});
+
 test("issueme_label_issue rejects missing labels before GitHub can auto-create taxonomy", async () => {
 	const calls = [];
 	await withMockedLabelTool(async (input, init) => {

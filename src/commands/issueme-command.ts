@@ -291,7 +291,7 @@ async function startWorkflow(pi: ExtensionAPI, ctx: ExtensionCommandContext, ski
 		`Read and use the IssueMe workflow skill at @${readableSkillPath}.`,
 		"Use the IssueMe tools for GitHub issue management in the current repository.",
 		"Start by calling issueme_sync_issues when current issue state matters.",
-		"Do not update, comment on, label, assign, or close closed issues.",
+		"Do not update, comment on, assign, or close closed issues; label changes are allowed.",
 	].join("\n");
 	if (ctx.isIdle()) pi.sendUserMessage(prompt);
 	else pi.sendUserMessage(prompt, { deliverAs: "followUp" });

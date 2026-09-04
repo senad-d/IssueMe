@@ -161,6 +161,48 @@ test("issueme_bulk_update_issues adds labels to explicit issue numbers sequentia
 	assertNoToken(result);
 });
 
+test("issueme_bulk_update_issues adds labels to closed issues and removes stale cache files", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([
+		[1, githubIssue(1, "Closed Target", { state: "closed", closed_at: "2026-06-27T01:00:00Z" })],
+	]);
+	await writeIssueRecord(projectRoot, config, issueRecord(1, "Closed Target"));
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push({ method, path: url.pathname });
+
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "GET") return jsonResponse(issues.get(1));
+		if (url.pathname === "/repos/owner/repo/labels/triage" && method === "GET") return jsonResponse({ name: "triage" });
+		if (url.pathname === "/repos/owner/repo/issues/1/labels" && method === "POST") {
+			const issue = issues.get(1);
+			issues.set(1, githubIssue(1, issue.title, { ...issue, labels: ["triage"] }));
+			return jsonResponse([{ name: "triage" }]);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1/comments" && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected closed bulk label request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "add_labels", labels: ["triage"] });
+
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/triage",
+		"POST /repos/owner/repo/issues/1/labels",
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/issues/1/comments",
+	]);
+	assert.equal(result.details.result, "success");
+	assert.equal(result.details.bulkResults[0].issue.state, "closed");
+	assert.deepEqual(result.details.bulkResults[0].issue.labels, ["triage"]);
+	assert.deepEqual(result.details.paths, []);
+	assert.deepEqual(result.details.removedPaths, ["issues/1-closed-target.json"]);
+	assert.deepEqual(await readdir(join(projectRoot, "issues")), [".gitignore"]);
+	assertNoToken(result);
+});
+
 test("issueme_bulk_update_issues validates one repeated label once across 50 issues", async () => {
 	const projectRoot = await tempProject();
 	const calls = [];

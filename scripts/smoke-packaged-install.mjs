@@ -221,7 +221,9 @@ async function main() {
     const installRoot = join(tempRoot, "install");
     const packageRoot = await installPackedPackage(installRoot, packed.tarballPath);
     const rpcCommands = await collectRpcCommands(packageRoot, installRoot);
-    const issueMeRpcCommands = rpcCommands.filter((command) => command.source === "extension");
+    const issueMeRpcCommands = rpcCommands.filter(
+      (command) => command.source === "extension" && command.sourceInfo?.source === "cli",
+    );
     const registrationProbe = await collectRegistrationProbe(packageRoot);
     const probeCommandNames = registrationProbe.commands.map((command) => command.name);
     const rpcCommandNames = issueMeRpcCommands.map((command) => command.name);

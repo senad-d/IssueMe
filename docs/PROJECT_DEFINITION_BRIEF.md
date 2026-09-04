@@ -27,7 +27,7 @@
   - Refresh one known issue in any state through `issueme_get_issue`.
   - Discover and manage repository labels, milestones, assignees, and GitHub Projects v2 boards/fields.
   - Add open issues to Projects v2 boards and update discovered project item fields.
-  - Update, add/edit/delete comments on, label, and assign open issues.
+  - Update, add/edit/delete comments on, and assign open issues; label open or closed issues.
   - Reopen intentionally selected closed issues.
   - Close open issues with optional GitHub close reasons and remove their local issue files.
   - Apply guarded bulk updates to explicit issue-number lists.
@@ -37,7 +37,7 @@
 - Non-goals:
   - No GitHub CLI.
   - No webhook listener in the first version.
-  - No edits, comment additions/edits/deletions, label changes, assignment changes, or remote close mutations for already closed/resolved issues.
+  - No edits, comment additions/edits/deletions, assignment changes, or remote close mutations for already closed/resolved issues; explicit issue-label changes are allowed.
   - No bundled IssueMe skill; `/issueme start` validates a readable skill file inside the trusted project and prompts with a project-relative `@path` reference.
 
 ## 4. Pi integration surface
@@ -71,8 +71,8 @@
 | Tool | `issueme_update_comment` | Edit existing comments on open issues | Implemented; verifies comment-to-issue ownership and rejects closed issues. |
 | Tool | `issueme_delete_comment` | Delete existing comments on open issues | Implemented; verifies comment-to-issue ownership and rejects closed issues. |
 | Tool | `issueme_assign_issue` | Assign/unassign users | Implemented; rejects closed issues and unassignable users for add/set. |
-| Tool | `issueme_label_issue` | Add/remove/set labels | Implemented; rejects closed issues and missing repository labels for add/set. |
-| Tool | `issueme_reopen_issue` | Reopen intentionally selected closed issues | Implemented as the only closed-issue mutation exception, with optional reopen comment and cache refresh. |
+| Tool | `issueme_label_issue` | Add/remove/set labels | Implemented for open or closed issues; rejects missing repository labels for add/set and keeps closed issues out of local cache. |
+| Tool | `issueme_reopen_issue` | Reopen intentionally selected closed issues | Implemented as an explicit closed-issue mutation exception, with optional reopen comment and cache refresh. |
 | Tool | `issueme_close_issue` | Close open issue and remove local file | Implemented with optional GitHub close reason; preserves the remote issue. |
 | Tool | `issueme_delete_issue` | Permanently delete one mistaken GitHub issue | Implemented with REST identity/creator preflight plus GraphQL `deleteIssue`; requires explicit irreversible intent, `confirmDelete: true`, non-PR target, and repository administrator permission. |
 | Tool | `issueme_bulk_update_issues` | Apply guarded bulk actions to explicit issue-number lists | Implemented sequentially with bounded per-issue results and no query-derived mutation targets. |
@@ -154,7 +154,7 @@
 - Assumptions:
   - MIT license is acceptable.
   - `.env` is project-root only and honored only in trusted projects.
-  - Closed GitHub issues are read-only to IssueMe except through explicit `issueme_reopen_issue`.
+  - Closed GitHub issues permit label changes, explicit reopen, or confirmed permanent deletion; other mutations remain refused.
   - Local `issues/` contains open issues only.
   - `/issueme start [skill-path]` accepts project-relative paths or absolute paths only when they resolve inside the trusted project, uses configured `defaultSkillPath` when the argument is omitted, and sends project-relative skill references to the agent.
 - Decisions:

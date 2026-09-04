@@ -7,7 +7,7 @@ import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorSc
 
 const LabelIssueParams = Type.Object(
 	{
-		number: Type.Integer({ minimum: 1, description: "Open issue number." }),
+		number: Type.Integer({ minimum: 1, description: "Open or closed issue number." }),
 		action: StringEnum(["add", "remove", "set"] as const, { description: "Label action; set [] clears all." }),
 		labels: Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Label names. Max ${MAX_TOOL_LABELS}.` }),
 	},
@@ -24,24 +24,25 @@ export function registerLabelIssueTool(pi: ExtensionAPI, options: IssueMeToolReg
 			description: "Add, remove, or set issue labels.",
 			promptSnippet: "Add/remove/set issue labels.",
 			promptGuidelines: [
-				"Use issueme_label_issue to add, remove, or set labels on open issues; add/set require existing repository labels.",
+				"Use issueme_label_issue to add, remove, or set labels on open or closed issues; add/set require existing repository labels.",
 			],
 			executionMode: "sequential",
 			parameters: LabelIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const labels = normalizeLabelMutationLabels(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
-				await assertExistingIssueCreatorAllowed(runtime, params.number, "label_issue", signal);
+				await assertExistingIssueCreatorAllowed(runtime, params.number, "label_issue", signal, { requireOpen: false });
 				const partialResult = await applyLabelMutationForTool(runtime, params, labels, signal);
 				if (partialResult) return partialResult;
 				try {
-					const { record, summary, path } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
+					const { record, summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
 					return toolText(`Labels for issue #${params.number}: ${record.labels.length ? record.labels.join(", ") : "none"}`, {
 						repository: runtime.repository,
 						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,
 						changedFields: ["labels"],
 						paths: path ? [path] : [],
+						removedPaths,
 						cacheUpdated: true,
 					});
 				} catch (error) {

@@ -123,7 +123,7 @@ test("IssueMe shared prompt preamble is centralized", () => {
 	assert.equal(shared.length, 1);
 	assert.match(shared[0], /issue means GitHub issue/);
 	assert.match(shared[0], /cache means local IssueMe JSON/);
-	assert.match(shared[0], /existing-issue mutations require open issues except explicit reopen or permanent deletion/);
+	assert.match(shared[0], /existing-issue mutations require open issues except label changes, explicit reopen, or permanent deletion/);
 });
 
 test("IssueMe tool schema prompt stays under budget", () => {

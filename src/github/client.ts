@@ -818,7 +818,7 @@ export class GitHubClient {
 	async addLabels(issueNumber: number, labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubLabelListResponse> {
 		assertCollectionItemLimit(labels, "labels", MAX_TOOL_LABELS);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
-		await this.ensureIssueOpen(normalizedIssueNumber, signal);
+		await this.ensureIssueSupportsLabelMutation(normalizedIssueNumber, signal);
 		await this.assertRepositoryLabelsExist(labels, signal, preflight);
 		return this.request<GitHubLabelListResponse>("POST", this.repoPath(`/issues/${normalizedIssueNumber}/labels`), {
 			body: { labels },
@@ -831,7 +831,7 @@ export class GitHubClient {
 	async setLabels(issueNumber: number, labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<GitHubLabelListResponse> {
 		assertCollectionItemLimit(labels, "labels", MAX_TOOL_LABELS);
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
-		await this.ensureIssueOpen(normalizedIssueNumber, signal);
+		await this.ensureIssueSupportsLabelMutation(normalizedIssueNumber, signal);
 		await this.assertRepositoryLabelsExist(labels, signal, preflight);
 		return this.request<GitHubLabelListResponse>("PUT", this.repoPath(`/issues/${normalizedIssueNumber}/labels`), {
 			body: { labels },
@@ -843,7 +843,7 @@ export class GitHubClient {
 
 	async removeLabel(issueNumber: number, label: string, signal?: AbortSignal): Promise<GitHubLabelListResponse | undefined> {
 		const normalizedIssueNumber = normalizePositiveIssueNumber(issueNumber, "issueNumber");
-		await this.ensureIssueOpen(normalizedIssueNumber, signal);
+		await this.ensureIssueSupportsLabelMutation(normalizedIssueNumber, signal);
 		try {
 			return await this.request<GitHubLabelListResponse | undefined>(
 				"DELETE",
@@ -884,6 +884,15 @@ export class GitHubClient {
 			throw new ClosedIssueMutationError(normalizedIssueNumber, typeof issue.state === "string" ? issue.state : "unknown", issueResponseToSafeSummary(this.repository.fullName, issue, normalizedIssueNumber));
 		}
 		return issue;
+	}
+
+	private async ensureIssueSupportsLabelMutation(issueNumber: number, signal?: AbortSignal): Promise<GitHubIssueResponse> {
+		const issue = await this.getIssue(issueNumber, signal);
+		if (issue.state === "open" || issue.state === "closed") return issue;
+		throw new GitHubApiError("GitHub REST API returned an issue without a valid open/closed state.", {
+			code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+			path: this.repoPath(`/issues/${issueNumber}`),
+		});
 	}
 
 	private async ensureCommentTargetsOpenIssue(

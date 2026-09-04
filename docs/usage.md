@@ -41,7 +41,7 @@ description: Manage this repository's GitHub issues with IssueMe. Use when synci
 - Use `issueme_add_issue_to_project` and `issueme_update_project_item` only after the issue is known to be open and required project/item/field IDs are known.
 - Use `issueme_manage_label` only when the user explicitly wants repository label taxonomy changed.
 - Use `issueme_manage_milestone` only when the user explicitly wants repository milestone planning metadata changed.
-- Do not update, comment on, label, assign, close, bulk-update, change project items for, or change native sub-issue relationships for closed issues.
+- Do not update, comment on, assign, close, change project items for, or change native sub-issue relationships for closed issues. Label changes through `issueme_label_issue` or bulk `add_labels` are allowed.
 - Use `issueme_reopen_issue` only when the user explicitly wants a closed issue reopened.
 - Use `issueme_delete_issue` only for one exact mistakenly created issue after explicit confirmation and an irreversibility warning; prefer closing when repository history should remain.
 - Do not create body-only `blocked by`, `depends on`, or `tracked by` text references as if they were native dependencies.
@@ -121,6 +121,14 @@ Use issueme_add_issue_to_project with issueNumber 123, projectId "PVT_...", and 
 ```text
 Use issueme_update_project_item with projectId "PVT_...", itemId "PVTI_...", issueNumber 123, fieldId "PVTSSF_...", valueType "single_select", and singleSelectOptionId "..." to update project status.
 ```
+
+### Issue labels
+
+```text
+Use issueme_label_issue with number 123, action "add", and labels ["triage"] to label an open or closed issue.
+```
+
+Closed issues remain absent from local cache after label changes.
 
 ### Comments
 

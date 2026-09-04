@@ -360,7 +360,7 @@ test("GitHub client accepts positive safe integer boundary identifiers", async (
 	]);
 });
 
-test("mutating methods re-check state and refuse closed issues before sending mutation payloads", async () => {
+test("non-label mutating methods re-check state and refuse closed issues before sending mutation payloads", async () => {
 	const calls = [];
 	const client = new GitHubClient({
 		repository,
@@ -375,6 +375,55 @@ test("mutating methods re-check state and refuse closed issues before sending mu
 		return true;
 	});
 	assert.deepEqual(calls.map((call) => call.method), ["GET"]);
+});
+
+test("GitHub client label methods allow add, set, and remove mutations on closed issues", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			const path = new URL(url.toString()).pathname;
+			calls.push({ path, method: init.method, body: init.body });
+			if (path === "/repos/owner/repo/issues/1") return jsonResponse(issue({ state: "closed" }));
+			if (path === "/repos/owner/repo/labels/bug") return jsonResponse({ name: "bug" });
+			if (path === "/repos/owner/repo/issues/1/labels" && (init.method === "POST" || init.method === "PUT")) return jsonResponse([{ name: "bug" }]);
+			if (path === "/repos/owner/repo/issues/1/labels/bug" && init.method === "DELETE") return new Response(null, { status: 204 });
+			throw new Error(`Unexpected request ${init.method} ${path}`);
+		},
+	});
+
+	assert.deepEqual(await client.addLabels(1, ["bug"]), [{ name: "bug" }]);
+	assert.deepEqual(await client.setLabels(1, ["bug"]), [{ name: "bug" }]);
+	assert.equal(await client.removeLabel(1, "bug"), undefined);
+	assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/bug",
+		"POST /repos/owner/repo/issues/1/labels",
+		"GET /repos/owner/repo/issues/1",
+		"GET /repos/owner/repo/labels/bug",
+		"PUT /repos/owner/repo/issues/1/labels",
+		"GET /repos/owner/repo/issues/1",
+		"DELETE /repos/owner/repo/issues/1/labels/bug",
+	]);
+});
+
+test("GitHub client label methods reject malformed issue state before mutation", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository,
+		token,
+		fetchFn: async (url, init) => {
+			calls.push(`${init.method} ${new URL(url.toString()).pathname}`);
+			return jsonResponse(issue({ state: "unknown" }));
+		},
+	});
+
+	await assert.rejects(
+		() => client.addLabels(1, ["bug"]),
+		(error) => error?.code === "github_response_shape_invalid",
+	);
+	assert.deepEqual(calls, ["GET /repos/owner/repo/issues/1"]);
 });
 
 test("mutating methods guard immediately before mutation", async () => {

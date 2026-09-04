@@ -623,7 +623,6 @@ test("registered IssueMe tools keep safety paths mocked and token-free", async (
 		["issueme_update_comment", { issueNumber: 99, commentId: 1, body: `private ${TOKEN}` }],
 		["issueme_delete_comment", { issueNumber: 99, commentId: 1 }],
 		["issueme_assign_issue", { number: 99, action: "add", assignees: ["octocat"] }],
-		["issueme_label_issue", { number: 99, action: "add", labels: ["bug"] }],
 	]) {
 		await assert.rejects(
 			() => execute(tools.get(name), projectRoot, params),
@@ -645,7 +644,7 @@ test("registered IssueMe tools keep safety paths mocked and token-free", async (
 
 	assert.deepEqual(
 		mock.calls.filter((call) => call.path === "/repos/owner/repo/issues/99").map((call) => call.method),
-		["GET", "GET", "GET", "GET", "GET", "GET", "GET", "GET", "GET"],
+		["GET", "GET", "GET", "GET", "GET", "GET", "GET", "GET"],
 	);
 	assert.equal(mock.calls.some((call) => ["PATCH", "POST", "PUT", "DELETE"].includes(call.method)), false);
 });

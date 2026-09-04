@@ -90,7 +90,7 @@ export const ISSUEME_ERROR_CODES = {
 
 const DEFAULT_RECOVERY_HINTS: Record<IssueMeErrorCategory, string> = {
 	auth: "Set GH_TOKEN or GITHUB_TOKEN with access to the resolved repository, then rerun the command or tool.",
-	closed_issue: "Sync the issue state and choose a new/open issue; use issueme_reopen_issue only when an explicit reopen is intended.",
+	closed_issue: "Sync the issue state and choose a new/open issue; use issueme_label_issue for label-only changes or issueme_reopen_issue when an explicit reopen is intended.",
 	config: `Fix ${DEFAULT_CONFIG_PATH} or reopen /issueme in a trusted project to save valid non-secret settings.`,
 	github_api: "Check repository access, token scopes, GitHub status/rate limits, and rerun the tool only after the remote condition is resolved.",
 	local_cache: "Inspect the configured issue directory, fix unsafe/corrupt local cache files if needed, then run issueme_sync_issues.",
@@ -394,7 +394,7 @@ export class ClosedIssueMutationError extends IssueMeError {
 	constructor(issueNumber: number, state: string, issue?: ToolIssueSummary) {
 		super(
 			ISSUEME_ERROR_CODES.CLOSED_ISSUE_MUTATION_REFUSED,
-			`Issue #${issueNumber} is ${state}; IssueMe refuses this closed-issue mutation. Use issueme_reopen_issue only when an explicit reopen is intended.`,
+			`Issue #${issueNumber} is ${state}; IssueMe refuses this closed-issue mutation. Use issueme_label_issue for label-only changes or issueme_reopen_issue when an explicit reopen is intended.`,
 			{
 				issueNumber,
 				state,

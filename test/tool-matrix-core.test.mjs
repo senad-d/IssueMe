@@ -653,7 +653,7 @@ function creatorGuardCases() {
 		{ name: "issueme_update_comment", params: { issueNumber: 1, commentId: 100, body: "Denied" }, expectedGate: "ensureIssueOpen" },
 		{ name: "issueme_delete_comment", params: { issueNumber: 1, commentId: 100 }, expectedGate: "ensureIssueOpen" },
 		{ name: "issueme_assign_issue", params: { number: 1, action: "add", assignees: ["hubot"] }, expectedGate: "ensureIssueOpen" },
-		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] }, expectedGate: "ensureIssueOpen" },
+		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] }, expectedGate: "getIssue" },
 		{ name: "issueme_close_issue", params: { number: 1 }, expectedGate: "getIssue" },
 		{ name: "issueme_delete_issue", params: { number: 1, confirmDelete: true }, expectedGate: "getIssue" },
 		{ name: "issueme_reopen_issue", params: { number: 2 }, expectedGate: "getIssue" },
@@ -680,11 +680,10 @@ function closedGuardCases() {
 		{ name: "issueme_update_comment", params: { issueNumber: 1, commentId: 100, body: "Closed" } },
 		{ name: "issueme_delete_comment", params: { issueNumber: 1, commentId: 100 } },
 		{ name: "issueme_assign_issue", params: { number: 1, action: "add", assignees: ["hubot"] } },
-		{ name: "issueme_label_issue", params: { number: 1, action: "add", labels: ["ready"] } },
 	];
 }
 
-test("open-state guard matrix refuses closed existing-issue mutations before mutation methods", async () => {
+test("open-state guard matrix refuses closed non-label mutations before mutation methods", async () => {
 	for (const item of closedGuardCases()) {
 		const projectRoot = await tempProjectWithIssueDirectory();
 		const client = createCoreClient({ closedGuard: true });

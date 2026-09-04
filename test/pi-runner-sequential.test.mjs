@@ -4,12 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -142,10 +141,12 @@ function makeToolBatchStream(toolCalls) {
 }
 
 async function runIssueMeToolBatchThroughPiSession(projectRoot, fetchFn, toolCalls, options = {}) {
-	const authStorage = AuthStorage.inMemory();
-	authStorage.setRuntimeApiKey("issueme-mock", "mock-key");
-	const modelRegistry = ModelRegistry.inMemory(authStorage);
-	modelRegistry.registerProvider("issueme-mock", {
+	const modelRuntime = await ModelRuntime.create({
+		credentials: new InMemoryCredentialStore(),
+		modelsPath: null,
+		refreshOnCreate: false,
+	});
+	modelRuntime.registerProvider("issueme-mock", {
 		name: "IssueMe Mock Provider",
 		baseUrl: "http://localhost/issueme-mock",
 		api: "openai-completions",
@@ -163,7 +164,8 @@ async function runIssueMeToolBatchThroughPiSession(projectRoot, fetchFn, toolCal
 			},
 		],
 	});
-	const model = modelRegistry.find("issueme-mock", "tool-batch");
+	await modelRuntime.setRuntimeApiKey("issueme-mock", "mock-key");
+	const model = modelRuntime.getModel("issueme-mock", "tool-batch");
 	assert.ok(model, "mock model should be registered");
 
 	const settingsManager = SettingsManager.inMemory(
@@ -187,8 +189,7 @@ async function runIssueMeToolBatchThroughPiSession(projectRoot, fetchFn, toolCal
 	const { session } = await createAgentSession({
 		cwd: projectRoot,
 		agentDir,
-		authStorage,
-		modelRegistry,
+		modelRuntime,
 		model,
 		thinkingLevel: "off",
 		customTools: collectIssueMeTools(fetchFn),

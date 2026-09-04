@@ -26,7 +26,8 @@
 - `issueme_close_issue` supports optional GitHub close reasons (`completed` or `not_planned`) while remaining idempotent for already-closed issues and sending no close mutation payload in that case.
 - `issueme_delete_issue` permanently deletes one exact open or closed issue through GitHub GraphQL after explicit confirmation, creator-scope and pull-request preflight, then removes matching local cache files; repository administrator permission is required.
 - `issueme_update_comment` and `issueme_delete_comment` edit/delete existing comments only after verifying the parent issue is open and the comment belongs to that issue, then refresh the parent issue cache.
-- `issueme_label_issue` reports partial success when a multi-label removal fails after an earlier removal was acknowledged.
+- `issueme_label_issue` can add, remove, or set labels on open or closed issues, preserves the open-only cache policy, and reports partial success when a multi-label removal fails after an earlier removal was acknowledged.
+- `issueme_bulk_update_issues` permits `add_labels` for open or closed issues while retaining open-issue guards for its other non-close actions.
 - `issueme_update_project_item` rejects impossible Projects v2 date values instead of sending malformed `YYYY-MM-DD` dates to GitHub.
 - `issueme_manage_label` creates, updates, and explicitly deletes repository labels with local validation, conflict/missing-label handling, and no issue-object deletion.
 - `issueme_list_milestones` discovers repository milestone numbers, titles, state, due dates, issue counts, and URLs with bounded read-only output before `issueme_update_issue` milestone assignment.

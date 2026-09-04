@@ -142,7 +142,9 @@ function toToolSummary(tool) {
 
 async function main() {
   const rpcCommands = await collectRpcCommands();
-  const issueMeRpcCommands = rpcCommands.filter((command) => command.source === "extension");
+  const issueMeRpcCommands = rpcCommands.filter(
+    (command) => command.source === "extension" && command.sourceInfo?.source === "cli",
+  );
   const registrationProbe = collectRegistrationProbe();
   const probeCommandNames = registrationProbe.commands.map((command) => command.name);
   const rpcCommandNames = issueMeRpcCommands.map((command) => command.name);

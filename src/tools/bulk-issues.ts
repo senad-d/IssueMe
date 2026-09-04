@@ -288,7 +288,7 @@ async function applyBulkAction(
 ): Promise<ToolBulkIssueResultSummary> {
 	if (params.action === "close") return closeIssueForBulk(runtime, params, issueNumber, signal);
 
-	await assertBulkIssueAllowedForOpenMutation(runtime, issueNumber, params.action, signal);
+	await assertBulkIssueAllowedForMutation(runtime, issueNumber, params.action, signal);
 	if (params.action === "add_labels") {
 		await runtime.client.addLabels(issueNumber, params.labels ?? [], signal, collectionPreflight);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
@@ -305,13 +305,15 @@ async function applyBulkAction(
 	return projectItemBulkResult(issueNumber, params, result);
 }
 
-async function assertBulkIssueAllowedForOpenMutation(
+async function assertBulkIssueAllowedForMutation(
 	runtime: IssueMeRuntime,
 	issueNumber: number,
 	action: BulkIssueActionName,
 	signal?: AbortSignal,
 ): Promise<GitHubIssueResponse> {
-	const currentIssue = await runtime.client.ensureIssueOpen(issueNumber, signal);
+	const currentIssue = action === "add_labels"
+		? await runtime.client.getIssue(issueNumber, signal)
+		: await runtime.client.ensureIssueOpen(issueNumber, signal);
 	assertIssueCreatorAllowed(runtime.config, currentIssue, { repository: runtime.repository, operation: `bulk_${action}`, issueNumber });
 	return currentIssue;
 }

@@ -33,7 +33,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
 - **Agent tool suite:** registers twenty-nine `issueme_*` tools for issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
-- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, protects closed issues, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
+- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels/reopen/confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
 
 > **Status:** `0.1.0` is unreleased. Source, tests, this README, [`SECURITY.md`](SECURITY.md), and the files under [`docs/`](docs/) describe current implemented behavior.
@@ -209,7 +209,7 @@ Tokens are read but never written to config, cache files, tool output, or logs. 
 ## Safety Model
 
 - IssueMe honors project-local config, tokens, Git metadata, skills, and cache files only when pi reports the project as trusted.
-- Closed issues are not mutated again except through explicit `issueme_reopen_issue` or confirmed `issueme_delete_issue` operations.
+- Closed issues remain protected from normal mutations; `issueme_label_issue` (and bulk `add_labels`) may change their labels, while explicit `issueme_reopen_issue` and confirmed `issueme_delete_issue` provide the other documented exceptions.
 - `issueme_delete_issue` permanently deletes only one exact issue after explicit intent, an irreversibility warning, and `confirmDelete: true`; it accepts open or closed issues, refuses pull requests, and requires GitHub repository administrator permission.
 - Repository label, milestone, and issue deletion require explicit actions and confirmation flags.
 - Bulk updates accept only explicit issue number lists, never unconstrained search targets.

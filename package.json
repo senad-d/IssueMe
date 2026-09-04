@@ -1,6 +1,6 @@
 {
   "name": "@senad-d/issueme",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Agent-friendly GitHub issue management layer for Pi using GitHub APIs and local issue files.",
   "license": "MIT",
@@ -74,8 +74,9 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.80.2",
-    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@earendil-works/pi-ai": "^0.85.0",
+    "@earendil-works/pi-coding-agent": "^0.85.0",
+    "@earendil-works/pi-server": "^0.85.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.1",
     "eslint": "^10.6.0",
