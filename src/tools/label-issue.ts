@@ -3,6 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const LabelIssueParams = Type.Object(
@@ -81,11 +82,10 @@ async function applyLabelMutationForTool(runtime: IssueMeRuntime, params: LabelI
 async function removeLabelsForTool(runtime: IssueMeRuntime, issueNumber: number, labels: string[], signal: AbortSignal | undefined) {
 	let removedLabelMutations = 0;
 	try {
-		for (const label of labels) {
+		await mapSequentially(labels, async (label) => {
 			const response = await runtime.client.removeLabel(issueNumber, label, signal);
-			if (response === undefined) continue;
-			removedLabelMutations += 1;
-		}
+			if (response !== undefined) removedLabelMutations += 1;
+		});
 		return undefined;
 	} catch (error) {
 		if (removedLabelMutations === 0) throw error;

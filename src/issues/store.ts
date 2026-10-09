@@ -25,6 +25,7 @@ import {
 import { assertNotAborted } from "../utils/abort.ts";
 import { withCanonicalFileMutationQueue } from "../utils/mutation-queue.ts";
 import { readTrustedTextFile, type TrustedTextFileReadOptions } from "../utils/safe-read.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { writeFileAtomicSafe } from "../utils/safe-write.ts";
 
 interface IssueFileEntryCandidate {
@@ -236,8 +237,8 @@ export async function listIssueFileEntries(
 	const entries = await readIssueDirectoryEntries(directory);
 	const files: IssueFileMetadata[] = [];
 	const invalidFiles: InvalidIssueFileDiagnostic[] = [];
-	for (const entry of entries) {
-		const scanResult = await scanIssueFileEntry(projectRoot, directory, entry, options);
+	const scanResults = await mapSequentially(entries, (entry) => scanIssueFileEntry(projectRoot, directory, entry, options));
+	for (const scanResult of scanResults) {
 		if (scanResult.kind === "file") {
 			files.push(scanResult.file);
 			continue;
@@ -368,19 +369,19 @@ function assignTrustedTextFilePathOption(options: TrustedTextFileReadOptions, fi
 }
 
 async function removeIssueFiles(projectRoot: string, config: IssueMeConfig, files: IssueFileMetadata[], signal?: AbortSignal): Promise<string[]> {
-	const removed: string[] = [];
-	for (const file of files) {
+	return mapSequentially(files, (file) => removeIssueFile(projectRoot, config, file, signal));
+}
+
+async function removeIssueFile(projectRoot: string, config: IssueMeConfig, file: IssueFileMetadata, signal?: AbortSignal): Promise<string> {
+	assertNotAborted(signal);
+	await withCanonicalFileMutationQueue(file.path, async () => {
 		assertNotAborted(signal);
-		await withCanonicalFileMutationQueue(file.path, async () => {
-			assertNotAborted(signal);
-			const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
-			await ensureTargetFileSafe(file.path, directory, projectRoot);
-			assertNotAborted(signal);
-			await rm(file.path, { force: true });
-		});
-		removed.push(file.path);
-	}
-	return removed;
+		const directory = await ensureIssueDirectorySafe(projectRoot, config, false);
+		await ensureTargetFileSafe(file.path, directory, projectRoot);
+		assertNotAborted(signal);
+		await rm(file.path, { force: true });
+	});
+	return file.path;
 }
 
 async function assertIssueWriteTargetSafe(projectRoot: string, config: IssueMeConfig, targetPath: string): Promise<void> {
@@ -437,9 +438,7 @@ async function migrateLegacyIssueCache(projectRoot: string, config: IssueMeConfi
 	const parentRealPath = await nearestExistingParentRealPath(projectRoot, directory);
 	assertPathInside(rootRealPath, parentRealPath, "Issue directory parent must resolve inside the current project.");
 	await mkdir(directory, { recursive: true });
-	for (const entry of legacyFiles) {
-		await copyFile(resolve(legacyDirectory, entry.name), resolve(directory, entry.name));
-	}
+	await mapSequentially(legacyFiles, (entry) => copyFile(resolve(legacyDirectory, entry.name), resolve(directory, entry.name)));
 	await ensureCacheDirectoryGitIgnore(directory);
 	await ensureCacheDirectoryGitIgnore(legacyDirectory);
 	return true;
@@ -455,18 +454,21 @@ async function ensureCacheDirectoryGitIgnore(directory: string): Promise<void> {
 }
 
 async function nearestExistingParentRealPath(projectRoot: string, target: string): Promise<string> {
-	let current = dirname(target);
-	while (true) {
-		try {
-			const stat = await lstat(current);
-			if (stat.isSymbolicLink()) throw new IssueMeError("unsafe_issue_directory", "Issue directory parent cannot be a symlink.");
-			return await realpath(current);
-		} catch (error) {
-			if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
-		}
-		const parent = dirname(current);
-		if (parent === current || resolve(current) === resolve(projectRoot)) return await realpath(projectRoot);
-		current = parent;
+	const current = dirname(target);
+	const existing = await existingParentRealPath(current);
+	if (existing !== undefined) return existing;
+	if (dirname(current) === current || resolve(current) === resolve(projectRoot)) return realpath(projectRoot);
+	return nearestExistingParentRealPath(projectRoot, current);
+}
+
+async function existingParentRealPath(path: string): Promise<string | undefined> {
+	try {
+		const stat = await lstat(path);
+		if (stat.isSymbolicLink()) throw new IssueMeError("unsafe_issue_directory", "Issue directory parent cannot be a symlink.");
+		return await realpath(path);
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return undefined;
+		throw error;
 	}
 }
 

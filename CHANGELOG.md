@@ -14,6 +14,7 @@
 
 ### Changed
 
+- Made ordered GitHub requests and cache operations explicitly sequential through a shared async iterator, preserving fail-fast mutation/abort behavior and limiting resource usage; independent Git config reads now run concurrently without changing precedence.
 - The default issue cache moved from `issues/` to `.pi/issues/` so tracker work never dirties the product working tree; `git status` is unaffected by IssueMe caches. IssueMe also writes a directory-local `.gitignore` (`*`) into the issue directory - including explicitly configured legacy `issues/` directories - so cache files stay git-invisible even in repositories that do not ignore `.pi/`. Existing legacy `issues/` caches are migrated by copy into `.pi/issues` on first use (never deleted, since some files may be git-tracked); an explicit `issueDirectory: "issues"` config keeps the legacy location working unchanged.
 - Reduced IssueMe tool context size with compact tool descriptions, shorter schema guidance, centralized shared terms, and budget coverage; tool behavior is unchanged.
 - `/issueme info`, `/issueme help`, `/issueme --help`, and `/issueme -h` now share one help/status surface.
@@ -45,6 +46,10 @@
 
 ### Fixed
 
+- Kept TypeScript on the supported `6.0.x` line to avoid the upstream TypeScript 7 / typescript-eslint peer-dependency conflict during lockfile-strict installs.
+- Updated CI contract tests to accept full release tags such as `actions/checkout@v7.0.1` as well as major-version tags.
+- Fixed list pagination failing with "GitHub pagination URL left the resolved repository boundary" on every second page: GitHub Link headers use `/repositories/<id>/...`, which is now mapped back to `/repos/<owner>/<repo>/...` before the boundary check.
+- Fixed `issueme_list_issue_development_links` failing with a forbidden error on manually closed issues under fine-grained tokens: a path-scoped FORBIDDEN on `ClosedEvent.closer` is tolerated (GitHub nulls the field), so the remaining timeline links are returned.
 - Fixed `issueme_reorder_sub_issues` compatibility with GitHub's live GraphQL `ReprioritizeSubIssuePayload` by no longer selecting a non-existent `subIssue` payload field and reusing the prevalidated child summary before refreshing relationships.
 - Fixed issue label and assignee mutation guards so missing repository labels are rejected before GitHub can auto-create taxonomy, and unassignable users are rejected before GitHub can silently ignore them.
 

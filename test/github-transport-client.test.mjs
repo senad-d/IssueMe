@@ -242,3 +242,34 @@ test("issues-client helpers validate filters, ownership URLs, updates, search sh
 		html_url: `https://github.com/${REPOSITORY.fullName}/issues/42`,
 	});
 });
+
+test("GitHubClient follows GitHub /repositories/<id>/ pagination links inside the repository boundary", async () => {
+	const calls = [];
+	const client = new GitHubClient({
+		repository: REPOSITORY,
+		token: TOKEN,
+		fetchFn: async (input, init = {}) => {
+			const { url } = captureCall(calls, input, init);
+			if (url.pathname === "/repos/owner/repo/issues" && url.searchParams.get("page") === "2") return jsonResponse([issue(2)]);
+			if (url.pathname === "/repos/owner/repo/issues") {
+				return jsonResponse([issue(1)], { headers: { link: '<https://api.github.com/repositories/1356386556/issues?state=all&page=2>; rel="next"' } });
+			}
+			throw new Error(`Unexpected request ${init.method} ${url.pathname}`);
+		},
+	});
+
+	const listed = await client.listIssues({ state: "all", limit: 10 });
+	assert.deepEqual(listed.issues.map((item) => item.number), [1, 2]);
+	assert.ok(calls.every((call) => call.path.startsWith("/repos/owner/repo/")));
+
+	const transport = new GitHubTransport({ repository: REPOSITORY, token: TOKEN });
+	assert.equal(transport.resolvePaginationUrl("https://api.github.com/repositories/42/labels?page=2"), "https://api.github.com/repos/owner/repo/labels?page=2");
+	assert.throws(
+		() => transport.resolvePaginationUrl("https://api.github.com/repositories/42/../../repos/other/repo/issues?page=2"),
+		(error) => error instanceof GitHubApiError && error.code === "github_boundary_violation",
+	);
+	assert.throws(
+		() => transport.resolvePaginationUrl("https://evil.example/repositories/42/issues?page=2"),
+		(error) => error instanceof GitHubApiError && error.code === "github_boundary_violation",
+	);
+});

@@ -74,6 +74,11 @@ export function buildIssueDevelopmentLinksQuery(): string {
 	}`;
 }
 
+/** Fine-grained tokens get a path-scoped FORBIDDEN on ClosedEvent.closer for manually closed issues; GitHub nulls the field and the rest of the timeline is intact. */
+export function isInaccessibleCloserError(error: unknown): boolean {
+	return isObject(error) && error.type === "FORBIDDEN" && Array.isArray(error.path) && error.path.at(-1) === "closer";
+}
+
 export function normalizeIssueDevelopmentLinkLimit(value: number | undefined): number {
 	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_DEVELOPMENT_LINKS, defaultValue: 25, message: `development link limit must be an integer between 1 and ${MAX_TOOL_DEVELOPMENT_LINKS}.` });
 }

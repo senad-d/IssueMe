@@ -2,9 +2,10 @@ import { GITHUB_API_BASE_URL, MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_LABE
 import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, markMutationSettlement } from "../errors.ts";
 import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ProjectV2OwnerType, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { isValidGitHubLogin } from "../utils/github-login.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { assertCollectionItemLimit } from "../utils/validation.ts";
 import { buildDeleteIssueMutation, normalizeDeleteIssueMutationResult, requireDeletableIssueNodeId } from "./delete-issue-client.ts";
-import { buildIssueDevelopmentLinksQuery, normalizeIssueDevelopmentLinkLimit, normalizeIssueDevelopmentLinksResult } from "./development-links-client.ts";
+import { buildIssueDevelopmentLinksQuery, isInaccessibleCloserError, normalizeIssueDevelopmentLinkLimit, normalizeIssueDevelopmentLinksResult } from "./development-links-client.ts";
 import { mapGitHubGraphQLError } from "./graphql-errors.ts";
 import { assertGitHubAssigneeDiscoveryResponse, assertGitHubLabelDiscoveryResponse, assertGitHubMilestoneDiscoveryResponse, assigneeMatchesFilters, buildAssigneeListQuery, buildIssueListQuery, buildIssueSearchRequestQuery, buildLabelListQuery, buildMilestoneListQuery, commentBelongsToIssue, isIssueSearchResponse, isPullRequestIssueResponse, issueResponseToSafeSummary, labelMatchesFilters, normalizeIssueSearchResponse, normalizeIssueUpdateInput, normalizeOptionalTextFilter, normalizePaginationLimit, normalizePositiveCommentId, normalizePositiveIssueNumber, normalizePositiveMilestoneNumber } from "./issues-client.ts";
 import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, buildProjectV2AddValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemValidationQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2IterationLimit, normalizeProjectV2ItemMutationResult, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, requireProjectV2Summary } from "./projects-client.ts";
@@ -628,11 +629,11 @@ export class GitHubClient {
 		let currentOrder = [...relationship.subIssues];
 		const mutations: NativeSubIssueMutationResult[] = [];
 		try {
-			for (let index = 0; index < desiredNumbers.length; index++) {
+			await mapSequentially(desiredNumbers, async (_childNumber, index) => {
 				const result = await this.reprioritizeDesiredSubIssue(parentIssueId, desiredNumbers, index, issueByNumber, currentOrder, signal);
 				currentOrder = result.currentOrder;
 				if (result.mutation) mutations.push(result.mutation);
-			}
+			});
 			const refreshed = await this.refreshSubIssueRelationshipAfterReorder(normalizedParentNumber, relationship, mutations, signal);
 			return { relationship: refreshed, mutations };
 		} catch (error) {
@@ -721,6 +722,8 @@ export class GitHubClient {
 			buildIssueDevelopmentLinksQuery(),
 			{ owner: this.repository.owner, repo: this.repository.repo, issueNumber: normalizedIssueNumber, first: limit },
 			signal,
+			false,
+			isInaccessibleCloserError,
 		);
 		return normalizeIssueDevelopmentLinksResult(data, this.repository.fullName, normalizedIssueNumber, limit);
 	}
@@ -987,12 +990,12 @@ export class GitHubClient {
 	private async assertRepositoryLabelsExist(labels: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<void> {
 		const validated = this.mutableIssueCollectionPreflight(preflight)?.labels;
 		const missing: string[] = [];
-		for (const label of new Set(labels)) {
-			if (validated?.has(label)) continue;
+		await mapSequentially(new Set(labels), async (label) => {
+			if (validated?.has(label)) return;
 			const existing = await this.getRepositoryLabel(label, signal);
 			if (existing) validated?.add(label);
 			else missing.push(label);
-		}
+		});
 		if (missing.length > 0) {
 			throw new IssueMeError(
 				ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
@@ -1006,11 +1009,11 @@ export class GitHubClient {
 	private async assertRepositoryAssigneesAssignable(assignees: string[], signal?: AbortSignal, preflight?: GitHubIssueCollectionPreflight): Promise<void> {
 		const validated = this.mutableIssueCollectionPreflight(preflight)?.assignees;
 		const invalid: string[] = [];
-		for (const assignee of new Set(assignees)) {
-			if (validated?.has(assignee)) continue;
+		await mapSequentially(new Set(assignees), async (assignee) => {
+			if (validated?.has(assignee)) return;
 			if (await this.isRepositoryAssigneeAssignable(assignee, signal)) validated?.add(assignee);
 			else invalid.push(assignee);
-		}
+		});
 		if (invalid.length > 0) {
 			throw new IssueMeError(
 				ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
@@ -1026,8 +1029,8 @@ export class GitHubClient {
 		return preflight as MutableGitHubIssueCollectionPreflight;
 	}
 
-	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal, mutation = false): Promise<T> {
-		return this.transport.graphqlRequest<T>(operationName, query, variables, signal, mapGitHubGraphQLError, mutation);
+	private async graphqlRequest<T>(operationName: string, query: string, variables: Record<string, unknown>, signal?: AbortSignal, mutation = false, tolerateError?: (error: unknown) => boolean): Promise<T> {
+		return this.transport.graphqlRequest<T>(operationName, query, variables, signal, mapGitHubGraphQLError, mutation, tolerateError);
 	}
 
 	private repoPath(path: string): string {

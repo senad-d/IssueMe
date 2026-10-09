@@ -6,6 +6,7 @@ import { IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } fr
 import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueReorderResult, NativeSubIssueSummary } from "../github/client.ts";
 import { applyIssueRelationshipMetadata, githubIssueToRecord, issueRecordToToolSummary, type IssueRelationshipMetadata } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, SafeToolError, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import {
 	assertAuthenticatedUserAllowedForCreate,
@@ -471,7 +472,7 @@ async function refreshRelationshipCache(
 	const paths: string[] = [];
 	const removedPaths: string[] = [];
 	const fileActions: ToolFileActionSummary[] = [];
-	for (const [issueNumber, relationships] of targets) {
+	await mapSequentially(targets, async ([issueNumber, relationships]) => {
 		assertNotAborted(signal);
 		const record = await refreshIssueRecordWithRelationship(runtime, issueNumber, relationships, signal);
 		const cached = await writeAndSummarizeIssue(ctx, runtime, record, signal);
@@ -483,7 +484,7 @@ async function refreshRelationshipCache(
 			...(cached.removedPaths.length > 0 ? { removedPaths: cached.removedPaths } : {}),
 			issue: cached.summary,
 		});
-	}
+	});
 	return { paths, removedPaths, fileActions, cacheUpdated: fileActions.length > 0 };
 }
 

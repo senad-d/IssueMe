@@ -319,3 +319,24 @@ test("issueme_list_issue_development_links maps permission and unsupported Graph
 		},
 	);
 });
+
+test("issueme_list_issue_development_links keeps timeline links when only ClosedEvent.closer is forbidden", async () => {
+	const pr = pullRequest(9, "Fix", { state: "MERGED", merged: true, headRefName: "fix/9" });
+	const mock = makeGraphQLFetch(() => jsonResponse({
+		data: {
+			repository: {
+				issue: {
+					...issueNode(42, "Manually closed", "CLOSED"),
+					timelineItems: { totalCount: 2, nodes: [crossReferencedPrEvent(pr), closedByEvent(null)], pageInfo: { hasNextPage: false } },
+				},
+			},
+		},
+		errors: [{ type: "FORBIDDEN", path: ["repository", "issue", "timelineItems", "nodes", 1, "closer"], message: "Resource not accessible by personal access token" }],
+	}));
+
+	const result = await executeDevelopmentLinksTool(mock.fetchFn, { issueNumber: 42 });
+
+	assert.deepEqual(result.details.developmentLinks.map((link) => link.number), [9]);
+	assert.match(result.content[0].text, /PR #9/);
+	assertNoToken(result);
+});

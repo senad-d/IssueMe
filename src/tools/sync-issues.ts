@@ -9,6 +9,7 @@ import { issueRecordToToolSummary, isPullRequestIssue } from "../issues/format.t
 import { issueFileDiagnosticReason, listIssueFileEntries, relativeIssuePath, removeClosedIssueFiles, writeIssueRecord } from "../issues/store.ts";
 import type { GitHubIssueResponse, InvalidIssueFileDiagnostic, IssueMeToolDetails, IssueRecord, IssueWriteResult, ToolIssueSummary } from "../types.ts";
 import { resolveIssueFilePath } from "../utils/slug.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { assertNotAborted, createIssueMeRuntime, fetchIssueRecord, ISSUEME_SHARED_PROMPT_GUIDELINE, issueCreatorMatchesConfig, issueCreatorScopeLabel, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const SyncIssuesParams = Type.Object({}, { additionalProperties: false });
@@ -88,7 +89,7 @@ function createSyncIssueState(beforeCount: number, invalidFiles: InvalidIssueFil
 }
 
 async function syncIssueRecords(runtime: IssueMeRuntime, issues: GitHubIssueResponse[], state: SyncIssueState, signal?: AbortSignal): Promise<void> {
-	for (const issue of issues) await syncIssueRecord(runtime, issue, state, signal);
+	await mapSequentially(issues, (issue) => syncIssueRecord(runtime, issue, state, signal));
 }
 
 async function syncIssueRecord(runtime: IssueMeRuntime, issue: GitHubIssueResponse, state: SyncIssueState, signal?: AbortSignal): Promise<void> {

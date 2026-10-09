@@ -84,12 +84,8 @@ async function readRepositoryConfigTexts(gitRoot: string): Promise<string[]> {
 			{ path: join(gitDirectory, "config.worktree"), safeDirectory: gitDirectory },
 			{ path: join(commonGitDirectory, "config"), safeDirectory: commonGitDirectory },
 		]);
-		const configTexts: string[] = [];
-		for (const candidate of candidatePaths) {
-			const text = await readConfigIfExists(candidate.path, candidate.safeDirectory);
-			if (text !== undefined) configTexts.push(text);
-		}
-		return configTexts;
+		const configTexts = await Promise.all(candidatePaths.map((candidate) => readConfigIfExists(candidate.path, candidate.safeDirectory)));
+		return configTexts.filter((text) => text !== undefined);
 	} catch (error) {
 		if (error instanceof IssueMeError) throw error;
 		throw new IssueMeError("repository_read_failed", "Unable to read Git config for repository resolution.");

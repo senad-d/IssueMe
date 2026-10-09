@@ -71,6 +71,7 @@ export class GitHubTransport {
 		signal?: AbortSignal,
 		mapGraphQLError?: GitHubGraphQLErrorMapper,
 		mutation = false,
+		tolerateError?: (error: unknown) => boolean,
 	): Promise<T> {
 		let envelope: GraphQLResponse<T>;
 		try {
@@ -88,7 +89,8 @@ export class GitHubTransport {
 			throw error;
 		}
 
-		const errors = Array.isArray(envelope.errors) ? envelope.errors : [];
+		const rawErrors = Array.isArray(envelope.errors) ? envelope.errors : [];
+		const errors = tolerateError ? rawErrors.filter((error) => !tolerateError(error)) : rawErrors;
 		if (errors.length > 0) {
 			const safeGraphQLErrorDetails = redactSecrets(formatGraphQLErrors(errors), [this.token, ...collectRequestStringValues(variables)]);
 			const mapped = mapGraphQLError?.({ operationName, detail: safeGraphQLErrorDetails, errors });
@@ -133,15 +135,13 @@ export class GitHubTransport {
 			const page = collectFilteredPaginationItems(response.data, values.length, options);
 			values.push(...page.items);
 			if (page.truncated || hasAdditionalPageBeyondLimit(options.limit, values.length, next)) return { items: values, truncated: true };
-			nextUrl = next;
-			if (nextUrl) this.assertAllowedPaginationUrl(nextUrl);
+			nextUrl = next === undefined ? undefined : this.resolvePaginationUrl(next);
 		}
 		return { items: values, truncated: false };
 	}
 
 	private async fetchPaginationPage<T>(nextUrl: string, signal?: AbortSignal): Promise<{ data: T[]; headers: Headers }> {
-		this.assertAllowedPaginationUrl(nextUrl);
-		return this.requestWithHeaders<T[]>("GET", nextUrl, {
+		return this.requestWithHeaders<T[]>("GET", this.resolvePaginationUrl(nextUrl), {
 			signal,
 			alreadyAbsolute: true,
 			validate: Array.isArray,
@@ -208,13 +208,20 @@ export class GitHubTransport {
 	}
 
 	assertAllowedPaginationUrl(rawUrl: string): void {
+		this.resolvePaginationUrl(rawUrl);
+	}
+
+	/** GitHub Link headers point at /repositories/<id>/..., not /repos/<owner>/<repo>/...; map them back before the boundary check. */
+	resolvePaginationUrl(rawUrl: string): string {
 		let url: URL;
 		try {
 			url = new URL(rawUrl);
 		} catch {
 			throw new GitHubApiError("GitHub pagination URL is malformed.", { code: ISSUEME_ERROR_CODES.GITHUB_URL_MALFORMED });
 		}
+		url.pathname = url.pathname.replace(REPOSITORY_ID_PATH_PATTERN, this.repoPath("/"));
 		this.assertAllowedRequestUrl(url, "GitHub pagination URL");
+		return url.toString();
 	}
 
 	private assertAllowedRequestUrl(url: URL, label: string): void {
@@ -365,6 +372,7 @@ function hasReachedPaginationLimit(limit: number | undefined, count: number): bo
 }
 
 const NEXT_LINK_PATTERN = /<([^<>]+)>;\s*rel="next"/u;
+const REPOSITORY_ID_PATH_PATTERN = /^\/repositories\/\d+\//u;
 
 export function parseNextLink(linkHeader: string | null): string | undefined {
 	if (!linkHeader) return undefined;

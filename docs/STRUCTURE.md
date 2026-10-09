@@ -58,6 +58,7 @@ src/
 │   ├── github-login.ts            # GitHub login and allowed issue creator normalization
 │   ├── mutation-queue.ts          # canonical path helper for Pi file mutation queues
 │   ├── project-root.ts            # project root and Git directory discovery without shelling out
+│   ├── sequential.ts              # ordered, fail-fast async mapping with one operation in flight
 │   └── slug.ts                    # issue title slugs and safe paths
 ├── constants.ts
 ├── errors.ts
