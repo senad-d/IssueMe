@@ -70,7 +70,7 @@ function normalizeListAssigneesParams(params: ListAssigneesToolParams): Normaliz
 	};
 }
 
-function summarizeAssignees(assignees: GitHubUserResponse[]): ToolAssigneeSummary[] {
+export function summarizeAssignees(assignees: GitHubUserResponse[]): ToolAssigneeSummary[] {
 	return assignees.map(normalizeAssigneeSummary);
 }
 

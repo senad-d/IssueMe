@@ -1,16 +1,31 @@
 # Changelog
 
+## 0.1.9 - Unreleased
+
+### Added
+
+- Added `issueme_get_overview`: compact repository orientation across issues, labels, milestones, assignees, and projects with one shared runtime, single-page request budgets, explicit section coverage/errors, and no cache writes or comment fan-out.
+
+### Changed
+
+- Initial planning now prefers the read-only overview; sync is reserved for local cache workflows. Overview partial reads explicitly report `needsSync: false`; mutation partial-success behavior is unchanged.
+
+### Fixed
+
+- Recognize GraphQL `RATE_LIMITED` errors as rate-limit failures, including HTTP 200 error envelopes.
+- Simplified GraphQL rate-limit handling and overview formatting/result selection without changing validation or failure semantics.
+
 ## 0.1.0 - Unreleased
 
 ### Added
 
 - Implemented `/issueme`, `/issueme info`/`help` aliases, and `/issueme start <skill-path>`.
-- Implemented twenty-nine IssueMe tools for listing/searching, focused refresh, syncing, creating, reading, updating, adding/editing/deleting comments, assigning, labeling, assignee discovery, repository label discovery/management, milestone discovery/management, linked development inspection, GitHub Projects v2 discovery/item management, reopening, closing with reasons, confirmed permanent issue deletion, explicit-list bulk updates, and inspecting/linking/reordering native GitHub sub-issues.
+- Implemented thirty IssueMe tools for listing/searching, focused refresh, syncing, creating, reading, updating, adding/editing/deleting comments, assigning, labeling, assignee discovery, repository label discovery/management, milestone discovery/management, linked development inspection, GitHub Projects v2 discovery/item management, reopening, closing with reasons, confirmed permanent issue deletion, explicit-list bulk updates, and inspecting/linking/reordering native GitHub sub-issues.
 - Added approved configuration TUI renderer with wide, narrow, tiny, search, edit, validation, and visual snapshot coverage.
 - Added GitHub REST/GraphQL client support with token redaction, pagination/request boundary checks, abort support, rate-limit metadata, response-shape validation, native sub-issue inspection/mutations, and closed-issue mutation guards.
 - Added project-root discovery, `.git` file/worktree repository resolution, project `.env` token precedence, non-secret config persistence, slug/path safety, and local issue JSON storage.
 - Added tests for helpers, GitHub REST behavior, token safety, repository parsing, path safety, config validation, command parsing, TUI rendering, extension registration, schema compatibility, package contents, and local issue files.
-- Added smoke discovery observability for `/issueme` and all twenty-nine `issueme_*` tool registrations without live GitHub calls.
+- Added smoke discovery observability for `/issueme` and all thirty `issueme_*` tool registrations without live GitHub calls.
 
 ### Changed
 

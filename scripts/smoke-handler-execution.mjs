@@ -22,6 +22,7 @@ const smokeConfig = { issueDirectory: "issues", defaultLabels: [], defaultAssign
 const injectedTokenCanary = "ghp_smoke_handler_token";
 
 const toolSmokeScenarios = [
+  { name: "issueme_get_overview", params: { limit: 3 } },
   { name: "issueme_list_issues", params: { state: "open", limit: 3 } },
   { name: "issueme_list_labels", params: { query: "ready", limit: 5 } },
   { name: "issueme_list_milestones", params: { state: "all", limit: 5 } },

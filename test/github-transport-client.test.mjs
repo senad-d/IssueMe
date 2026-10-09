@@ -133,6 +133,31 @@ test("GitHubTransport sends safe REST requests and maps malformed, GraphQL, and 
 	);
 });
 
+test("GraphQL rate limits remain fatal before tolerance and preserve mutation settlement", async () => {
+	for (const rateLimit of [{ type: "RATE_LIMITED" }, { extensions: { code: "RATE_LIMITED" } }]) {
+		for (const mutation of [false, true]) {
+			const transport = new GitHubTransport({
+				repository: REPOSITORY,
+				token: TOKEN,
+				fetchFn: async () => jsonResponse({
+					data: { viewer: { login: "octocat" } },
+					errors: [null, { type: "FORBIDDEN" }, { ...rateLimit, message: `${TOKEN} ${PRIVATE_BODY}` }],
+				}),
+			});
+			await assert.rejects(
+				() => transport.graphqlRequest("Limited", "query Limited { viewer { login } }", { body: PRIVATE_BODY }, undefined, undefined, mutation, Boolean),
+				(error) => {
+					assert.ok(error instanceof GitHubApiError);
+					assert.equal(error.code, "github_rate_limit");
+					assert.equal(error.safeDetails.mutationSettlement, mutation ? "no_remote_success_known" : undefined);
+					assertNoSecrets(error);
+					return true;
+				},
+			);
+		}
+	}
+});
+
 test("GitHubClient covers authenticated user, bounded list pagination, and search metadata", async () => {
 	const calls = [];
 	const client = new GitHubClient({

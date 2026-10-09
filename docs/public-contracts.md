@@ -11,7 +11,7 @@ Mutation errors carry a safe `mutationSettlement` phase when the transport/clien
 IssueMe returns normal Pi tool results with `details.result` when the handler can safely describe a domain outcome:
 
 - `success` for successful work, empty read-only results, and idempotent no-ops such as already-closed close requests or already-absent repository-label/milestone deletes.
-- `partial_success` when a remote mutation may already have succeeded but local cache refresh/removal, native sub-issue attachment, or another follow-up step failed. These results set `needsSync` and include retry-safe guidance.
+- `partial_success` when a remote mutation may already have succeeded but local cache refresh/removal, native sub-issue attachment, or another follow-up step failed. These mutation/cache results set `needsSync` and include retry-safe guidance. The read-only overview uses `partial_success` with `needsSync: false` when some requested sections are unavailable; it never prescribes cache repair.
 - `error` for handled operation-domain failures that are intentionally reported as structured results instead of thrown Pi errors, such as known label/milestone conflicts, native sub-issue operation failures with no body-only fallback, and aggregate bulk runs whose per-item results are the useful output.
 
 Agents and users should check both Pi `isError` and `details.result`/`status` before assuming a mutation succeeded.
@@ -37,6 +37,7 @@ Every `issueme_*` tool requires project trust before using project-local state. 
 | Tool | Read-only | GitHub API family | Local side effects | Mode | Failure and partial behavior | Focused coverage |
 | --- | --- | --- | --- | --- | --- | --- |
 | `issueme_sync_issues` | No | REST issues/comments | Writes/renames/removes cache files | sequential | Applies configured creator scope; throws setup/API/unexpected cache failures; returns invalid-file diagnostics for corrupt cache entries | sync, integration |
+| `issueme_get_overview` | Yes | REST discovery + GraphQL repository Projects v2 | None; no cache reads/writes | parallel | One page/section, at most five requests; creator-scoped issues, repository-wide metadata. Independent read failures preserve successful sections with `partial_success` (all failed: `error`), always `needsSync: false`; setup/auth/rate-limit/boundary/abort/unexpected failures throw | overview tool, overview pagination |
 | `issueme_list_issues` | Yes | REST issues/search | None | parallel | Applies configured creator scope and rejects conflicting author/creator filters; throws setup/validation/API failures; empty lists are success | list, integration |
 | `issueme_list_labels` | Yes | REST labels | None | parallel | Throws setup/validation/API failures and rejects any malformed collection member; valid empty lists are success | label list, integration, handler smoke |
 | `issueme_list_milestones` | Yes | REST milestones | None | parallel | Throws setup/validation/API failures and rejects any malformed collection member; valid empty lists are success | milestone list, integration |

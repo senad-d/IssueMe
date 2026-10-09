@@ -18,6 +18,8 @@ src/
 │   ├── sub-issue.ts
 │   ├── development-links.ts
 │   ├── sync-issues.ts
+│   ├── overview.ts                # bounded multi-section read-only overview
+│   ├── overview-format.ts         # section-aware compact output
 │   ├── list-issues.ts
 │   ├── list-labels.ts
 │   ├── list-milestones.ts
@@ -71,7 +73,7 @@ No template placeholder command/tool/lifecycle modules remain.
 
 - `src/extension.ts` only calls registration functions.
 - `src/commands/` owns user commands, command parsing, configuration TUI rendering, and workflow kickoff, including `defaultSkillPath` fallback for `/issueme start`.
-- `src/tools/` owns LLM-callable tool definitions, schemas, prompt snippets, prompt guidelines, tool-level orchestration, and shared creator-scope refusal before rich issue reads or mutations.
+- `src/tools/` owns LLM-callable tool definitions, schemas, prompt snippets, prompt guidelines, tool-level orchestration, and shared creator-scope refusal before rich issue reads or mutations. `overview.ts` composes existing readers with one shared runtime and one page per selected section; `overview-format.ts` reserves output space for every section. Independent section failures return partial read results with `needsSync: false`.
 - `src/github/client.ts` preserves the public `GitHubClient` facade and shared issue/project mutation guard orchestration while delegating authenticated transport, URL/pagination boundaries, REST query helpers, GraphQL error mapping, Projects v2, native sub-issue, and development-link parsing to focused modules in `src/github/`.
 - `src/github/transport.ts` owns authenticated REST/GraphQL request execution, pagination URL validation, repository/search boundary checks, token redaction, response-shape errors, and rate-limit fail-fast metadata.
 - `src/github/projects-client.ts`, `src/github/sub-issues-client.ts`, and `src/github/development-links-client.ts` own their GraphQL query builders, response normalizers, and domain-specific validation helpers; repository discovery remains in `src/github/repository.ts`.
@@ -125,7 +127,7 @@ pi --no-extensions -e .
 
 `npm run validate` is the local/CI contract: it runs typecheck, formatting, tests, script checks, the package dry-run contents check, the packed production-style smoke check, packed handler smoke, and the real Pi RPC lifecycle smoke. `package.json` intentionally publishes `src/**/*.ts` after placeholder cleanup; `npm run check:pack` compares the dry-run package against local `src` TypeScript files so new runtime modules cannot be silently omitted while specs, local state, `.env`, `.pi`, `issues`, reports, and tarballs remain excluded. CI uses `actions/checkout@v4`, `actions/setup-node@v4`, Node 22.19.0, `npm ci`, and then `npm run validate`.
 
-Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all twenty-nine `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. Use `npm run smoke:pi-lifecycle` to drive `/issueme info`, `/issueme`, and `/issueme start` through real Pi RPC in an offline temporary trusted project with IssueMe environment variables scrubbed; `docs/pi-lifecycle-verification.md` records the manual blocker and steps for terminal-only config TUI lifecycle checks. Discovery probes load registrations only; handler and lifecycle smokes do not call live GitHub, publish, update dependencies, or mutate issues.
+Use `npm run smoke:discover` for repeatable smoke-test observability: it verifies `/issueme` through Pi RPC `get_commands` with explicit `-e .`, then verifies all thirty `issueme_*` tools through a local `ExtensionAPI` registration probe because Pi RPC does not expose a tool-list command. Use `npm run smoke:packaged` to pack into a temporary directory, install that tarball into a temporary production-style project with IssueMe devDependencies omitted and Pi peer dependencies satisfied, then verify `/issueme` and tool registration from the installed package. Use `npm run smoke:pi-lifecycle` to drive `/issueme info`, `/issueme`, and `/issueme start` through real Pi RPC in an offline temporary trusted project with IssueMe environment variables scrubbed; `docs/pi-lifecycle-verification.md` records the manual blocker and steps for terminal-only config TUI lifecycle checks. Discovery probes load registrations only; handler and lifecycle smokes do not call live GitHub, publish, update dependencies, or mutate issues.
 
 Live GitHub verification is outside the default validation contract. `docs/live-github-verification.md` defines the opt-in matrix, credential preflights, temporary artifact naming, cleanup ledger, Projects v2 prerequisites, and blocked-feature reporting for maintainers who explicitly request live API evidence.
 

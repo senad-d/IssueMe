@@ -104,7 +104,7 @@ interface NormalizedMilestoneIdentity {
 	state: "open" | "closed";
 }
 
-function summarizeMilestones(milestones: GitHubMilestoneResponse[]): ToolMilestoneSummary[] {
+export function summarizeMilestones(milestones: GitHubMilestoneResponse[]): ToolMilestoneSummary[] {
 	return milestones.map(normalizeMilestoneSummary);
 }
 

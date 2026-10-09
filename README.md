@@ -31,7 +31,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 
 - **GitHub API native:** no GitHub CLI dependency and no shell execution for GitHub issue operations.
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
-- **Agent tool suite:** registers twenty-nine `issueme_*` tools for issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
+- **Agent tool suite:** registers thirty `issueme_*` tools for repository overview, issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
 - **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels/reopen/confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
@@ -84,11 +84,13 @@ pi
 /issueme
 ```
 
-Review non-secret settings, then sync the current repository issues:
+Review non-secret settings, then get a read-only repository overview:
 
 ```text
-Use issueme_sync_issues to sync the current repository issues.
+Use issueme_get_overview to summarize issues, labels, milestones, assignees, and projects.
 ```
+
+Drill into selected issues with the existing tools. Use `issueme_sync_issues` only when you need local issue/cache files.
 
 Recommended workflow kickoff:
 
@@ -151,7 +153,7 @@ Recommended first run:
 2. Start pi from the repository checkout and trust the project if prompted.
 3. Run `/issueme info` to confirm repository, token, config, and cache status without exposing secrets.
 4. Run `/issueme` to review config such as issue directory, defaults, creator scope, and default skill path.
-5. Ask the agent to call `issueme_sync_issues` before backlog work.
+5. Ask the agent to call `issueme_get_overview` for initial planning; sync only when local issue files are needed.
 6. Start your project workflow with `/issueme start [skill-path]`.
 
 IssueMe provides tools; your project `SKILL.md` should describe your team's issue process. See [`docs/usage.md`](docs/usage.md) for a starter skill and prompt examples.
@@ -171,10 +173,10 @@ IssueMe provides tools; your project `SKILL.md` should describe your team's issu
 
 ## Agent Tools
 
-IssueMe registers twenty-nine `issueme_*` tools. The most common flow is:
+IssueMe registers thirty `issueme_*` tools. The most common flow is:
 
-1. Discover: `issueme_list_labels`, `issueme_list_milestones`, `issueme_list_assignees`, `issueme_list_projects`, `issueme_get_project_fields`.
-2. Inspect: `issueme_sync_issues`, `issueme_list_issues`, `issueme_get_issue`, `issueme_list_sub_issues`, `issueme_list_issue_development_links`.
+1. Orient: `issueme_get_overview` returns bounded summaries in one call, with no cache writes and at most five GitHub requests. Inspect section status; returned rows are not repository totals.
+2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_get_project_fields`, `issueme_list_sub_issues`, and `issueme_list_issue_development_links`. Sync only when local cache files are needed.
 3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update Projects v2 items, manage native sub-issues, or bulk-update a confirmed list of issue numbers.
 
 Use the detailed references when building agent workflows:

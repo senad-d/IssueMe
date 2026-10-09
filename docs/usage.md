@@ -6,12 +6,12 @@ IssueMe provides the tools; your project skill provides the workflow. Use this g
 
 1. Start pi from a trusted GitHub repository checkout.
 2. Confirm setup with `/issueme info`.
-3. Run `issueme_sync_issues` when the open backlog matters.
-4. Use read-only discovery tools before mutation when labels, milestones, assignees, Projects v2 boards, or field options are unknown.
+3. Start with `issueme_get_overview` for a compact read-only picture; inspect section completeness and errors. Sync only when local issue files are needed.
+4. Drill down with discovery tools when labels, milestones, assignees, Projects v2 boards, or field options are still unknown.
 5. Read issue detail with `issueme_get_issue` before updating an existing issue.
 6. Check development links with `issueme_list_issue_development_links` before starting implementation on an issue that may already have linked PRs, branches, commits, or closing references.
 7. Mutate only explicit targets: one issue number, one comment ID, one known project item ID, or a confirmed list of issue numbers for bulk operations.
-8. Sync again after partial results, manual GitHub UI changes, or uncertain local cache state.
+8. Sync after mutation/cache partial results or uncertain local cache state. Overview partial reads have `needsSync: false`: address the failed section and retry its discovery tool instead.
 
 ## Recommended project skill
 
@@ -31,7 +31,8 @@ description: Manage this repository's GitHub issues with IssueMe. Use when synci
 
 # GitHub Issues Workflow
 
-- Start with `issueme_sync_issues` when the open backlog matters.
+- Start with `issueme_get_overview` for initial planning; returned counts are not repository totals. Use `issueme_sync_issues` only when local cache files are needed.
+- Check overview section status (`complete`, `truncated`, `unavailable`, `omitted`) before inferring absence; reuse discovered IDs and drill down for missing details.
 - Use `issueme_get_issue` before updating an existing issue; use `refresh: true` with a known number to reconcile one issue in any state.
 - Use `issueme_list_issue_development_links` before implementation when linked work might already exist.
 - Use `issueme_list_labels` before applying labels when the taxonomy is unknown.
@@ -60,10 +61,20 @@ If `defaultSkillPath` is configured in `/issueme`, `/issueme start` can be run w
 
 ## Common prompt examples
 
+### Overview, then drill down
+
+```text
+Use issueme_get_overview to give me a compact repository overview, then inspect the most relevant issue.
+```
+
+```text
+Use issueme_get_overview with sections ["issues", "milestones"] and limit 5 for focused planning without cache writes.
+```
+
 ### Sync and inspect
 
 ```text
-Use issueme_sync_issues to sync open issues, then summarize the top five stale bugs.
+Use issueme_sync_issues when I need local issue files, then inspect the cached backlog.
 ```
 
 ```text

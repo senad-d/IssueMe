@@ -63,6 +63,17 @@ export const ISSUEME_TOOL_CONTRACTS = [
 		coverage: ["test/sync-tool.test.mjs", "test/tool-integration.test.mjs"],
 	},
 	{
+		name: "issueme_get_overview",
+		readOnly: true,
+		trustRequired: true,
+		githubApi: "REST issues/labels/milestones/assignees plus GraphQL repository-linked Projects v2; at most one page per section",
+		localSideEffects: "None; does not read or write issue-cache files.",
+		executionMode: "parallel",
+		validationGates: ["project trust", "repository resolution", "token resolution", "section/limit validation", "creator scope filtering", "single-page request budgets", "abort checks"],
+		resultPolicy: "Throws setup/authentication/rate-limit/boundary/abort/unexpected failures; preserves independent GitHub section failures as partial_success or error when all requested sections fail, always needsSync false. Empty collections are success; omitted/truncated/unavailable sections are explicit.",
+		coverage: ["test/overview-tool.test.mjs", "test/overview-pagination.test.mjs"],
+	},
+	{
 		name: "issueme_list_issues",
 		readOnly: true,
 		trustRequired: true,

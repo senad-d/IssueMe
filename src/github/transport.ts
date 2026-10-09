@@ -1,5 +1,5 @@
 import { GITHUB_API_BASE_URL, GITHUB_API_VERSION } from "../constants.ts";
-import { GitHubApiError, ISSUEME_ERROR_CODES, markMutationSettlement, mutationSettlementOf } from "../errors.ts";
+import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, markMutationSettlement, mutationSettlementOf } from "../errors.ts";
 import type { GitHubRepository } from "../types.ts";
 import { redactSecrets } from "../utils/env.ts";
 import { isObject } from "./shared.ts";
@@ -16,6 +16,16 @@ export interface GitHubClientOptions {
 
 export interface PaginationOptions {
 	limit?: number;
+	/** Internal request budget; omitted preserves existing pagination behavior. */
+	maxPages?: number;
+}
+
+export function normalizeMaxPages(value: number | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	if (!Number.isSafeInteger(value) || value < 1) {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "maxPages must be a positive integer.");
+	}
+	return value;
 }
 
 export interface GitHubGraphQLErrorContext {
@@ -90,6 +100,7 @@ export class GitHubTransport {
 		}
 
 		const rawErrors = Array.isArray(envelope.errors) ? envelope.errors : [];
+		assertGraphQLNotRateLimited(rawErrors, mutation);
 		const errors = tolerateError ? rawErrors.filter((error) => !tolerateError(error)) : rawErrors;
 		if (errors.length > 0) {
 			const safeGraphQLErrorDetails = redactSecrets(formatGraphQLErrors(errors), [this.token, ...collectRequestStringValues(variables)]);
@@ -127,6 +138,8 @@ export class GitHubTransport {
 		options: PaginationFilterOptions<T> = {},
 	): Promise<{ items: T[]; truncated: boolean }> {
 		const values: T[] = [];
+		const maxPages = normalizeMaxPages(options.maxPages);
+		let pagesRead = 0;
 		let nextUrl: string | undefined = this.buildUrl(path, query).toString();
 		while (nextUrl) {
 			const response = await this.fetchPaginationPage<T>(nextUrl, signal);
@@ -134,7 +147,9 @@ export class GitHubTransport {
 			const next = parseNextLink(response.headers.get("link"));
 			const page = collectFilteredPaginationItems(response.data, values.length, options);
 			values.push(...page.items);
-			if (page.truncated || hasAdditionalPageBeyondLimit(options.limit, values.length, next)) return { items: values, truncated: true };
+			pagesRead += 1;
+			if (page.truncated || hasAdditionalPageBeyondLimit(options.limit, values.length, next)
+				|| (next !== undefined && maxPages !== undefined && pagesRead >= maxPages)) return { items: values, truncated: true };
 			nextUrl = next === undefined ? undefined : this.resolvePaginationUrl(next);
 		}
 		return { items: values, truncated: false };
@@ -264,6 +279,19 @@ export class GitHubTransport {
 		}
 		return redactSecrets(detail ? `${base}: ${detail}.` : `${base}.`, [this.token, ...collectRequestStringValues(requestBody)]);
 	}
+}
+
+function assertGraphQLNotRateLimited(errors: unknown[], mutation: boolean): void {
+	if (!errors.some(isGraphQLRateLimitError)) return;
+	throw markGraphQLMutationFailure(new GitHubApiError("GitHub GraphQL rate limit is active; wait before retrying.", {
+		code: ISSUEME_ERROR_CODES.GITHUB_RATE_LIMIT,
+		path: `${GITHUB_API_BASE_URL}/graphql`,
+	}), mutation);
+}
+
+function isGraphQLRateLimitError(error: unknown): boolean {
+	if (!isObject(error)) return false;
+	return error.type === "RATE_LIMITED" || (isObject(error.extensions) && error.extensions.code === "RATE_LIMITED");
 }
 
 function copyMutationSettlement(source: unknown, target: GitHubApiError): GitHubApiError {

@@ -23,7 +23,7 @@ export function registerSyncIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 			promptSnippet: "Sync open issues to local cache.",
 			promptGuidelines: [
 				ISSUEME_SHARED_PROMPT_GUIDELINE,
-				"Use issueme_sync_issues before backlog planning or after partial cache-refresh failures.",
+				"Use issueme_sync_issues when local cache synchronization is needed or after partial cache-refresh failures; prefer issueme_get_overview for initial planning.",
 			],
 			executionMode: "sequential",
 			parameters: SyncIssuesParams,

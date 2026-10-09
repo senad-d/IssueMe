@@ -70,7 +70,7 @@ function normalizeListLabelsParams(params: ListLabelsToolParams): NormalizedList
 	};
 }
 
-function summarizeLabels(labels: GitHubLabelResponse[]): ToolLabelSummary[] {
+export function summarizeLabels(labels: GitHubLabelResponse[]): ToolLabelSummary[] {
 	return labels.map(normalizeLabelSummary);
 }
 

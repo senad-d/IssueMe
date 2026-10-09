@@ -11,7 +11,7 @@ import { assertGitHubAssigneeDiscoveryResponse, assertGitHubLabelDiscoveryRespon
 import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, buildProjectV2AddValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemValidationQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2IterationLimit, normalizeProjectV2ItemMutationResult, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, requireProjectV2Summary } from "./projects-client.ts";
 import { compactObject, connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject } from "./shared.ts";
 import { assertReorderableSubIssueList, buildSubIssueRelationshipsQuery, moveNativeSubIssue, normalizeNativeSubIssueRelationshipResult, normalizeReprioritizeSubIssueResult, normalizeSubIssueMutationResult, normalizeSubIssueRelationshipLimit, normalizeSubIssueReorderNumbers, requireIssueNodeId } from "./sub-issues-client.ts";
-import { GitHubTransport, parseNextLink } from "./transport.ts";
+import { GitHubTransport, normalizeMaxPages, parseNextLink } from "./transport.ts";
 import type { GitHubClientOptions, PaginationOptions } from "./transport.ts";
 
 export type { FetchLike, GitHubClientOptions, PaginationOptions } from "./transport.ts";
@@ -270,6 +270,7 @@ export class GitHubClient {
 		const query = buildIssueListQuery(filters, limit);
 		const result = await this.paginateFiltered<GitHubIssueResponse>(this.repoPath("/issues"), query, signal, {
 			limit,
+			maxPages: filters.maxPages,
 			filter: (issue) => !isPullRequestIssueResponse(issue),
 		});
 		return { mode: "list", issues: result.items, truncated: result.truncated };
@@ -277,7 +278,7 @@ export class GitHubClient {
 
 	async searchIssues(filters: GitHubIssueSearchFilters, signal?: AbortSignal): Promise<GitHubIssueListResult> {
 		const limit = normalizePaginationLimit(filters.limit);
-		const result = await this.paginateSearchIssues(buildIssueSearchRequestQuery(this.repository.fullName, filters, limit), signal, { limit });
+		const result = await this.paginateSearchIssues(buildIssueSearchRequestQuery(this.repository.fullName, filters, limit), signal, { limit, maxPages: filters.maxPages });
 		const searchResult: GitHubIssueListResult = {
 			mode: "search",
 			issues: result.items,
@@ -294,6 +295,7 @@ export class GitHubClient {
 		const queryFilter = normalizeOptionalTextFilter(filters.query, "label query");
 		const result = await this.paginateFiltered<GitHubLabelResponse>(this.repoPath("/labels"), buildLabelListQuery(limit), signal, {
 			limit,
+			maxPages: filters.maxPages,
 			assertItem: assertGitHubLabelDiscoveryResponse,
 			filter: (label) => labelMatchesFilters(label, nameFilter, queryFilter),
 		});
@@ -304,6 +306,7 @@ export class GitHubClient {
 		const limit = normalizePaginationLimit(filters.limit);
 		const result = await this.paginateFiltered<GitHubMilestoneResponse>(this.repoPath("/milestones"), buildMilestoneListQuery(filters, limit), signal, {
 			limit,
+			maxPages: filters.maxPages,
 			assertItem: assertGitHubMilestoneDiscoveryResponse,
 		});
 		return { milestones: result.items, truncated: result.truncated };
@@ -315,6 +318,7 @@ export class GitHubClient {
 		const queryFilter = normalizeOptionalTextFilter(filters.query, "assignee query");
 		const result = await this.paginateFiltered<GitHubUserResponse>(this.repoPath("/assignees"), buildAssigneeListQuery(limit), signal, {
 			limit,
+			maxPages: filters.maxPages,
 			assertItem: assertGitHubAssigneeDiscoveryResponse,
 			filter: (assignee) => assigneeMatchesFilters(assignee, loginFilter, queryFilter),
 		});
@@ -327,6 +331,7 @@ export class GitHubClient {
 		const limit = normalizeProjectV2ListLimit(filters.limit);
 		const query = normalizeProjectV2Query(filters.query);
 		const includeClosed = filters.includeClosed === true;
+		const maxPages = Math.min(normalizeMaxPages(filters.maxPages) ?? PROJECTS_V2_LIST_PAGE_CAP, PROJECTS_V2_LIST_PAGE_CAP);
 		const projects: ToolProjectSummary[] = [];
 		let after: string | undefined;
 		let truncated = false;
@@ -361,7 +366,7 @@ export class GitHubClient {
 				break;
 			}
 			if (!hasNextPage) break;
-			if (pagesRead >= PROJECTS_V2_LIST_PAGE_CAP || !endCursor) {
+			if (pagesRead >= maxPages || !endCursor) {
 				truncated = true;
 				break;
 			}
@@ -1061,6 +1066,8 @@ export class GitHubClient {
 		options: PaginationOptions = {},
 	): Promise<{ items: GitHubIssueResponse[]; truncated: boolean; totalCount?: number; incompleteResults?: boolean }> {
 		const values: GitHubIssueResponse[] = [];
+		const maxPages = normalizeMaxPages(options.maxPages);
+		let pagesRead = 0;
 		let totalCount: number | undefined;
 		let incompleteResults: boolean | undefined;
 		let nextUrl: string | undefined = this.transport.buildUrl("/search/issues", query).toString();
@@ -1069,7 +1076,9 @@ export class GitHubClient {
 			totalCount ??= result.page.totalCount;
 			incompleteResults ??= result.page.incompleteResults;
 			const pageTruncated = appendIssueSearchPageItems(values, result.page.items, options.limit);
-			if (pageTruncated || isIssueSearchNextPageLimited(values.length, options.limit, result.nextUrl)) {
+			pagesRead += 1;
+			if (pageTruncated || isIssueSearchNextPageLimited(values.length, options.limit, result.nextUrl)
+				|| (result.nextUrl !== undefined && maxPages !== undefined && pagesRead >= maxPages)) {
 				return issueSearchPaginationResult(values, true, totalCount, incompleteResults);
 			}
 			nextUrl = result.nextUrl;

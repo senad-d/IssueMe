@@ -331,6 +331,7 @@ export function isAbortError(error: unknown): boolean {
  * - throw from execute() for Pi-level failures that should set tool isError=true;
  * - return details.result="success" for successful work and idempotent no-ops;
  * - return details.result="partial_success" when a remote mutation may have succeeded but cache/follow-up work failed;
+ *   a read-only overview may also return partial_success with needsSync=false for unavailable sections;
  * - return details.result="error" only for documented, handled domain outcomes that are safer as structured results.
  * Pi itself only marks tool calls failed when execute() throws, so callers must inspect details.result/status too.
  */
@@ -869,13 +870,33 @@ function buildBoundToolIssueSummary(summary: ToolIssueSummary): BoundedIssueSumm
 	assignDefinedRecordValue(truncation, "parentIssue", parentIssue.truncated ? parentIssue.truncation : undefined);
 	assignDefinedRecordValue(truncation, "subIssues", buildSubIssuesTruncation(subIssues, childIssueTruncations, summary.subIssues?.length));
 	const value: ToolIssueSummary = { ...summary, labels: labels.value ?? [], assignees: assignees.value ?? [] };
+	boundIssueSummaryText(value, summary, truncation);
 	assignDefinedProperty(value, "parentIssue", parentIssue.value);
 	assignDefinedProperty(value, "subIssues", collectBoundedValues(boundedSubIssues));
 	return {
 		value,
-		truncated: labels.truncated || assignees.truncated || parentIssue.truncated || subIssues.truncated || childIssueTruncations > 0,
+		truncated: hasTruncation(truncation),
 		truncation,
 	};
+}
+
+function boundIssueSummaryText(value: ToolIssueSummary, original: ToolIssueSummary, truncation: Record<string, unknown>): void {
+	for (const field of ["labels", "assignees"] as const) {
+		const bounded = value[field].map((text) => truncateSafeString(redactKnownSensitiveText(text), MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+		if (bounded.some((text, index) => text !== value[field][index])) truncation[`${field}Values`] = { maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS };
+		value[field] = bounded;
+	}
+	for (const field of ["title", "html_url", "updatedAt"] as const) {
+		const text = original[field];
+		if (text === undefined) continue;
+		value[field] = truncateSafeString(redactKnownSensitiveText(text), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+		recordTruncationIfChanged(truncation, field, value[field], text, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	}
+	if (original.milestone) {
+		const title = truncateSafeString(redactKnownSensitiveText(original.milestone.title), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+		value.milestone = { number: original.milestone.number, title };
+		recordTruncationIfChanged(truncation, "milestone.title", title, original.milestone.title, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	}
 }
 
 function boundToolCommentSummary(comment: ToolCommentSummary | undefined): ToolCommentSummary | undefined {
@@ -1347,7 +1368,13 @@ function collectIssueSummaryTruncation(summaries: Array<{ truncation: Record<str
 	const assigneeAffected = summaries.filter((summary) => summary.truncation.assignees !== undefined).length;
 	const parentIssueAffected = summaries.filter((summary) => summary.truncation.parentIssue !== undefined).length;
 	const subIssueAffected = summaries.filter((summary) => summary.truncation.subIssues !== undefined).length;
+	const textFields = ["title", "html_url", "updatedAt", "milestone.title", "labelsValues", "assigneesValues"];
+	const textTruncation = Object.fromEntries(textFields
+		.map((field) => [field, summaries.filter((summary) => summary.truncation[field] !== undefined).length] as const)
+		.filter(([, count]) => count > 0)
+		.map(([field, count]) => [field, { affectedIssues: count, maxChars: MAX_TOOL_ERROR_DETAIL_STRING_CHARS }]));
 	return {
+		...textTruncation,
 		...(labelAffected ? { labels: { affectedIssues: labelAffected, maxPerIssue: MAX_TOOL_LABELS } } : {}),
 		...(assigneeAffected ? { assignees: { affectedIssues: assigneeAffected, maxPerIssue: MAX_TOOL_ASSIGNEES } } : {}),
 		...(parentIssueAffected ? { parentIssue: { affectedIssues: parentIssueAffected } } : {}),

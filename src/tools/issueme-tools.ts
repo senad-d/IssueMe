@@ -16,6 +16,7 @@ import { registerListLabelsTool } from "./list-labels.ts";
 import { registerListMilestonesTool } from "./list-milestones.ts";
 import { registerManageLabelTool } from "./manage-label.ts";
 import { registerManageMilestoneTool } from "./manage-milestone.ts";
+import { registerGetOverviewTool } from "./overview.ts";
 import { registerProjectTools } from "./projects.ts";
 import { registerReopenIssueTool } from "./reopen-issue.ts";
 import { registerSubIssueTools } from "./sub-issue.ts";
@@ -26,6 +27,7 @@ import { issueMeResultPolicyPromptGuideline, type IssueMeToolRegistrationOptions
 export function registerIssueMeTools(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	const piWithResultPolicy = withIssueMeResultPolicyPrompt(pi);
 	registerSyncIssuesTool(piWithResultPolicy, options);
+	registerGetOverviewTool(piWithResultPolicy, options);
 	registerListIssuesTool(piWithResultPolicy, options);
 	registerListLabelsTool(piWithResultPolicy, options);
 	registerListMilestonesTool(piWithResultPolicy, options);

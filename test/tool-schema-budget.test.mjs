@@ -5,6 +5,7 @@ import issueMeExtension from "../src/extension.ts";
 
 const expectedDescriptions = new Map([
 	["issueme_sync_issues", "Sync open issues to local cache; remove stale closed issue files."],
+	["issueme_get_overview", "Read a compact repo overview of issues, labels, milestones, assignees, and projects."],
 	["issueme_list_issues", "List/search repo issues with filters; read-only summaries."],
 	["issueme_list_labels", "List/search repo labels with metadata."],
 	["issueme_list_milestones", "List repo milestones with state, dates, and issue counts."],

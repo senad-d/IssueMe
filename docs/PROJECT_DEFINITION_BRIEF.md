@@ -48,6 +48,7 @@
 | Command | `/issueme info`/`help`/`--help`/`-h` | Show combined help/status | Implemented; includes repo/auth/cache/trust/creator-scope status without secrets. |
 | Command | `/issueme start [skill-path]` | Start skill-guided workflow | Implemented; validates an explicit readable project-local skill file or configured `defaultSkillPath`, then sends an agent prompt with a project-relative `@path` skill reference. |
 | Tool | `issueme_sync_issues` | Fetch open in-scope issues and update local files | Implemented; removes local files for closed or out-of-scope issues. |
+| Tool | `issueme_get_overview` | Compact repository overview before drill-down | Implemented; one page per selected section, up to five requests, explicit partial-read coverage, no cache writes or comment fan-out. |
 | Tool | `issueme_list_issues` | List/search in-scope issues in the resolved repository | Implemented with REST list mode and bounded repository-scoped Search API mode. |
 | Tool | `issueme_list_labels` | Discover repository labels | Implemented read-only with bounded metadata and filters. |
 | Tool | `issueme_list_milestones` | Discover repository milestones | Implemented read-only with state/sort filters and bounded metadata. |

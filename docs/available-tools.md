@@ -15,6 +15,7 @@
 ## IssueMe
 
 - `issueme_sync_issues`
+- `issueme_get_overview`
 - `issueme_list_issues`
 - `issueme_list_labels`
 - `issueme_list_milestones`

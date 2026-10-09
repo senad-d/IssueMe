@@ -186,6 +186,8 @@ export interface ToolIssueSummary {
 	commentsTruncated?: boolean;
 	commentsCount?: number;
 	commentsFetchLimit?: number;
+	updatedAt?: string;
+	milestone?: { number: number; title: string } | null;
 }
 
 export interface ToolCommentSummary {
@@ -320,12 +322,32 @@ export interface SafeToolError {
 	details?: Record<string, unknown>;
 }
 
+export const OVERVIEW_SECTIONS = ["issues", "labels", "milestones", "assignees", "projects"] as const;
+export type OverviewSectionName = typeof OVERVIEW_SECTIONS[number];
+
+export interface ToolOverviewSection {
+	status: "complete" | "truncated" | "unavailable" | "omitted";
+	returned?: number;
+	limit?: number;
+	error?: SafeToolError;
+	drillDown: string;
+	displayTruncated?: boolean;
+}
+
+export interface ToolOverviewMetadata {
+	startedAt: string;
+	fetchedAt: string;
+	maxRequests: number;
+	sections: Record<OverviewSectionName, ToolOverviewSection>;
+}
+
 export type IssueMeToolResult = "success" | "partial_success" | "error";
 
 export interface IssueMeToolBaseDetails {
 	result?: IssueMeToolResult;
 	repository?: string;
 	creatorScope?: string;
+	overview?: ToolOverviewMetadata;
 	issue?: ToolIssueSummary;
 	issues?: ToolIssueSummary[];
 	labels?: ToolLabelSummary[];
@@ -358,12 +380,23 @@ export interface IssueMeToolSuccessDetails extends IssueMeToolBaseDetails {
 	error?: undefined;
 }
 
-export interface IssueMeToolPartialSuccessDetails extends IssueMeToolBaseDetails {
+export interface IssueMeToolCachePartialSuccessDetails extends IssueMeToolBaseDetails {
 	result: "partial_success";
 	cacheUpdated: false;
 	needsSync: true;
 	error: SafeToolError;
 }
+
+export interface IssueMeToolReadPartialSuccessDetails extends IssueMeToolBaseDetails {
+	result: "partial_success";
+	status: "overview_partial";
+	cacheUpdated: false;
+	needsSync: false;
+	overview: ToolOverviewMetadata;
+	error: SafeToolError;
+}
+
+export type IssueMeToolPartialSuccessDetails = IssueMeToolCachePartialSuccessDetails | IssueMeToolReadPartialSuccessDetails;
 
 export interface IssueMeToolErrorDetails extends IssueMeToolBaseDetails {
 	result: "error";

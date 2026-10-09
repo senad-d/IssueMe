@@ -1,6 +1,6 @@
 # IssueMe Tool Reference
 
-IssueMe registers twenty-nine `issueme_*` tools. All tools require a trusted project before using project-local IssueMe state.
+IssueMe registers thirty `issueme_*` tools. All tools require a trusted project before using project-local IssueMe state.
 
 ## Result and failure signaling
 
@@ -9,7 +9,7 @@ Pi marks a tool call as failed only when the handler throws. IssueMe throws for 
 Handled domain outcomes return normal pi tool results with structured `details.result`:
 
 - `success` for successful work and idempotent no-ops.
-- `partial_success` when a remote mutation may have succeeded but cache/follow-up work failed; inspect `needsSync`, `status`, and safe retry guidance.
+- `partial_success` when a remote mutation may have succeeded but cache/follow-up work failed; inspect `needsSync`, `status`, and safe retry guidance. The read-only overview also uses `partial_success` for unavailable sections, with `needsSync: false`.
 - `error` for documented structured failures such as known label/milestone conflicts, native sub-issue operation failures without body-only fallback, and aggregate bulk per-item failures.
 
 Agents should check both pi `isError` and IssueMe `details.result`/`status` before assuming a mutation succeeded. The full public contract matrix is in [`public-contracts.md`](public-contracts.md).
@@ -18,6 +18,7 @@ Agents should check both pi `isError` and IssueMe `details.result`/`status` befo
 
 | Tool | Behavior |
 | --- | --- |
+| `issueme_get_overview` | Compact read-only overview of open issues, labels, open milestones, assignable users, and repository-linked open Projects v2 boards. One page per selected section, shared runtime, no cache writes. |
 | `issueme_list_issues` | Read-only list/search for current-repository issues by state, labels, assignee, author/creator, mentioned user, milestone, updated-since, sort/direction, and limit. Text search enforces the current repository and excludes pull requests. |
 | `issueme_list_labels` | Read-only repository label discovery with name, description, color, default status, URL, optional filters, limit, and truncation metadata. |
 | `issueme_list_milestones` | Read-only milestone discovery with number, title, state, description, due date, issue counts, URL, filters, and truncation metadata. |
@@ -28,6 +29,34 @@ Agents should check both pi `isError` and IssueMe `details.result`/`status` befo
 | `issueme_list_issue_development_links` | Read-only linked-development inspection for one issue through GitHub GraphQL timeline data. Returns bounded PR, branch, commit, closing/reference, URL/state, and truncation metadata without fetching PR bodies. |
 
 Discovery tools do not refresh or write local cache files except `issueme_list_sub_issues` when called with `refreshCache: true`.
+
+### Repository overview
+
+Start with `issueme_get_overview {}` for initial orientation; do not sync the whole issue/comment cache unless local files are needed.
+
+Parameters:
+- `sections`: optional unique non-empty selection of `issues`, `labels`, `milestones`, `assignees`, `projects`; defaults to all five.
+- `limit`: rows per section, default 10, maximum 25.
+
+The tool resolves trust/config/repository/token once and concurrently reads **at most one page per selected section**, at most five GitHub requests. It reuses REST list readers and a separate Projects v2 GraphQL reader; it does not yet batch these into one GraphQL request. Existing discovery tools may already run in parallel, so the main savings are agent orchestration, compact output, and avoiding unnecessary cache sync/comment requests—not fewer requests than equivalent single-page discovery.
+
+`details.overview` contains `startedAt`, `fetchedAt`, `maxRequests` (a budget, not a measured count), and a status for every section:
+- `complete`: the selected collection was exhausted within the page/summary bounds; an empty collection is valid.
+- `truncated`: more collection data exists or summary fields were shortened. Zero returned rows can still be truncated, for example when the first page contains only PRs or closed boards.
+- `unavailable`: that section failed; its safe error is included, with no false zero count.
+- `omitted`: not requested; no API call was made for it.
+
+Each read section reports `returned`, `limit`, and a `drillDown` tool; `displayTruncated` separately flags shortened model-facing text. Summaries are in `details.issues`, `labels`, `milestones`, `assignees`, and `projects`. Overview issue summaries include `updatedAt` and milestone number/title when available. **Returned rows are not repository totals.** Open issues are ordered by most recently updated and restricted by `allowedIssueCreator`; other metadata and GitHub milestone counts are repository-wide, not creator-scoped. Fetch times describe a read window, not an atomic GitHub snapshot.
+
+Independent API/network/shape/Projects permission failures preserve successful sections: `result: partial_success`, `status: overview_partial`, `needsSync: false`. If all selected sections fail, `result: error`, `status: overview_unavailable`. Setup, HTTP authentication, rate limits, cancellation, boundary violations, and unexpected programming failures throw. No overview result requires cache sync; retry only the affected discovery reader after addressing its error.
+
+Bodies/comments are not returned, and no issue-detail/comment, relationship, timeline, or project-field/item requests are made. REST issue list responses may contain bodies internally; they are discarded from output. CI, reviews, releases, complete PR/branch inventories, and unlinked organization/user boards are outside this overview. Existing drill-down tools retain their limits and do not gain continuation cursors here.
+
+Use `issueme_list_issues` for filtering; `issueme_get_issue` with a known number and `refresh: true` for current detail (this updates cache); `issueme_list_sub_issues` and `issueme_list_issue_development_links` for relationships/work; and `issueme_get_project_fields` for a selected board. Exact discovered IDs may be reused, but existing mutation preflights still revalidate targets.
+
+```json
+{"sections": ["issues", "milestones"], "limit": 5}
+```
 
 ## Cache and issue CRUD tools
 
