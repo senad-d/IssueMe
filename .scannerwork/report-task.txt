@@ -1,7 +1,0 @@
-organization=senad-d
-projectKey=senad-d_IssueMe
-serverUrl=https://sonarcloud.io
-serverVersion=8.0.0.110499
-dashboardUrl=https://sonarcloud.io/dashboard?id=senad-d_IssueMe
-ceTaskId=AaEiEw8lHxi1U64p3wxK
-ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AaEiEw8lHxi1U64p3wxK
