@@ -2,10 +2,11 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES } from "../constants.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import { assertGitHubAssigneeDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubUserResponse, IssueMeToolDetails, ToolAssigneeSummary } from "../types.ts";
 import { normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
-import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_ASSIGNEE_LIST_LIMIT = Math.min(25, MAX_TOOL_ASSIGNEES);
 
@@ -14,6 +15,7 @@ const ListAssigneesParams = Type.Object(
 		login: Type.Optional(Type.String({ description: "Login substring." })),
 		query: Type.Optional(Type.String({ description: "Login/ID/profile/type search." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_ASSIGNEES, description: `Max results. Default ${DEFAULT_ASSIGNEE_LIST_LIMIT}; max ${MAX_TOOL_ASSIGNEES}.` })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},
 	{ additionalProperties: false },
 );
@@ -24,6 +26,7 @@ interface NormalizedListAssigneesParams {
 	login?: string;
 	query?: string;
 	limit: number;
+	after?: string;
 }
 
 export function registerListAssigneesTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -53,8 +56,9 @@ export function registerListAssigneesTool(pi: ExtensionAPI, options: IssueMeTool
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { assignees: { shown: assignees.length, max: normalized.limit } } } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatListAssigneesText(runtime.repository, normalized, assignees, result.truncated), details);
+				return toolText(appendContinuationLine(formatListAssigneesText(runtime.repository, normalized, assignees, result.truncated), result.continuation), details);
 			},
 		}),
 	);
@@ -63,10 +67,12 @@ export function registerListAssigneesTool(pi: ExtensionAPI, options: IssueMeTool
 function normalizeListAssigneesParams(params: ListAssigneesToolParams): NormalizedListAssigneesParams {
 	const login = normalizeOptionalTextFilter(params.login, "login");
 	const query = normalizeOptionalTextFilter(params.query, "query");
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		...(login ? { login } : {}),
 		...(query ? { query } : {}),
 		limit: normalizeBoundedToolLimit(params.limit, { max: MAX_TOOL_ASSIGNEES, defaultValue: DEFAULT_ASSIGNEE_LIST_LIMIT }),
+		...(after ? { after } : {}),
 	};
 }
 

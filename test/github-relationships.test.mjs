@@ -112,8 +112,8 @@ test("relationship query builders expose native sub-issue and development-link G
 	const subIssueQuery = buildSubIssueRelationshipsQuery();
 	assert.match(subIssueQuery, /query IssueMeListSubIssues/);
 	assert.match(subIssueQuery, /parent/);
-	assert.match(subIssueQuery, /subIssues\(first: \$first\)/);
-	assert.match(subIssueQuery, /pageInfo \{ hasNextPage \}/);
+	assert.match(subIssueQuery, /subIssues\(first: \$first, after: \$after\)/);
+	assert.match(subIssueQuery, /pageInfo \{ hasNextPage endCursor \}/);
 
 	const developmentQuery = buildIssueDevelopmentLinksQuery();
 	assert.match(developmentQuery, /query IssueMeListIssueDevelopmentLinks/);

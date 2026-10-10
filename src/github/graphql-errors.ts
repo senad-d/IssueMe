@@ -65,9 +65,18 @@ function isProjectV2Operation(operationName: string): boolean {
 		|| operationName === "IssueMeGetProjectV2FieldsById"
 		|| operationName === "IssueMeGetProjectV2FieldsByNumber"
 		|| operationName === "IssueMeValidateProjectV2ForAdd"
+		|| operationName === "IssueMeListProjectV2Items"
+		|| operationName === "IssueMeGetProjectV2Item"
+		|| operationName === "IssueMeGetProjectV2ItemByIssue"
 		|| operationName === "IssueMeAddIssueToProjectV2"
 		|| operationName === "IssueMeValidateProjectV2ItemForUpdate"
-		|| operationName === "IssueMeUpdateProjectV2ItemFieldValue";
+		|| operationName === "IssueMeValidateProjectV2ItemField"
+		|| operationName === "IssueMeValidateProjectV2Field"
+		|| operationName === "IssueMeUpdateProjectV2ItemFieldValue"
+		|| operationName === "IssueMeClearProjectV2ItemFieldValue"
+		|| operationName === "IssueMeDeleteProjectV2Item"
+		|| operationName === "IssueMeArchiveProjectV2Item"
+		|| operationName === "IssueMeUnarchiveProjectV2Item";
 }
 
 function isDevelopmentLinkOperation(operationName: string): boolean {
@@ -131,6 +140,7 @@ function subIssueUnsupportedError(operationName: string, detail: string): GitHub
 function projectV2PermissionAction(operationName: string): string {
 	if (operationName === "IssueMeListProjectsV2") return "project discovery";
 	if (operationName === "IssueMeGetProjectV2FieldsById" || operationName === "IssueMeGetProjectV2FieldsByNumber") return "project field discovery";
+	if (operationName === "IssueMeListProjectV2Items" || operationName === "IssueMeGetProjectV2Item" || operationName === "IssueMeGetProjectV2ItemByIssue") return "project item discovery";
 	return "project item management";
 }
 

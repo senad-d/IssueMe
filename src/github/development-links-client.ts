@@ -2,15 +2,17 @@ import { GITHUB_API_BASE_URL, MAX_TOOL_DEVELOPMENT_LINKS } from "../constants.ts
 import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
 import type { ToolIssueDevelopmentLinkSummary } from "../types.ts";
 import type { GitHubIssueDevelopmentLinksResult } from "./client.ts";
-import { connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
-import { normalizeNativeSubIssueSummary } from "./sub-issues-client.ts";
+import { connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
+import { normalizeNativeSubIssueSummary, type ConnectionPageMetadata, type ConnectionReadOptions } from "./sub-issues-client.ts";
 
 interface IssueDevelopmentLinksData {
 	repository?: unknown;
 }
 
+const FIRST_PAGE_READ: ConnectionReadOptions = { skip: 0, resumed: false };
+
 export function buildIssueDevelopmentLinksQuery(): string {
-	return `query IssueMeListIssueDevelopmentLinks($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!) {
+	return `query IssueMeListIssueDevelopmentLinks($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!, $after: String) {
 		repository(owner: $owner, name: $repo) {
 			issue(number: $issueNumber) {
 				id
@@ -19,7 +21,7 @@ export function buildIssueDevelopmentLinksQuery(): string {
 				state
 				url
 				author { login }
-				timelineItems(first: $first, itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT, REFERENCED_EVENT, CLOSED_EVENT]) {
+				timelineItems(first: $first, after: $after, itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT, REFERENCED_EVENT, CLOSED_EVENT]) {
 					totalCount
 					nodes {
 						__typename
@@ -51,7 +53,7 @@ export function buildIssueDevelopmentLinksQuery(): string {
 							}
 						}
 					}
-					pageInfo { hasNextPage }
+					pageInfo { hasNextPage endCursor }
 				}
 			}
 		}
@@ -88,7 +90,8 @@ export function normalizeIssueDevelopmentLinksResult(
 	repository: string,
 	issueNumber: number,
 	limit: number,
-): GitHubIssueDevelopmentLinksResult {
+	read: ConnectionReadOptions = FIRST_PAGE_READ,
+): GitHubIssueDevelopmentLinksResult & ConnectionPageMetadata {
 	if (!isObject(data.repository)) {
 		throw new GitHubApiError("GitHub GraphQL issue development-links query returned an inaccessible repository or unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
@@ -104,14 +107,19 @@ export function normalizeIssueDevelopmentLinksResult(
 	if (!isObject(connection)) {
 		throw new GitHubApiError("GitHub GraphQL issue development-links query returned no timelineItems connection.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
-	const rawEvents = extractConnectionNodes(connection);
+	const rawEvents = extractConnectionNodes(connection).slice(read.skip);
 	const links = collectIssueDevelopmentLinks(rawEvents, repository);
 	const timelineEventCount = normalizeConnectionTotalCount(connection) ?? rawEvents.length;
+	const hasNextPage = connectionHasNextPage(connection);
+	const countTruncated = !read.resumed && (timelineEventCount > rawEvents.length || rawEvents.length >= limit && timelineEventCount > limit);
+	const endCursor = connectionEndCursor(connection);
 	return {
 		issue,
 		links,
 		timelineEventCount,
-		truncated: connectionHasNextPage(connection) || timelineEventCount > rawEvents.length || rawEvents.length >= limit && timelineEventCount > limit,
+		truncated: hasNextPage || countTruncated,
+		hasNextPage,
+		...(endCursor ? { endCursor } : {}),
 	};
 }
 

@@ -5,9 +5,10 @@ import { Type, type Static } from "typebox";
 import { MAX_TOOL_PROJECT_FIELD_OPTIONS, MAX_TOOL_PROJECT_FIELDS, MAX_TOOL_PROJECT_ITERATIONS, MAX_TOOL_PROJECTS } from "../constants.ts";
 import { IssueMeError, isRemoteMutationSuccessKnown } from "../errors.ts";
 import type { GitHubProjectV2FieldValueInput, GitHubProjectV2FieldValueType, GitHubProjectV2ItemMutationResult, GitHubProjectV2Scope } from "../github/client.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalGitHubOpaqueId, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId, normalizeRequiredIsoDateOnly } from "../utils/validation.ts";
-import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, remoteMutationPartialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, remoteMutationPartialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
 const DEFAULT_PROJECT_FIELD_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELDS);
@@ -29,6 +30,7 @@ const ListProjectsParams = Type.Object(
 		query: Type.Optional(Type.String({ description: "Projects v2 search text." })),
 		includeClosed: Type.Optional(Type.Boolean({ description: "Include closed boards. Default false." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECTS, description: `Max results. Default ${DEFAULT_PROJECT_LIST_LIMIT}; max ${MAX_TOOL_PROJECTS}.` })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},
 	{ additionalProperties: false },
 );
@@ -42,6 +44,7 @@ const GetProjectFieldsParams = Type.Object(
 		fieldLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_FIELDS, description: `Max fields. Default ${DEFAULT_PROJECT_FIELD_LIMIT}; max ${MAX_TOOL_PROJECT_FIELDS}.` })),
 		optionLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_FIELD_OPTIONS, description: `Max options/field. Default ${DEFAULT_PROJECT_FIELD_OPTION_LIMIT}; max ${MAX_TOOL_PROJECT_FIELD_OPTIONS}.` })),
 		iterationLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_PROJECT_ITERATIONS, description: `Max iterations/field. Default ${DEFAULT_PROJECT_ITERATION_LIMIT}; max ${MAX_TOOL_PROJECT_ITERATIONS}.` })),
+		after: Type.Optional(Type.String({ description: "Field continuation token; same project." })),
 	},
 	{ additionalProperties: false },
 );
@@ -60,7 +63,7 @@ const UpdateProjectItemParams = Type.Object(
 	{
 		projectId: Type.String({ description: "ProjectV2 node ID; one-line and at most 512 characters." }),
 		itemId: Type.String({ description: "ProjectV2Item node ID; one-line and at most 512 characters." }),
-		issueNumber: Type.Integer({ minimum: 1, description: "Open issue number represented by item." }),
+		issueNumber: Type.Integer({ minimum: 1, description: "Issue number represented by item; open or closed." }),
 		fieldId: Type.String({ description: "Project field node ID; one-line and at most 512 characters." }),
 		valueType: ProjectFieldValueType,
 		singleSelectOptionId: Type.Optional(Type.String({ description: "Single-select option ID; one-line and at most 512 characters." })),
@@ -80,6 +83,7 @@ interface NormalizedListProjectsParams {
 	query?: string;
 	includeClosed: boolean;
 	limit: number;
+	after?: string;
 }
 
 type GetProjectFieldsToolParams = Static<typeof GetProjectFieldsParams>;
@@ -92,6 +96,7 @@ interface NormalizedGetProjectFieldsParams {
 	fieldLimit: number;
 	optionLimit: number;
 	iterationLimit: number;
+	after?: string;
 }
 
 type AddIssueToProjectToolParams = Static<typeof AddIssueToProjectParams>;
@@ -157,8 +162,9 @@ export function registerListProjectsTool(pi: ExtensionAPI, options: IssueMeToolR
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { projects: { shown: result.projects.length, max: normalized.limit } } } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatListProjectsText(result.owner, normalized, result.projects, result.truncated), details);
+				return toolText(appendContinuationLine(formatListProjectsText(result.owner, normalized, result.projects, result.truncated), result.continuation), details);
 			},
 		}),
 	);
@@ -193,8 +199,9 @@ export function registerGetProjectFieldsTool(pi: ExtensionAPI, options: IssueMeT
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { projectFields: { shown: result.fields.length, max: normalized.fieldLimit } } } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatProjectFieldsText(result.project, result.fields, normalized, result.truncated), details);
+				return toolText(appendContinuationLine(formatProjectFieldsText(result.project, result.fields, normalized, result.truncated), result.continuation), details);
 			},
 		}),
 	);
@@ -258,7 +265,7 @@ export function registerUpdateProjectItemTool(pi: ExtensionAPI, options: IssueMe
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				const normalized = normalizeUpdateProjectItemParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
-				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "update_project_item", signal);
+				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "update_project_item", signal, { requireOpen: false });
 				let result: GitHubProjectV2ItemMutationResult;
 				try {
 					result = await runtime.client.updateProjectV2ItemField({
@@ -298,12 +305,14 @@ function normalizeListProjectsParams(params: ListProjectsToolParams): Normalized
 	const owner = normalizeOptionalText(params.owner, "owner");
 	const query = normalizeOptionalText(params.query, "query");
 	assertProjectOwnerScope(scope, owner);
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		scope,
 		...(owner ? { owner } : {}),
 		...(query ? { query } : {}),
 		includeClosed: params.includeClosed === true,
 		limit: normalizeLimit(params.limit, MAX_TOOL_PROJECTS, DEFAULT_PROJECT_LIST_LIMIT, "limit"),
+		...(after ? { after } : {}),
 	};
 }
 
@@ -329,6 +338,7 @@ function normalizedGetProjectFieldsById(
 	owner: string | undefined,
 	params: GetProjectFieldsToolParams,
 ): NormalizedGetProjectFieldsParams {
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		projectId,
 		scope,
@@ -336,6 +346,7 @@ function normalizedGetProjectFieldsById(
 		fieldLimit: normalizeLimit(params.fieldLimit, MAX_TOOL_PROJECT_FIELDS, DEFAULT_PROJECT_FIELD_LIMIT, "fieldLimit"),
 		optionLimit: normalizeLimit(params.optionLimit, MAX_TOOL_PROJECT_FIELD_OPTIONS, DEFAULT_PROJECT_FIELD_OPTION_LIMIT, "optionLimit"),
 		iterationLimit: normalizeLimit(params.iterationLimit, MAX_TOOL_PROJECT_ITERATIONS, DEFAULT_PROJECT_ITERATION_LIMIT, "iterationLimit"),
+		...(after ? { after } : {}),
 	};
 }
 
@@ -345,6 +356,7 @@ function normalizedGetProjectFieldsByNumber(
 	projectNumber: number,
 	params: GetProjectFieldsToolParams,
 ): NormalizedGetProjectFieldsParams {
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		scope,
 		...(owner ? { owner } : {}),
@@ -352,6 +364,7 @@ function normalizedGetProjectFieldsByNumber(
 		fieldLimit: normalizeLimit(params.fieldLimit, MAX_TOOL_PROJECT_FIELDS, DEFAULT_PROJECT_FIELD_LIMIT, "fieldLimit"),
 		optionLimit: normalizeLimit(params.optionLimit, MAX_TOOL_PROJECT_FIELD_OPTIONS, DEFAULT_PROJECT_FIELD_OPTION_LIMIT, "optionLimit"),
 		iterationLimit: normalizeLimit(params.iterationLimit, MAX_TOOL_PROJECT_ITERATIONS, DEFAULT_PROJECT_ITERATION_LIMIT, "iterationLimit"),
+		...(after ? { after } : {}),
 	};
 }
 

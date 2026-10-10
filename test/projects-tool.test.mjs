@@ -96,7 +96,10 @@ test("issueme_list_projects discovers repository Projects v2 boards read-only", 
 	assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
 	assert.match(calls[0].body.query, /repository\(owner: \$owner, name: \$repo\)/);
 	assert.match(calls[0].body.query, /projectsV2\(first: \$first, after: \$after, query: \$query\) \{\s*nodes \{ \.\.\.IssueMeProjectV2Summary \}\s*pageInfo \{ hasNextPage endCursor \}/s);
-	assert.match(calls[0].body.query, /\.\.\. on Repository \{ nameWithOwner \}/);
+	// Live-verified 2026-10-10: ProjectV2Owner is User or Organization; a Repository fragment is rejected by GitHub.
+	assert.doesNotMatch(calls[0].body.query, /on Repository/);
+	assert.match(calls[0].body.query, /\.\.\. on Organization \{ login \}/);
+	assert.match(calls[0].body.query, /\.\.\. on User \{ login \}/);
 	assert.deepEqual(calls[0].body.variables, { owner: "owner", repo: "repo", first: 5, query: "Roadmap" });
 	assertNoToken(result);
 });

@@ -279,6 +279,20 @@ function createAdminClient(options = {}) {
 			recordCall(state, "addAssignees", { number, assignees });
 			return updateStoredIssue(state, number, { assignees: mergeAssignees(getStoredIssue(state, number), assignees) });
 		},
+		async removeAssignees(number, assignees) {
+			recordCall(state, "removeAssignees", { number, assignees });
+			const current = getStoredIssue(state, number);
+			return updateStoredIssue(state, number, { assignees: current.assignees.map((assignee) => assignee.login).filter((login) => !assignees.includes(login)) });
+		},
+		async removeLabel(number, label) {
+			recordCall(state, "removeLabel", { number, label });
+			const current = getStoredIssue(state, number);
+			return updateStoredIssue(state, number, { labels: current.labels.map((entry) => entry.name).filter((name) => name !== label) }).labels;
+		},
+		async reopenIssue(number) {
+			recordCall(state, "reopenIssue", { number });
+			return updateStoredIssue(state, number, { state: "open", closed_at: null });
+		},
 		async updateIssue(number, payload) {
 			recordCall(state, "updateIssue", { number, payload });
 			return updateStoredIssue(state, number, payload);
@@ -594,10 +608,14 @@ test("Projects v2 matrix covers all update value variants and creator guard fail
 function bulkSuccessCases() {
 	return [
 		{ action: "add_labels", params: { labels: ["triage"] }, method: "addLabels", changedFields: ["labels"] },
+		{ action: "remove_labels", params: { labels: ["bug"] }, method: "removeLabel", changedFields: ["labels"] },
 		{ action: "assign", params: { assignees: ["hubot"] }, method: "addAssignees", changedFields: ["assignees"] },
+		{ action: "unassign", params: { assignees: ["octocat"] }, method: "removeAssignees", changedFields: ["assignees"] },
 		{ action: "set_milestone", params: { milestoneNumber: 1 }, method: "updateIssue", changedFields: ["milestone"] },
+		{ action: "clear_milestone", params: {}, method: "updateIssue", changedFields: ["milestone"] },
 		{ action: "add_to_project", params: { projectId: PROJECT_ID }, method: "addIssueToProjectV2", changedFields: ["project_item"], cacheUpdated: false },
 		{ action: "close", params: { reason: "completed" }, method: "closeIssue", changedFields: ["state", "state_reason"] },
+		{ action: "reopen", params: {}, method: "getIssue", changedFields: ["state"], cacheUpdated: false },
 	];
 }
 

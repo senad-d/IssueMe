@@ -433,6 +433,8 @@ Development can be interrupted when an issue depends on another issue or is bloc
 
 Decision: no stable native GitHub REST or GraphQL API with documented dependency/blocker/tracked-by list/add/remove semantics is available in the public issue API surface IssueMe uses today. IssueMe therefore documents dependency/blocker support as unsupported, registers no dependency tools, and adds no body-only fallback.
 
+> Superseded on 2026-10-09: GitHub now documents native REST issue dependency (`blocked_by`/`blocking`) and related-issue (`relates_to`) endpoints. The unavailability conclusion above is historical. Current status and the implementation track live in `docs/github-api-compatibility.md` and `specs/spec-issue-management-gap-tasks.md`. This task's checkbox records the original documented-unsupported outcome and stays checked.
+
 #### Acceptance criteria
 
 - Native dependency/blocker support is either implemented with tests or explicitly documented as unsupported.

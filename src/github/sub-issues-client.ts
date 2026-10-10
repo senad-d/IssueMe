@@ -4,7 +4,7 @@ import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
 import { normalizeGraphQLIssueCreator, normalizeGraphQLIssueState } from "./graphql-normalizers.ts";
 import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueSummary } from "./client.ts";
 export type { NativeSubIssueReorderResult } from "./client.ts";
-import { connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
+import { connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
 
 interface SubIssueMutationData {
 	addSubIssue?: unknown;
@@ -16,8 +16,22 @@ interface SubIssueRelationshipData {
 	repository?: unknown;
 }
 
+export interface ConnectionReadOptions {
+	/** Raw nodes already consumed on this page by an earlier continuation call. */
+	skip: number;
+	/** True when the read resumed from a cursor; count-based truncation heuristics are skipped then. */
+	resumed: boolean;
+}
+
+export interface ConnectionPageMetadata {
+	hasNextPage: boolean;
+	endCursor?: string;
+}
+
+const FIRST_PAGE_READ: ConnectionReadOptions = { skip: 0, resumed: false };
+
 export function buildSubIssueRelationshipsQuery(): string {
-	return `query IssueMeListSubIssues($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!) {
+	return `query IssueMeListSubIssues($owner: String!, $repo: String!, $issueNumber: Int!, $first: Int!, $after: String) {
 		repository(owner: $owner, name: $repo) {
 			issue(number: $issueNumber) {
 				id
@@ -34,7 +48,7 @@ export function buildSubIssueRelationshipsQuery(): string {
 					url
 					author { login }
 				}
-				subIssues(first: $first) {
+				subIssues(first: $first, after: $after) {
 					totalCount
 					nodes {
 						id
@@ -44,7 +58,7 @@ export function buildSubIssueRelationshipsQuery(): string {
 						url
 						author { login }
 					}
-					pageInfo { hasNextPage }
+					pageInfo { hasNextPage endCursor }
 				}
 			}
 		}
@@ -186,7 +200,8 @@ export function normalizeNativeSubIssueRelationshipResult(
 	repository: string,
 	issueNumber: number,
 	limit: number,
-): NativeSubIssueRelationshipResult {
+	read: ConnectionReadOptions = FIRST_PAGE_READ,
+): NativeSubIssueRelationshipResult & ConnectionPageMetadata {
 	if (!isObject(data.repository)) {
 		throw new GitHubApiError("GitHub GraphQL native sub-issue query returned an inaccessible repository or unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
@@ -208,18 +223,23 @@ export function normalizeNativeSubIssueRelationshipResult(
 		parentIssue = normalizedParent;
 	}
 	const connection = issueNode.subIssues ?? issueNode.sub_issues;
-	const rawSubIssues = extractConnectionNodes(connection);
+	const rawSubIssues = extractConnectionNodes(connection).slice(read.skip);
 	const subIssues = rawSubIssues.map((node) => normalizeNativeSubIssueSummary(node, repository)).filter((node): node is NativeSubIssueSummary => node !== undefined);
 	if (rawSubIssues.length !== subIssues.length) {
 		throw new GitHubApiError("GitHub GraphQL native sub-issue query returned incomplete child issue data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
 	}
 	const subIssuesCount = normalizeConnectionTotalCount(connection) ?? subIssues.length;
+	const hasNextPage = connectionHasNextPage(connection);
+	const countTruncated = !read.resumed && (subIssuesCount > subIssues.length || subIssues.length >= limit && subIssuesCount > limit);
+	const endCursor = connectionEndCursor(connection);
 	return {
 		issue,
 		parentIssue,
 		subIssues,
 		subIssuesCount,
-		truncated: connectionHasNextPage(connection) || subIssuesCount > subIssues.length || subIssues.length >= limit && subIssuesCount > limit,
+		truncated: hasNextPage || countTruncated,
+		hasNextPage,
+		...(endCursor ? { endCursor } : {}),
 	};
 }
 

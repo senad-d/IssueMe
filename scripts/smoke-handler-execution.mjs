@@ -27,6 +27,7 @@ const toolSmokeScenarios = [
   { name: "issueme_list_labels", params: { query: "ready", limit: 5 } },
   { name: "issueme_list_milestones", params: { state: "all", limit: 5 } },
   { name: "issueme_list_assignees", params: { query: "bot", limit: 5 } },
+  { name: "issueme_list_issue_types", params: {} },
   { name: "issueme_list_projects", params: { limit: 5 } },
   { name: "issueme_get_project_fields", params: { projectNumber: 1, fieldLimit: 5 } },
   { name: "issueme_add_issue_to_project", params: { issueNumber: 10, projectId: "PVT_repo_1" } },
@@ -41,6 +42,11 @@ const toolSmokeScenarios = [
       singleSelectOptionId: "opt_todo",
     },
   },
+  { name: "issueme_list_project_items", params: { projectId: "PVT_repo_1", limit: 5 } },
+  { name: "issueme_get_project_item", params: { projectId: "PVT_repo_1", issueNumber: 10 } },
+  { name: "issueme_archive_project_item", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, action: "archive" } },
+  { name: "issueme_clear_project_item_field", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, fieldId: "PVTSSF_status" } },
+  { name: "issueme_remove_issue_from_project", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, confirmRemove: true } },
   { name: "issueme_manage_label", params: { action: "create", name: "safe-smoke", color: "0e8a16", description: "Handler smoke label" } },
   { name: "issueme_manage_milestone", params: { action: "create", title: "Smoke milestone", description: "Handler smoke milestone", dueOn: "2026-07-01" } },
   { name: "issueme_sync_issues", params: {} },
@@ -52,10 +58,19 @@ const toolSmokeScenarios = [
   { name: "issueme_add_sub_issue", params: { parentNumber: 10, childNumber: 12 } },
   { name: "issueme_remove_sub_issue", params: { parentNumber: 10, childNumber: 12 } },
   { name: "issueme_list_issue_development_links", params: { issueNumber: 10, limit: 5 } },
+  { name: "issueme_list_issue_timeline", params: { issueNumber: 10, limit: 5 } },
+  { name: "issueme_list_issue_dependencies", params: { issueNumber: 10 } },
+  { name: "issueme_add_issue_dependency", params: { issueNumber: 11, blockingIssueNumber: 12 } },
+  { name: "issueme_remove_issue_dependency", params: { issueNumber: 11, blockingIssueNumber: 12 } },
+  { name: "issueme_list_related_issues", params: { issueNumber: 10 } },
+  { name: "issueme_add_related_issue", params: { issueNumber: 11, relatedIssueNumber: 12 } },
+  { name: "issueme_remove_related_issue", params: { issueNumber: 11, relatedIssueNumber: 12 } },
   { name: "issueme_update_issue", params: { number: 10, title: "Smoke updated parent", labels: ["ready"] } },
   { name: "issueme_comment_issue", params: { number: 10, body: "Smoke progress note" } },
   { name: "issueme_update_comment", params: { issueNumber: 10, commentId: 700, body: "Updated smoke progress note" } },
   { name: "issueme_delete_comment", params: { issueNumber: 10, commentId: 700 } },
+  { name: "issueme_list_issue_comments", params: { issueNumber: 10, limit: 5 } },
+  { name: "issueme_get_comment", params: { issueNumber: 10, commentId: 100 } },
   { name: "issueme_assign_issue", params: { number: 10, action: "add", assignees: ["hubot"] } },
   { name: "issueme_label_issue", params: { number: 10, action: "add", labels: ["bug"] } },
   { name: "issueme_reopen_issue", params: { number: 13, comment: "Reopening for smoke verification." } },
@@ -257,6 +272,8 @@ function createMockGitHubClient() {
   ];
   const parentChildren = new Map([[10, [11, 12]]]);
   const childParent = new Map([[11, 10], [12, 10]]);
+  const blockedBy = new Map();
+  const relatedTo = new Map();
   let nextIssueNumber = 30;
   let nextCommentId = 700;
 
@@ -313,6 +330,22 @@ function createMockGitHubClient() {
       type: "ISSUE",
       project,
       issue: nativeIssue(issue),
+    };
+  }
+
+  function projectItemDetail(issueNumber) {
+    const issue = getIssueOrThrow(issueNumber);
+    return {
+      item: {
+        ...projectItem(issueNumber),
+        isArchived: false,
+        createdAt: "2026-06-27T00:00:00Z",
+        updatedAt: "2026-06-27T00:01:00Z",
+        fieldValues: [{ fieldId: "PVTSSF_status", name: "Status", kind: "single_select", dataType: "SINGLE_SELECT", optionId: "opt_todo", optionName: "Todo" }],
+        fieldValuesCount: 1,
+      },
+      content: { kind: "issue", repository: smokeRepository, creator: issue.user?.login ?? "octocat", issueNumber, state: issue.state },
+      valuesHasNextPage: false,
     };
   }
 
@@ -577,6 +610,111 @@ function createMockGitHubClient() {
         truncated: false,
       };
     },
+    async listProjectV2Items(filters = {}) {
+      record("listProjectV2Items", filters.projectId ?? `${filters.scope ?? "repository"}/${filters.projectNumber}`, { limit: filters.limit });
+      return { project, items: [projectItemDetail(10)], totalCount: 1, truncated: false, continuation: { collection: "project_items", complete: true, resumed: false, pagesRead: 1 } };
+    },
+    async getProjectV2Item(input = {}) {
+      record("getProjectV2Item", input.itemId ?? `issue ${input.issueNumber}`, { projectId: input.projectId });
+      const issueNumber = input.issueNumber ?? Number(String(input.itemId).replace("PVTI_", ""));
+      return { item: projectItemDetail(issueNumber), searchedItems: 1, searchTruncated: false, continuation: { collection: "project_item_field_values", complete: true, resumed: false, pagesRead: 1 } };
+    },
+    async removeProjectV2Item(input) {
+      record("removeProjectV2Item", input.itemId, { projectId: input.projectId });
+      const issue = ensureOpen(input.issueNumber);
+      return { status: "removed", itemId: input.itemId, issue, deletedItemId: input.itemId };
+    },
+    async clearProjectV2ItemField(input) {
+      record("clearProjectV2ItemField", `${input.itemId}/${input.fieldId}`, { projectId: input.projectId });
+      const issue = ensureOpen(input.issueNumber);
+      return { status: "cleared", itemId: input.itemId, issue, field: { id: input.fieldId, name: "Status", dataType: "SINGLE_SELECT" } };
+    },
+    async setProjectV2ItemArchived(input) {
+      record("setProjectV2ItemArchived", `${input.itemId}/${input.action}`, { projectId: input.projectId });
+      const issue = ensureOpen(input.issueNumber);
+      return { status: input.action === "archive" ? "archived" : "unarchived", itemId: input.itemId, issue, isArchived: input.action === "archive" };
+    },
+    async listIssueComments(issueNumber, filters = {}) {
+      record("listIssueComments", issueNumber, { limit: filters.limit, since: filters.since });
+      getIssueOrThrow(issueNumber);
+      const all = comments.get(issueNumber) ?? [];
+      const limit = filters.limit ?? all.length;
+      return { comments: all.slice(0, limit), truncated: all.length > limit, continuation: { collection: "issue_comments", complete: all.length <= limit, resumed: false, pagesRead: 1 } };
+    },
+    async getIssueCommentForIssue(issueNumber, commentId) {
+      record("getIssueCommentForIssue", commentId, { issueNumber });
+      const issue = getIssueOrThrow(issueNumber);
+      const comment = (comments.get(issueNumber) ?? []).find((candidate) => candidate.id === commentId);
+      if (!comment) throw new Error(`Mock GitHub comment ${commentId} not found on issue #${issueNumber}.`);
+      return { issue, comment };
+    },
+    async listRepositoryIssueTypes() {
+      record("listRepositoryIssueTypes", smokeRepository);
+      return { ownerType: "Organization", issueTypes: [{ id: 1, node_id: "IT_1", name: "Bug", description: "Something is broken", color: "red", is_enabled: true }] };
+    },
+    async listIssueTimeline(issueNumber, filters = {}) {
+      record("listIssueTimeline", issueNumber, { limit: filters.limit });
+      getIssueOrThrow(issueNumber);
+      return {
+        events: [{ event: "labeled", id: 1, actor: { login: "octocat" }, created_at: "2026-06-27T00:02:00Z", label: { name: "bug" } }],
+        truncated: false,
+        continuation: { collection: "issue_timeline", complete: true, resumed: false, pagesRead: 1 },
+      };
+    },
+    async listRelatedIssues(issueNumber, options = {}) {
+      record("listRelatedIssues", issueNumber, { limit: options.limit });
+      getIssueOrThrow(issueNumber);
+      return { issues: (relatedTo.get(issueNumber) ?? []).map((number) => getIssueOrThrow(number)), truncated: false, continuation: { collection: "related_issues", complete: true, resumed: false, pagesRead: 1 } };
+    },
+    async addRelatedIssueByIssueResponses(issue, relatedIssue) {
+      record("addRelatedIssueByIssueResponses", `${issue.number}<->${relatedIssue.number}`);
+      ensureOpen(issue.number);
+      ensureOpen(relatedIssue.number);
+      const links = relatedTo.get(issue.number) ?? [];
+      const present = links.includes(relatedIssue.number);
+      if (!present) relatedTo.set(issue.number, [...links, relatedIssue.number]);
+      return { status: present ? "already_present" : "added", issue, relatedIssue, relatedIssueId: relatedIssue.id };
+    },
+    async removeRelatedIssueByIssueResponses(issue, relatedIssue) {
+      record("removeRelatedIssueByIssueResponses", `${issue.number}<->${relatedIssue.number}`);
+      ensureOpen(issue.number);
+      ensureOpen(relatedIssue.number);
+      const links = relatedTo.get(issue.number) ?? [];
+      const present = links.includes(relatedIssue.number);
+      relatedTo.set(issue.number, links.filter((number) => number !== relatedIssue.number));
+      return { status: present ? "removed" : "already_absent", issue, relatedIssue, relatedIssueId: relatedIssue.id };
+    },
+    async listIssueDependencies(issueNumber, direction, options = {}) {
+      record("listIssueDependencies", `${issueNumber}/${direction}`, { limit: options.limit });
+      getIssueOrThrow(issueNumber);
+      const numbers = direction === "blocked_by"
+        ? blockedBy.get(issueNumber) ?? []
+        : [...blockedBy.entries()].filter(([, blockers]) => blockers.includes(issueNumber)).map(([number]) => number);
+      return {
+        direction,
+        issues: numbers.map((number) => getIssueOrThrow(number)),
+        truncated: false,
+        continuation: { collection: `dependencies_${direction}`, complete: true, resumed: false, pagesRead: 1 },
+      };
+    },
+    async addIssueDependencyByIssueResponses(issue, blockingIssue) {
+      record("addIssueDependencyByIssueResponses", `${issue.number}<-${blockingIssue.number}`);
+      ensureOpen(issue.number);
+      ensureOpen(blockingIssue.number);
+      const blockers = blockedBy.get(issue.number) ?? [];
+      const present = blockers.includes(blockingIssue.number);
+      if (!present) blockedBy.set(issue.number, [...blockers, blockingIssue.number]);
+      return { status: present ? "already_present" : "added", issue, blockingIssue, blockingIssueId: blockingIssue.id };
+    },
+    async removeIssueDependencyByIssueResponses(issue, blockingIssue) {
+      record("removeIssueDependencyByIssueResponses", `${issue.number}<-${blockingIssue.number}`);
+      ensureOpen(issue.number);
+      ensureOpen(blockingIssue.number);
+      const blockers = blockedBy.get(issue.number) ?? [];
+      const present = blockers.includes(blockingIssue.number);
+      blockedBy.set(issue.number, blockers.filter((number) => number !== blockingIssue.number));
+      return { status: present ? "removed" : "already_absent", issue, blockingIssue, blockingIssueId: blockingIssue.id };
+    },
   };
 
   return { client, calls };
@@ -588,6 +726,7 @@ function githubIssue(number, title, overrides = {}) {
   const assignees = overrides.assignees ?? [];
   const creator = overrides.creator ?? "octocat";
   return {
+    id: 1000 + number,
     node_id: `I_${number}`,
     number,
     title,

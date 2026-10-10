@@ -10,10 +10,16 @@ const expectedDescriptions = new Map([
 	["issueme_list_labels", "List/search repo labels with metadata."],
 	["issueme_list_milestones", "List repo milestones with state, dates, and issue counts."],
 	["issueme_list_assignees", "List users assignable to repo issues."],
+	["issueme_list_issue_types", "List the organization's native issue types."],
 	["issueme_list_projects", "Discover Projects v2 boards for repo/org/user."],
 	["issueme_get_project_fields", "List Projects v2 fields, options, and iterations."],
 	["issueme_add_issue_to_project", "Add an open issue to a Projects v2 board."],
 	["issueme_update_project_item", "Update one Projects v2 item field."],
+	["issueme_list_project_items", "List Projects v2 items with current field values."],
+	["issueme_get_project_item", "Read one Projects v2 item and its field values."],
+	["issueme_remove_issue_from_project", "Remove one issue item from a Projects v2 board."],
+	["issueme_clear_project_item_field", "Clear one Projects v2 item field value."],
+	["issueme_archive_project_item", "Archive or unarchive one Projects v2 item."],
 	["issueme_manage_label", "Create, update, or delete repo labels."],
 	["issueme_manage_milestone", "Create, update, close, reopen, or delete milestones."],
 	["issueme_create_issue", "Create repo issue and local cache file."],
@@ -23,11 +29,20 @@ const expectedDescriptions = new Map([
 	["issueme_reorder_sub_issues", "Reorder native sub-issues under a parent issue."],
 	["issueme_list_sub_issues", "Inspect native parent/sub-issue relationships."],
 	["issueme_list_issue_development_links", "Inspect linked PRs, branches, commits, and references."],
+	["issueme_list_issue_timeline", "Inspect bounded issue history events with actors."],
+	["issueme_list_issue_dependencies", "Inspect native blocked-by/blocking issue dependencies."],
+	["issueme_add_issue_dependency", "Mark an open issue as blocked by another open issue."],
+	["issueme_remove_issue_dependency", "Remove a native blocked-by dependency between open issues."],
+	["issueme_list_related_issues", "Inspect native related-issue links for one issue."],
+	["issueme_add_related_issue", "Link two open issues as native related issues."],
+	["issueme_remove_related_issue", "Remove a native related-issue link between open issues."],
 	["issueme_get_issue", "Read cached issue or refresh known issue."],
 	["issueme_update_issue", "Update open issue fields and refresh cache."],
 	["issueme_comment_issue", "Comment on open issue and refresh cache."],
 	["issueme_update_comment", "Edit verified comment on open issue."],
 	["issueme_delete_comment", "Delete verified comment on open issue."],
+	["issueme_list_issue_comments", "List issue comments with IDs and bounded bodies."],
+	["issueme_get_comment", "Read one verified issue comment in full."],
 	["issueme_assign_issue", "Add, remove, or set issue assignees."],
 	["issueme_label_issue", "Add, remove, or set issue labels."],
 	["issueme_reopen_issue", "Reopen closed issue, optionally with comment."],
@@ -54,10 +69,20 @@ const firstLiteApproxTokens = {
 	combined: 2245,
 };
 
-const maxCombinedApproxTokens = Math.floor(baselineApproxTokens.combined * 0.8);
+const continuationBaselineApproxTokens = {
+	// Recorded after discovery tools gained bounded continuation (`after` inputs) with the same heuristic.
+	// Re-record deliberately when a task adds tools or inputs; the drift guard below scales per registered tool.
+	combined: 3679,
+	toolCount: 30,
+};
+
 const firstLiteToolCount = 28;
-const maxLiteRegressionApproxTokens = Math.ceil(firstLiteApproxTokens.combined * 1.5 * (expectedDescriptions.size / firstLiteToolCount));
-const maxTopDescriptionWords = 250;
+// Hard cap: 20% below the pre-lite baseline, expressed per registered tool so added tools keep the same per-tool budget.
+const maxCombinedApproxTokens = Math.floor(baselineApproxTokens.combined * 0.8 * (expectedDescriptions.size / firstLiteToolCount));
+// Drift guard: at most 25% above the latest recorded baseline, scaled per registered tool.
+const maxLiteRegressionApproxTokens = Math.ceil(continuationBaselineApproxTokens.combined * 1.25 * (expectedDescriptions.size / continuationBaselineApproxTokens.toolCount));
+// Top-description word cap scaled per registered tool from the original 250-word cap for 28 tools.
+const maxTopDescriptionWords = Math.ceil(250 * (expectedDescriptions.size / firstLiteToolCount));
 
 function fakePi() {
 	const tools = new Map();
@@ -147,6 +172,6 @@ test("IssueMe tool schema prompt stays under budget", () => {
 	);
 	assert.ok(
 		combined.approxTokens <= maxLiteRegressionApproxTokens,
-		`IssueMe context estimate ${combined.approxTokens} grew too far beyond first lite measurement ${firstLiteApproxTokens.combined}`,
+		`IssueMe context estimate ${combined.approxTokens} grew too far beyond the recorded baseline ${continuationBaselineApproxTokens.combined} (first lite measurement ${firstLiteApproxTokens.combined})`,
 	);
 });

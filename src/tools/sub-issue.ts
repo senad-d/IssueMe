@@ -6,9 +6,11 @@ import { IssueMeError, isRemoteMutationSuccessKnown, markMutationSettlement } fr
 import type { NativeSubIssueMutationResult, NativeSubIssueRelationshipResult, NativeSubIssueReorderResult, NativeSubIssueSummary } from "../github/client.ts";
 import { applyIssueRelationshipMetadata, githubIssueToRecord, issueRecordToToolSummary, type IssueRelationshipMetadata } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueRecord, IssueRelationshipSummary, SafeToolError, ToolFileActionSummary, ToolIssueSummary } from "../types.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import { mapSequentially } from "../utils/sequential.ts";
 import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
 import {
+	appendContinuationLine,
 	assertAuthenticatedUserAllowedForCreate,
 	assertIssueCreatorAllowed,
 	assertNotAborted,
@@ -73,6 +75,7 @@ const ListSubIssuesParams = Type.Object(
 		issueNumber: Type.Integer({ minimum: 1, description: "Issue number." }),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_ISSUES, description: `Max child issues. Default 25; max ${MAX_TOOL_ISSUES}.` })),
 		refreshCache: Type.Optional(Type.Boolean({ description: "True refreshes relationship cache." })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same issue; not with refreshCache." })),
 	},
 	{ additionalProperties: false },
 );
@@ -90,6 +93,7 @@ interface NormalizedListSubIssuesParams {
 	issueNumber: number;
 	limit: number;
 	refreshCache: boolean;
+	after?: string;
 }
 
 export function registerSubIssueTools(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -303,10 +307,10 @@ export function registerListSubIssuesTool(pi: ExtensionAPI, options: IssueMeTool
 				const normalized = normalizeListSubIssuesParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const creatorScope = issueCreatorScopeLabel(runtime.config);
-				const result = await runtime.client.listSubIssueRelationships(normalized.issueNumber, { limit: normalized.limit }, signal);
+				const result = await runtime.client.listSubIssueRelationships(normalized.issueNumber, { limit: normalized.limit, after: normalized.after }, signal);
 				assertRelationshipCreatorScopeAllowed(runtime, result, "list_sub_issues");
 				if (!normalized.refreshCache) {
-					return toolText(formatListSubIssuesText(runtime.repository, result, normalized, undefined), buildListSubIssuesDetails(runtime.repository, result, normalized, creatorScope));
+					return toolText(appendContinuationLine(formatListSubIssuesText(runtime.repository, result, normalized, undefined), result.continuation), buildListSubIssuesDetails(runtime.repository, result, normalized, creatorScope));
 				}
 				try {
 					const cache = await refreshRelationshipCache(ctx, runtime, result, normalized.limit, signal);
@@ -355,10 +359,16 @@ function normalizeReorderSubIssuesParams(params: ReorderSubIssuesToolParams): No
 
 function normalizeListSubIssuesParams(params: ListSubIssuesToolParams): NormalizedListSubIssuesParams {
 	const issueNumber = normalizePositiveSafeInteger(params.issueNumber, "issueNumber");
+	const after = normalizeContinuationTokenInput(params.after);
+	const refreshCache = params.refreshCache === true;
+	if (after && refreshCache) {
+		throw new IssueMeError("invalid_tool_input", "after cannot be combined with refreshCache; continuation pages are inspection-only, refresh the cache from a first-page read.", { field: "after" });
+	}
 	return {
 		issueNumber,
 		limit: normalizeSubIssueLimit(params.limit),
-		refreshCache: params.refreshCache === true,
+		refreshCache,
+		...(after ? { after } : {}),
 	};
 }
 
@@ -423,6 +433,7 @@ function buildListSubIssuesDetails(
 		needsSync: false,
 		truncated: result.truncated,
 		...(result.truncated ? { truncation: { subIssues: { shown: result.subIssues.length, total: result.subIssuesCount, max: params.limit } } } : {}),
+		...(result.continuation ? { continuation: result.continuation } : {}),
 	};
 }
 

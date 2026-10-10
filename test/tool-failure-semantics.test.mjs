@@ -8,6 +8,9 @@ import { registerCloseIssueTool } from "../src/tools/close-issue.ts";
 import { registerCreateIssueTool } from "../src/tools/create-issue.ts";
 import { registerListIssuesTool } from "../src/tools/list-issues.ts";
 import { registerManageLabelTool } from "../src/tools/manage-label.ts";
+import { ClosedIssueMutationError } from "../src/errors.ts";
+import { registerCommentIssueTool } from "../src/tools/comment-issue.ts";
+import { registerUpdateIssueTool } from "../src/tools/update-issue.ts";
 
 const TOKEN = "ghp_failure_semantics_token";
 const REPOSITORY = "owner/repo";
@@ -186,4 +189,26 @@ test("idempotent no-ops remain successful structured results", async () => {
 	assert.equal(result.result.details.cacheUpdated, true);
 	assert.equal(result.result.details.needsSync, false);
 	assert.deepEqual(result.result.details.changedFields, []);
+});
+
+test("issue-content tools still raise ClosedIssueMutationError after the project-only closed-issue exception", async () => {
+	const projectRoot = await mkdtemp(join(tmpdir(), "issueme-failure-semantics-closed-"));
+	const closedFetch = async (input, init = {}) => {
+		const url = new URL(input.toString());
+		if (url.pathname === "/repos/owner/repo/issues/7" && (init.method ?? "GET") === "GET") {
+			return jsonResponse(githubIssue(7, "Closed Content Target", { state: "closed", closed_at: "2026-06-29T00:01:00Z" }));
+		}
+		throw new Error(`Closed content target must not be mutated: ${init.method} ${url.pathname}`);
+	};
+	for (const [register, params] of [
+		[registerUpdateIssueTool, { number: 7, title: "Renamed" }],
+		[registerCommentIssueTool, { number: 7, body: "Still refused" }],
+	]) {
+		const tool = registerOne(register, runtimeOptions(closedFetch));
+		const result = await executeAsPiTool(tool, projectRoot, params);
+		assert.equal(result.isError, true, tool.name);
+		assert.ok(result.error instanceof ClosedIssueMutationError, tool.name);
+		assert.equal(result.error.safeDetails.status, "closed_issue_mutation_refused", tool.name);
+		assertNoToken({ message: result.error.message, safeDetails: result.error.safeDetails });
+	}
 });

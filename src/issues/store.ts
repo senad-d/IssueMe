@@ -565,11 +565,15 @@ function validateIssueRecordCore(record: Partial<IssueRecord>): IssueValidationF
 	if (typeof record.number !== "number" || !Number.isSafeInteger(record.number) || record.number <= 0) return validationFailure("issue_file_number_invalid", "number");
 	if (!isNonEmptySafeString(record.title)) return validationFailure("issue_file_title_invalid", "title");
 	if (record.state !== "open" && record.state !== "closed") return validationFailure("issue_file_state_invalid", "state");
+	// state_reason is optional for backward compatibility: absent, null, or one of GitHub's documented reasons.
+	if (record.state_reason !== undefined && record.state_reason !== null && !isIssueStateReason(record.state_reason)) return validationFailure("issue_file_state_reason_invalid", "state_reason");
 	if (record.creator !== undefined && !isGitHubLogin(record.creator)) return validationFailure("issue_file_creator_invalid", "creator");
 	if (typeof record.body !== "string") return validationFailure("issue_file_body_invalid", "body");
 	if (!isLabelList(record.labels)) return validationFailure("issue_file_labels_invalid", "labels");
 	if (!isAssigneeList(record.assignees)) return validationFailure("issue_file_assignees_invalid", "assignees");
 	if (record.milestone !== null && !isNonEmptySafeString(record.milestone)) return validationFailure("issue_file_milestone_invalid", "milestone");
+	// issue_type is optional for backward compatibility: absent (pre-type records), null (untyped), or a non-empty name.
+	if (record.issue_type !== undefined && record.issue_type !== null && !isNonEmptySafeString(record.issue_type)) return validationFailure("issue_file_issue_type_invalid", "issue_type");
 	return undefined;
 }
 
@@ -633,6 +637,10 @@ function validationFailure(reason: string, field: string): IssueValidationFailur
 
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isIssueStateReason(value: unknown): boolean {
+	return value === "completed" || value === "not_planned" || value === "duplicate" || value === "reopened";
 }
 
 function isRepositoryName(value: unknown): value is string {
@@ -732,11 +740,13 @@ function orderIssueRecord(record: IssueRecord): IssueRecord {
 		title: record.title,
 		state: record.state,
 	};
+	if (record.state_reason !== undefined) ordered.state_reason = record.state_reason;
 	if (record.creator !== undefined) ordered.creator = record.creator;
 	ordered.body = record.body;
 	ordered.labels = record.labels;
 	ordered.assignees = record.assignees;
 	ordered.milestone = record.milestone;
+	if (record.issue_type !== undefined) ordered.issue_type = record.issue_type;
 	if (record.parent_issue !== undefined) ordered.parent_issue = record.parent_issue;
 	if (record.sub_issues !== undefined) ordered.sub_issues = record.sub_issues;
 	if (record.sub_issues_count !== undefined) ordered.sub_issues_count = record.sub_issues_count;

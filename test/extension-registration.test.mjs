@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { GITHUB_API_VERSION } from "../src/constants.ts";
 import issueMeExtension from "../src/extension.ts";
 import { BULK_ISSUE_ACTION_FIELDS, BULK_ISSUE_COMMON_FIELDS } from "../src/tools/bulk-issues.ts";
 import { ISSUEME_TOOL_NAMES } from "../src/tools/inventory.ts";
@@ -17,6 +18,9 @@ const sequentialTools = [
 	"issueme_get_issue",
 	"issueme_add_issue_to_project",
 	"issueme_update_project_item",
+	"issueme_remove_issue_from_project",
+	"issueme_clear_project_item_field",
+	"issueme_archive_project_item",
 	"issueme_manage_label",
 	"issueme_manage_milestone",
 	"issueme_create_issue",
@@ -24,6 +28,10 @@ const sequentialTools = [
 	"issueme_add_sub_issue",
 	"issueme_remove_sub_issue",
 	"issueme_reorder_sub_issues",
+	"issueme_add_issue_dependency",
+	"issueme_remove_issue_dependency",
+	"issueme_add_related_issue",
+	"issueme_remove_related_issue",
 	"issueme_update_issue",
 	"issueme_comment_issue",
 	"issueme_update_comment",
@@ -39,10 +47,17 @@ const sequentialTools = [
 const perIssueMutationTools = [
 	"issueme_add_issue_to_project",
 	"issueme_update_project_item",
+	"issueme_remove_issue_from_project",
+	"issueme_clear_project_item_field",
+	"issueme_archive_project_item",
 	"issueme_create_sub_issue",
 	"issueme_add_sub_issue",
 	"issueme_remove_sub_issue",
 	"issueme_reorder_sub_issues",
+	"issueme_add_issue_dependency",
+	"issueme_remove_issue_dependency",
+	"issueme_add_related_issue",
+	"issueme_remove_related_issue",
 	"issueme_update_issue",
 	"issueme_comment_issue",
 	"issueme_update_comment",
@@ -122,18 +137,29 @@ test("mutating and cache-refresh IssueMe tools request sequential execution to a
 	}
 });
 
-test("native issue dependency/blocker support remains a documented unsupported decision", () => {
+test("native issue dependency tools match current documentation and the compatibility matrix", () => {
 	const pi = fakePi();
 	issueMeExtension(pi);
 	assert.deepEqual(
 		[...pi.tools.keys()].filter((name) => /depend|block/i.test(name)),
-		[],
+		["issueme_list_issue_dependencies", "issueme_add_issue_dependency", "issueme_remove_issue_dependency"],
+		"dependency and related-issue tools are distinct; related tools use relates_to naming",
 	);
 
 	const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 	assert.match(readme, /Issue dependencies and blockers/);
-	assert.match(readme, /no stable native GitHub REST or GraphQL API/i);
+	assert.doesNotMatch(readme, /no stable native GitHub REST or GraphQL API/i);
+	assert.doesNotMatch(readme, /dependency tools are not implemented yet/i);
+	assert.match(readme, /GitHub documents native issue dependency/i);
+	assert.match(readme, /issueme_add_issue_dependency/);
 	assert.match(readme, /does not create body-only/i);
+
+	const compatibility = readFileSync(new URL("../docs/github-api-compatibility.md", import.meta.url), "utf8");
+	assert.match(compatibility, new RegExp(`\`${GITHUB_API_VERSION}\``));
+	assert.match(compatibility, /dependencies\/blocked_by/);
+	assert.match(compatibility, /relates_to/);
+	assert.match(compatibility, /Issue dependencies \(blocked by \/ blocking\)[^\n]*Implemented/);
+	assert.match(compatibility, /unverified/i);
 });
 
 test("action/value-specific normalizer field policies stay in parity with registered schemas", () => {
@@ -204,9 +230,15 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.deepEqual(pi.tools.get("issueme_manage_label").parameters.properties.action.enum, ["create", "update", "delete"]);
 	assert.deepEqual(pi.tools.get("issueme_manage_milestone").parameters.properties.action.enum, ["create", "update", "close", "reopen", "delete"]);
 	assert.deepEqual(pi.tools.get("issueme_close_issue").parameters.properties.reason.enum, ["completed", "not_planned"]);
+	assert.deepEqual(pi.tools.get("issueme_list_issue_dependencies").parameters.properties.direction.enum, ["blocked_by", "blocking", "both"]);
+	assert.deepEqual(pi.tools.get("issueme_archive_project_item").parameters.properties.action.enum, ["archive", "unarchive"]);
+	assert.equal(pi.tools.get("issueme_remove_issue_from_project").parameters.properties.confirmRemove.type, "boolean");
+	assert.deepEqual(pi.tools.get("issueme_remove_issue_from_project").parameters.required, ["projectId", "itemId", "issueNumber", "confirmRemove"]);
+	assert.deepEqual(pi.tools.get("issueme_add_issue_dependency").parameters.required, ["issueNumber", "blockingIssueNumber"]);
+	assert.deepEqual(pi.tools.get("issueme_add_related_issue").parameters.required, ["issueNumber", "relatedIssueNumber"]);
 	assert.equal(pi.tools.get("issueme_delete_issue").parameters.properties.confirmDelete.type, "boolean");
 	assert.deepEqual(pi.tools.get("issueme_delete_issue").parameters.required, ["number", "confirmDelete"]);
-	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.action.enum, ["add_labels", "assign", "set_milestone", "add_to_project", "close"]);
+	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.action.enum, ["add_labels", "remove_labels", "assign", "unassign", "set_milestone", "clear_milestone", "add_to_project", "close", "reopen"]);
 	assert.deepEqual(pi.tools.get("issueme_bulk_update_issues").parameters.properties.reason.enum, ["completed", "not_planned"]);
 	assert.equal(pi.tools.get("issueme_bulk_update_issues").parameters.properties.issueNumbers.maxItems, 50);
 	for (const [toolName, field, maxItems] of [

@@ -25,7 +25,9 @@ import {
 	type IssueMeToolRegistrationOptions,
 } from "./runtime.ts";
 
-const BulkIssueAction = StringEnum(["add_labels", "assign", "set_milestone", "add_to_project", "close"] as const, {
+const BULK_ISSUE_ACTIONS = ["add_labels", "remove_labels", "assign", "unassign", "set_milestone", "clear_milestone", "add_to_project", "close", "reopen"] as const;
+
+const BulkIssueAction = StringEnum(BULK_ISSUE_ACTIONS, {
 	description: "Bulk action.",
 });
 
@@ -40,8 +42,8 @@ const BulkIssueParams = Type.Object(
 			{ minItems: 1, maxItems: MAX_TOOL_ISSUES, description: "Explicit issue numbers. No search/query targets." },
 		),
 		action: BulkIssueAction,
-		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Label names for add_labels. Max ${MAX_TOOL_LABELS}.` })),
-		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Usernames for assign. Max ${MAX_TOOL_ASSIGNEES}.` })),
+		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Label names for add_labels/remove_labels. Max ${MAX_TOOL_LABELS}.` })),
+		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Usernames for assign/unassign. Max ${MAX_TOOL_ASSIGNEES}.` })),
 		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number for set_milestone." })),
 		projectId: Type.Optional(Type.String({ description: "ProjectV2 node ID for add_to_project; one-line and at most 512 characters." })),
 		reason: Type.Optional(BulkCloseReason),
@@ -57,10 +59,14 @@ type ActionSpecificField = Exclude<keyof BulkIssueToolParams, "issueNumbers" | "
 export const BULK_ISSUE_COMMON_FIELDS = ["issueNumbers", "action", "continueOnError"] as const satisfies readonly (keyof BulkIssueToolParams)[];
 export const BULK_ISSUE_ACTION_FIELDS = {
 	add_labels: ["labels"],
+	remove_labels: ["labels"],
 	assign: ["assignees"],
+	unassign: ["assignees"],
 	set_milestone: ["milestoneNumber"],
+	clear_milestone: [],
 	add_to_project: ["projectId"],
 	close: ["reason"],
+	reopen: [],
 } as const satisfies Record<BulkIssueActionName, readonly ActionSpecificField[]>;
 
 interface NormalizedBulkIssueParams {
@@ -287,22 +293,94 @@ async function applyBulkAction(
 	collectionPreflight?: GitHubIssueCollectionPreflight,
 ): Promise<ToolBulkIssueResultSummary> {
 	if (params.action === "close") return closeIssueForBulk(runtime, params, issueNumber, signal);
+	if (params.action === "reopen") return reopenIssueForBulk(ctx, runtime, params, issueNumber, signal);
 
 	await assertBulkIssueAllowedForMutation(runtime, issueNumber, params.action, signal);
 	if (params.action === "add_labels") {
 		await runtime.client.addLabels(issueNumber, params.labels ?? [], signal, collectionPreflight);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
 	}
+	if (params.action === "remove_labels") return removeLabelsForBulk(ctx, runtime, params, issueNumber, signal);
 	if (params.action === "assign") {
 		const issue = await runtime.client.addAssignees(issueNumber, params.assignees ?? [], signal, collectionPreflight);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, issue, signal);
 	}
-	if (params.action === "set_milestone") {
-		const issue = await runtime.client.updateIssue(issueNumber, { milestone: params.milestoneNumber }, signal);
+	if (params.action === "unassign") {
+		const issue = await runtime.client.removeAssignees(issueNumber, params.assignees ?? [], signal);
+		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, issue, signal);
+	}
+	if (params.action === "set_milestone" || params.action === "clear_milestone") {
+		const issue = await runtime.client.updateIssue(issueNumber, { milestone: params.action === "set_milestone" ? params.milestoneNumber : null }, signal);
 		return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, issue, signal);
 	}
 	const result = await runtime.client.addIssueToProjectV2({ issueNumber, projectId: params.projectId ?? "" }, signal);
 	return projectItemBulkResult(issueNumber, params, result);
+}
+
+/** Mirrors issueme_label_issue remove: open or closed issues, one DELETE per label, missing labels are no-ops, and a later failure after earlier removals is partial. */
+async function removeLabelsForBulk(
+	ctx: ExtensionContext,
+	runtime: IssueMeRuntime,
+	params: NormalizedBulkIssueParams,
+	issueNumber: number,
+	signal?: AbortSignal,
+): Promise<ToolBulkIssueResultSummary> {
+	let removedLabelMutations = 0;
+	try {
+		for (const label of params.labels ?? []) {
+			const response = await runtime.client.removeLabel(issueNumber, label, signal);
+			if (response !== undefined) removedLabelMutations += 1;
+		}
+	} catch (error) {
+		if (removedLabelMutations === 0) throw error;
+		return bulkLabelRemovalPartialResult(issueNumber, params, removedLabelMutations, error);
+	}
+	return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
+}
+
+function bulkLabelRemovalPartialResult(
+	issueNumber: number,
+	params: NormalizedBulkIssueParams,
+	removedCount: number,
+	error: unknown,
+): ToolBulkIssueResultSummary {
+	const safeError = partialSuccessToolError(error, "remote_partial_success");
+	return {
+		number: issueNumber,
+		action: params.action,
+		status: "partial_success",
+		message: `Removed ${removedCount} label(s) from issue #${issueNumber} before a later label removal failed. Run issueme_sync_issues before retrying local work.`,
+		changedFields: params.changedFields,
+		cacheUpdated: false,
+		needsSync: true,
+		error: safeError,
+	};
+}
+
+/** Mirrors issueme_reopen_issue: explicit per-issue creator check, already-open issues are no-ops, and reopening sets GitHub's reopened reason. */
+async function reopenIssueForBulk(
+	ctx: ExtensionContext,
+	runtime: IssueMeRuntime,
+	params: NormalizedBulkIssueParams,
+	issueNumber: number,
+	signal?: AbortSignal,
+): Promise<ToolBulkIssueResultSummary> {
+	const current = await runtime.client.getIssue(issueNumber, signal);
+	assertIssueCreatorAllowed(runtime.config, current, { repository: runtime.repository, operation: "bulk_reopen", issueNumber });
+	if (current.state === "open") {
+		return {
+			number: issueNumber,
+			action: params.action,
+			status: "success",
+			message: `Issue #${issueNumber} is already open; no change.`,
+			issue: issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, current, [])),
+			changedFields: [],
+			cacheUpdated: false,
+			needsSync: false,
+		};
+	}
+	const reopened = await runtime.client.reopenIssue(issueNumber, signal);
+	return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, reopened, signal);
 }
 
 async function assertBulkIssueAllowedForMutation(
@@ -311,7 +389,7 @@ async function assertBulkIssueAllowedForMutation(
 	action: BulkIssueActionName,
 	signal?: AbortSignal,
 ): Promise<GitHubIssueResponse> {
-	const currentIssue = action === "add_labels"
+	const currentIssue = action === "add_labels" || action === "remove_labels"
 		? await runtime.client.getIssue(issueNumber, signal)
 		: await runtime.client.ensureIssueOpen(issueNumber, signal);
 	assertIssueCreatorAllowed(runtime.config, currentIssue, { repository: runtime.repository, operation: `bulk_${action}`, issueNumber });
@@ -506,9 +584,11 @@ function formatBulkResultLine(result: ToolBulkIssueResultSummary): string {
 }
 
 function formatSuccessMessage(action: BulkIssueActionName, issueNumber: number): string {
-	if (action === "add_labels") return `Updated labels for issue #${issueNumber}`;
-	if (action === "assign") return `Updated assignees for issue #${issueNumber}`;
+	if (action === "add_labels" || action === "remove_labels") return `Updated labels for issue #${issueNumber}`;
+	if (action === "assign" || action === "unassign") return `Updated assignees for issue #${issueNumber}`;
 	if (action === "set_milestone") return `Updated milestone for issue #${issueNumber}`;
+	if (action === "clear_milestone") return `Cleared milestone for issue #${issueNumber}`;
+	if (action === "reopen") return `Reopened issue #${issueNumber}`;
 	return `Updated issue #${issueNumber}`;
 }
 
@@ -516,19 +596,27 @@ function normalizeBulkIssueParams(params: BulkIssueToolParams): NormalizedBulkIs
 	const action = normalizeAction(params.action);
 	const issueNumbers = normalizeIssueNumbers(params.issueNumbers);
 	const continueOnError = params.continueOnError === true;
-	if (action === "add_labels") {
-		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.add_labels);
+	if (action === "add_labels" || action === "remove_labels") {
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS[action]);
 		const labels = requireNonEmptyStrings(params.labels, "labels");
 		return { issueNumbers, action, labels, continueOnError, changedFields: ["labels"] };
 	}
-	if (action === "assign") {
-		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.assign);
+	if (action === "assign" || action === "unassign") {
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS[action]);
 		const assignees = requireNonEmptyGitHubLogins(params.assignees, "assignees");
 		return { issueNumbers, action, assignees, continueOnError, changedFields: ["assignees"] };
 	}
 	if (action === "set_milestone") {
 		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.set_milestone);
 		return { issueNumbers, action, milestoneNumber: normalizePositiveInteger(params.milestoneNumber, "milestoneNumber"), continueOnError, changedFields: ["milestone"] };
+	}
+	if (action === "clear_milestone") {
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.clear_milestone);
+		return { issueNumbers, action, continueOnError, changedFields: ["milestone"] };
+	}
+	if (action === "reopen") {
+		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.reopen);
+		return { issueNumbers, action, continueOnError, changedFields: ["state"] };
 	}
 	if (action === "add_to_project") {
 		assertNoUnexpectedActionFields(params, BULK_ISSUE_ACTION_FIELDS.add_to_project);
@@ -561,8 +649,9 @@ function bulkCloseChangedFields(reason: GitHubIssueCloseReason | undefined): str
 }
 
 function normalizeAction(value: BulkIssueActionName | undefined): BulkIssueActionName {
-	if (value === "add_labels" || value === "assign" || value === "set_milestone" || value === "add_to_project" || value === "close") return value;
-	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "action must be add_labels, assign, set_milestone, add_to_project, or close.", { field: "action" });
+	const action = BULK_ISSUE_ACTIONS.find((candidate) => candidate === value);
+	if (action !== undefined) return action;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, `action must be one of ${BULK_ISSUE_ACTIONS.join(", ")}.`, { field: "action" });
 }
 
 function normalizeIssueNumbers(values: number[] | undefined): number[] {

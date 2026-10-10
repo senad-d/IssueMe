@@ -5,10 +5,11 @@ import { Type, type Static } from "typebox";
 import { MAX_TOOL_MILESTONES } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState } from "../github/client.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import { assertGitHubMilestoneDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { normalizeBoundedToolLimit } from "../utils/validation.ts";
-import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_MILESTONE_LIST_LIMIT = Math.min(25, MAX_TOOL_MILESTONES);
 
@@ -18,6 +19,7 @@ const ListMilestonesParams = Type.Object(
 		sort: Type.Optional(StringEnum(["due_on", "completeness"] as const, { description: "Sort field." })),
 		direction: Type.Optional(StringEnum(["asc", "desc"] as const, { description: "Sort direction." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_MILESTONES, description: `Max results. Default ${DEFAULT_MILESTONE_LIST_LIMIT}; max ${MAX_TOOL_MILESTONES}.` })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},
 	{ additionalProperties: false },
 );
@@ -29,6 +31,7 @@ interface NormalizedListMilestonesParams {
 	sort?: GitHubMilestoneListSort;
 	direction?: GitHubMilestoneListDirection;
 	limit: number;
+	after?: string;
 }
 
 export function registerListMilestonesTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -58,8 +61,9 @@ export function registerListMilestonesTool(pi: ExtensionAPI, options: IssueMeToo
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { milestones: { shown: milestones.length, max: normalized.limit } } } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatListMilestonesText(runtime.repository, normalized, milestones, result.truncated), details);
+				return toolText(appendContinuationLine(formatListMilestonesText(runtime.repository, normalized, milestones, result.truncated), result.continuation), details);
 			},
 		}),
 	);
@@ -68,11 +72,13 @@ export function registerListMilestonesTool(pi: ExtensionAPI, options: IssueMeToo
 function normalizeListMilestonesParams(params: ListMilestonesToolParams): NormalizedListMilestonesParams {
 	const sort = normalizeSort(params.sort);
 	const direction = normalizeDirection(params.direction);
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		state: normalizeState(params.state),
 		...(sort ? { sort } : {}),
 		...(direction ? { direction } : {}),
 		limit: normalizeLimit(params.limit),
+		...(after ? { after } : {}),
 	};
 }
 

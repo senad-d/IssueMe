@@ -8,7 +8,13 @@ export const DEFAULT_ISSUES_DIR = `${CONFIG_DIR_NAME}/issues`;
 export const LEGACY_ISSUES_DIR = "issues";
 export const ISSUE_SCHEMA_VERSION = 1;
 export const GITHUB_API_BASE_URL = "https://api.github.com";
+/** Pinned REST version. Retained deliberately; see docs/github-api-compatibility.md before changing it. */
 export const GITHUB_API_VERSION = "2022-11-28";
+/** REST versions GitHub documents as supported at the time of the last compatibility review. */
+export const GITHUB_DOCUMENTED_API_VERSIONS = ["2022-11-28", "2026-03-10"] as const;
+/** Documented end-of-support date for the pinned REST version. */
+export const GITHUB_API_VERSION_END_OF_SUPPORT = "2028-03-10";
+export const GITHUB_GRAPHQL_FEATURE_FLAGS = ["sub_issues"] as const;
 export const LOCAL_ISSUE_FILE_EXTENSION = ".json";
 export const MAX_TITLE_SLUG_LENGTH = 80;
 export const PROTECTED_ISSUE_DIRECTORIES = [".", ".git", CONFIG_DIR_NAME, ".pi", "node_modules", "dist", "build", "coverage"] as const;
@@ -24,6 +30,8 @@ export const MAX_TOOL_PROJECTS = 25;
 export const MAX_TOOL_PROJECT_FIELDS = 50;
 export const MAX_TOOL_PROJECT_FIELD_OPTIONS = 25;
 export const MAX_TOOL_PROJECT_ITERATIONS = 25;
+export const MAX_TOOL_PROJECT_ITEMS = 50;
+export const MAX_TOOL_PROJECT_ITEM_VALUES = 50;
 export const MAX_TOOL_ERROR_MESSAGE_CHARS = 800;
 export const MAX_TOOL_ERROR_DETAIL_STRING_CHARS = 500;
 export const MAX_TOOL_ERROR_DETAIL_ITEMS = 25;
@@ -31,4 +39,10 @@ export const MAX_GET_BODY_CHARS = 4000;
 export const MAX_GET_COMMENTS = 5;
 export const MAX_GET_COMMENT_CHARS = 1200;
 export const MAX_CACHE_COMMENTS = 100;
+export const MAX_TOOL_COMMENTS = 50;
+export const MAX_TOOL_ISSUE_TYPES = 50;
+export const MAX_TOOL_TIMELINE_EVENTS = 50;
+export const MAX_TOOL_TIMELINE_EVENT_TYPES = 25;
+export const MAX_ISSUE_TYPE_NAME_CHARS = 100;
+export const MAX_TOOL_COMMENT_BODY_CHARS = 4000;
 export const PROJECT_TRUST_REQUIREMENT = "Project trust is required before IssueMe reads project-local config, .env, Git config, or issue cache files.";

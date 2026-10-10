@@ -39,14 +39,15 @@ description: Manage this repository's GitHub issues with IssueMe. Use when synci
 - Use `issueme_list_milestones` before setting `milestoneNumber` when milestone numbers are unknown.
 - Use `issueme_list_assignees` before assigning a user when the exact GitHub username is unknown.
 - Use `issueme_list_projects` and `issueme_get_project_fields` before project-board changes.
-- Use `issueme_add_issue_to_project` and `issueme_update_project_item` only after the issue is known to be open and required project/item/field IDs are known.
+- Use `issueme_add_issue_to_project` only after the issue is known to be open, and `issueme_update_project_item` only after the required project/item/field IDs are known; board field updates, clears, archives, and removals also work for closed issues because they change board metadata only.
 - Use `issueme_manage_label` only when the user explicitly wants repository label taxonomy changed.
 - Use `issueme_manage_milestone` only when the user explicitly wants repository milestone planning metadata changed.
-- Do not update, comment on, assign, close, change project items for, or change native sub-issue relationships for closed issues. Label changes through `issueme_label_issue` or bulk `add_labels` are allowed.
+- Do not update, comment on, assign, close, add to a project, or change native sub-issue relationships for closed issues. Label changes through `issueme_label_issue` or bulk `add_labels`/`remove_labels` and project-only board metadata changes (field update/clear, item archive/unarchive, item removal) are allowed.
 - Use `issueme_reopen_issue` only when the user explicitly wants a closed issue reopened.
 - Use `issueme_delete_issue` only for one exact mistakenly created issue after explicit confirmation and an irreversibility warning; prefer closing when repository history should remain.
 - Do not create body-only `blocked by`, `depends on`, or `tracked by` text references as if they were native dependencies.
 - Prefer local `.pi/issues/*.json` files for reading full bodies/comments after sync.
+- When a discovery result reports `truncated: true` with `details.continuation.nextToken`, pass that token as `after` with the same filters instead of raising limits; treat multi-page traversal as non-atomic.
 - Close issues only when requested; use close reason `completed` for verified finished work and `not_planned` only when work is explicitly declined, obsolete, or duplicate.
 - Use `issueme_bulk_update_issues` only when exact issue numbers are explicit and confirmed; never infer a bulk mutation directly from an unconstrained search query.
 ````
@@ -195,15 +196,11 @@ Permanent deletion accepts open or closed issues, refuses pull request numbers, 
 Use issueme_bulk_update_issues with issueNumbers [101, 102, 103], action "add_labels", labels ["triage"], and leave continueOnError omitted so the run stops if any issue fails.
 ```
 
-Bulk operations require explicitly listed issue numbers. Do not pass a search query or ask IssueMe to mutate every search result without separately confirming the exact issue number list.
+Bulk operations require explicitly listed issue numbers. Do not pass a search query or ask IssueMe to mutate every search result without separately confirming the exact issue number list. Bulk actions are `add_labels`, `remove_labels`, `assign`, `unassign`, `set_milestone`, `clear_milestone`, `add_to_project`, `close`, and `reopen`; each follows the matching single-issue tool's rules, and bulk `reopen` is only for explicit reopen requests, never a repair step after another failed action.
 
-## Unsupported dependency/blocker links
+## Dependency/blocker links
 
-IssueMe does not currently register dependency or blocker tools such as `issueme_add_issue_dependency`, `issueme_remove_issue_dependency`, or `issueme_list_issue_dependencies`.
-
-The GitHub APIs used by IssueMe expose native sub-issue fields/mutations and Projects v2 item fields, but no stable native REST or GraphQL API for issue dependency, blocker, or tracked-by links with documented list/add/remove semantics. Until GitHub publishes a stable native API, IssueMe does not create body-only `blocked by`, `depends on`, or `tracked by` references as a silent fallback.
-
-Use native sub-issues for parent/child breakdowns, Projects v2 fields for planning status/priority when appropriate, or ask the user to manage dependency/blocker links in GitHub's UI.
+Use `issueme_list_issue_dependencies` to see what an issue is blocked by and what it blocks, `issueme_add_issue_dependency` to record a real prerequisite between two open issues, and `issueme_remove_issue_dependency` to detach one. Dependencies are prerequisites; use native sub-issues for parent/child breakdowns and Projects v2 fields for planning status/priority. IssueMe never creates body-only `blocked by`, `depends on`, or `tracked by` references as a fallback; when GitHub reports the dependency feature as unavailable or refuses an edge, say so and leave the issues unchanged.
 
 ## Result handling
 

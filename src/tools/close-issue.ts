@@ -137,6 +137,7 @@ function closeIssuePartialSuccessToolText(runtime: IssueMeRuntime, result: Close
 function closeIssueBaseText(result: CloseIssueResult): string {
 	const lines = [`${closeIssueVerb(result)} #${result.number}: ${closeIssueTitle(result)}`];
 	if (shouldShowCloseReason(result)) lines.push(`Close reason: ${result.reason}`);
+	if (typeof result.issueSummary.stateReason === "string") lines.push(`Recorded state reason: ${result.issueSummary.stateReason}`);
 	lines.push(`URL: ${result.issueSummary.html_url}`);
 	return lines.join("\n");
 }

@@ -1,11 +1,11 @@
-import { GITHUB_API_BASE_URL, MAX_TOOL_PROJECTS } from "../constants.ts";
+import { GITHUB_API_BASE_URL, MAX_TOOL_PROJECT_ITEM_VALUES, MAX_TOOL_PROJECT_ITEMS, MAX_TOOL_PROJECTS } from "../constants.ts";
 import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
-import type { GitHubRepository, IssueRelationshipSummary, ProjectV2OwnerType, ToolIssueSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
+import type { GitHubRepository, IssueRelationshipSummary, ProjectV2OwnerType, ToolIssueSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemFieldValueSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary } from "../types.ts";
 import { isValidIsoDateOnly } from "../utils/date.ts";
 import { normalizeBoundedInteger, normalizeOptionalGitHubOpaqueId, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 import { normalizeGraphQLIssueState } from "./graphql-normalizers.ts";
 import type { GitHubProjectV2AddIssueInput, GitHubProjectV2FieldValueInput, GitHubProjectV2ItemMutationResult, GitHubProjectV2Scope } from "./client.ts";
-import { isObject } from "./shared.ts";
+import { connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
 export { connectionEndCursor, connectionHasNextPage, extractConnectionNodes } from "./shared.ts";
 
 interface ProjectV2ConnectionData {
@@ -74,19 +74,19 @@ export function buildProjectsV2ListQuery(scope: GitHubProjectV2Scope): string {
 }
 
 export function buildProjectV2FieldsByIdQuery(): string {
-	return `query IssueMeGetProjectV2FieldsById($projectId: ID!, $fieldsFirst: Int!) {
+	return `query IssueMeGetProjectV2FieldsById($projectId: ID!, $fieldsFirst: Int!, $fieldsAfter: String) {
 		node(id: $projectId) {
 			... on ProjectV2 {
 				...IssueMeProjectV2WithFields
 			}
 		}
-		${projectV2WithFieldsFragment()}
-	}`;
+	}
+	${projectV2WithFieldsFragment()}`;
 }
 
 export function buildProjectV2FieldsByNumberQuery(scope: GitHubProjectV2Scope): string {
 	const ownerSelection = projectV2OwnerSelectionForScope(scope, "projectV2(number: $projectNumber)", "...IssueMeProjectV2WithFields");
-	const variables = scope === "repository" ? "$owner: String!, $repo: String!, $projectNumber: Int!, $fieldsFirst: Int!" : "$owner: String!, $projectNumber: Int!, $fieldsFirst: Int!";
+	const variables = scope === "repository" ? "$owner: String!, $repo: String!, $projectNumber: Int!, $fieldsFirst: Int!, $fieldsAfter: String" : "$owner: String!, $projectNumber: Int!, $fieldsFirst: Int!, $fieldsAfter: String";
 	return `query IssueMeGetProjectV2FieldsByNumber(${variables}) {
 		${ownerSelection}
 	}
@@ -126,7 +126,6 @@ function projectV2SummaryFragment(): string {
 		public
 		owner {
 			__typename
-			... on Repository { nameWithOwner }
 			... on Organization { login }
 			... on User { login }
 		}
@@ -137,7 +136,7 @@ function projectV2WithFieldsFragment(): string {
 	return `${projectV2SummaryFragment()}
 	fragment IssueMeProjectV2WithFields on ProjectV2 {
 		...IssueMeProjectV2Summary
-		fields(first: $fieldsFirst) {
+		fields(first: $fieldsFirst, after: $fieldsAfter) {
 			nodes {
 				__typename
 				... on ProjectV2Field { id name dataType }
@@ -157,9 +156,256 @@ function projectV2WithFieldsFragment(): string {
 					}
 				}
 			}
-			pageInfo { hasNextPage }
+			pageInfo { hasNextPage endCursor }
 		}
 	}`;
+}
+
+export function buildProjectV2ItemsByIdQuery(): string {
+	return `query IssueMeListProjectV2Items($projectId: ID!, $first: Int!, $after: String, $valuesFirst: Int!) {
+		node(id: $projectId) {
+			... on ProjectV2 {
+				...IssueMeProjectV2Summary
+				items(first: $first, after: $after) {
+					totalCount
+					nodes { ...IssueMeProjectV2ItemDetail }
+					pageInfo { hasNextPage endCursor }
+				}
+			}
+		}
+	}
+	${projectV2ItemDetailFragment()}`;
+}
+
+export function buildProjectV2ItemsByNumberQuery(scope: GitHubProjectV2Scope): string {
+	const ownerSelection = projectV2OwnerSelectionForScope(scope, "projectV2(number: $projectNumber)", `...IssueMeProjectV2Summary
+		items(first: $first, after: $after) {
+			totalCount
+			nodes { ...IssueMeProjectV2ItemDetail }
+			pageInfo { hasNextPage endCursor }
+		}`);
+	const variables = scope === "repository"
+		? "$owner: String!, $repo: String!, $projectNumber: Int!, $first: Int!, $after: String, $valuesFirst: Int!"
+		: "$owner: String!, $projectNumber: Int!, $first: Int!, $after: String, $valuesFirst: Int!";
+	return `query IssueMeListProjectV2Items(${variables}) {
+		${ownerSelection}
+	}
+	${projectV2ItemDetailFragment()}`;
+}
+
+export function buildProjectV2ItemByIdQuery(): string {
+	return `query IssueMeGetProjectV2Item($itemId: ID!, $valuesFirst: Int!, $valuesAfter: String) {
+		node(id: $itemId) {
+			... on ProjectV2Item { ...IssueMeProjectV2ItemDetail }
+		}
+	}
+	${projectV2ItemDetailFragment(true)}`;
+}
+
+export function buildProjectV2ItemByIssueQuery(): string {
+	return `query IssueMeGetProjectV2ItemByIssue($owner: String!, $repo: String!, $issueNumber: Int!, $itemsFirst: Int!, $valuesFirst: Int!, $valuesAfter: String) {
+		repository(owner: $owner, name: $repo) {
+			issue(number: $issueNumber) {
+				id
+				number
+				projectItems(first: $itemsFirst, includeArchived: true) {
+					totalCount
+					nodes { ...IssueMeProjectV2ItemDetail }
+					pageInfo { hasNextPage }
+				}
+			}
+		}
+	}
+	${projectV2ItemDetailFragment(true)}`;
+}
+
+/** Item detail with typed field values; `withValuesAfter` adds the nested continuation variable used by focused item reads. */
+function projectV2ItemDetailFragment(withValuesAfter = false): string {
+	const valuesArguments = withValuesAfter ? "first: $valuesFirst, after: $valuesAfter" : "first: $valuesFirst";
+	return `${projectV2SummaryFragment()}
+	fragment IssueMeProjectV2FieldRef on ProjectV2FieldConfiguration {
+		... on ProjectV2FieldCommon { id name dataType }
+	}
+	fragment IssueMeProjectV2ItemDetail on ProjectV2Item {
+		id
+		type
+		isArchived
+		createdAt
+		updatedAt
+		project { ...IssueMeProjectV2Summary }
+		content {
+			__typename
+			... on Issue { id number title state url author { login } repository { nameWithOwner } }
+			... on PullRequest { number repository { nameWithOwner } }
+			... on DraftIssue { id }
+		}
+		fieldValues(${valuesArguments}) {
+			totalCount
+			nodes {
+				__typename
+				... on ProjectV2ItemFieldTextValue { text field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldNumberValue { number field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldDateValue { date field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldSingleSelectValue { name optionId field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldIterationValue { title iterationId startDate duration field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldLabelValue { field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldMilestoneValue { field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldRepositoryValue { field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldUserValue { field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldReviewerValue { field { ...IssueMeProjectV2FieldRef } }
+				... on ProjectV2ItemFieldPullRequestValue { field { ...IssueMeProjectV2FieldRef } }
+			}
+			pageInfo { hasNextPage endCursor }
+		}
+	}`;
+}
+
+export type ProjectV2ItemContentKind = "issue" | "pull_request" | "draft_issue" | "redacted" | "unknown";
+
+export interface ProjectV2ItemContentClassification {
+	kind: ProjectV2ItemContentKind;
+	repository?: string;
+	creator?: string;
+	issueNumber?: number;
+	state?: "open" | "closed";
+}
+
+export interface ProjectV2ItemDetail {
+	item: ToolProjectItemSummary;
+	content: ProjectV2ItemContentClassification;
+	valuesHasNextPage: boolean;
+	valuesEndCursor?: string;
+}
+
+export function normalizeProjectV2ItemDetail(value: unknown, repository: string): ProjectV2ItemDetail | undefined {
+	if (!isObject(value)) return undefined;
+	const id = normalizeProjectV2OutputId(value.id, "itemId") ?? "";
+	if (!id) return undefined;
+	const item: ToolProjectItemSummary = { id };
+	const type = typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
+	if (type) item.type = type;
+	const project = normalizeProjectV2Summary(value.project);
+	if (project) item.project = project;
+	if (typeof value.isArchived === "boolean") item.isArchived = value.isArchived;
+	if (typeof value.createdAt === "string" && value.createdAt.trim()) item.createdAt = value.createdAt;
+	if (typeof value.updatedAt === "string" && value.updatedAt.trim()) item.updatedAt = value.updatedAt;
+	const content = classifyProjectV2ItemContent(value.content, type);
+	if (content.kind === "issue") {
+		const issue = normalizeProjectV2ItemIssue(value.content, content.repository ?? repository);
+		if (issue) item.issue = issue;
+	}
+	const values = normalizeProjectV2ItemFieldValues(value.fieldValues);
+	item.fieldValues = values.values;
+	if (values.totalCount !== undefined) item.fieldValuesCount = values.totalCount;
+	if (values.hasNextPage) item.fieldValuesTruncated = true;
+	return { item, content, valuesHasNextPage: values.hasNextPage, ...(values.endCursor ? { valuesEndCursor: values.endCursor } : {}) };
+}
+
+export function requireProjectV2ItemDetail(value: unknown, repository: string): ProjectV2ItemDetail {
+	const detail = normalizeProjectV2ItemDetail(value, repository);
+	if (detail) return detail;
+	throw new GitHubApiError("GitHub GraphQL Projects v2 item query returned a malformed project item.", {
+		code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
+		path: `${GITHUB_API_BASE_URL}/graphql`,
+	});
+}
+
+export function classifyProjectV2ItemContent(content: unknown, itemType: string | undefined): ProjectV2ItemContentClassification {
+	if (itemType === "REDACTED") return { kind: "redacted" };
+	if (!isObject(content)) return itemType === "ISSUE" || itemType === "PULL_REQUEST" ? { kind: "redacted" } : { kind: "unknown" };
+	const repositoryNode = isObject(content.repository) ? content.repository : undefined;
+	const contentRepository = typeof repositoryNode?.nameWithOwner === "string" && repositoryNode.nameWithOwner.trim() ? repositoryNode.nameWithOwner.trim() : undefined;
+	if (content.__typename === "Issue") {
+		const issueNumber = typeof content.number === "number" && Number.isSafeInteger(content.number) && content.number > 0 ? content.number : undefined;
+		const creator = isObject(content.author) && typeof content.author.login === "string" ? content.author.login : undefined;
+		const state = normalizeGraphQLIssueState(content.state);
+		return compactClassification({ kind: "issue", repository: contentRepository, creator, issueNumber, state });
+	}
+	if (content.__typename === "PullRequest") return compactClassification({ kind: "pull_request", repository: contentRepository });
+	if (content.__typename === "DraftIssue") return { kind: "draft_issue" };
+	return { kind: "unknown" };
+}
+
+function compactClassification(value: ProjectV2ItemContentClassification): ProjectV2ItemContentClassification {
+	const output: ProjectV2ItemContentClassification = { kind: value.kind };
+	if (value.repository) output.repository = value.repository;
+	if (value.creator) output.creator = value.creator;
+	if (value.issueNumber !== undefined) output.issueNumber = value.issueNumber;
+	if (value.state) output.state = value.state;
+	return output;
+}
+
+function normalizeProjectV2ItemFieldValues(connection: unknown): { values: ToolProjectItemFieldValueSummary[]; totalCount?: number; hasNextPage: boolean; endCursor?: string } {
+	const nodes = extractConnectionNodes(connection);
+	const values = nodes.map(normalizeProjectV2ItemFieldValue).filter((value): value is ToolProjectItemFieldValueSummary => value !== undefined);
+	const totalCount = normalizeConnectionTotalCount(connection);
+	const endCursor = connectionEndCursor(connection);
+	return { values, ...(totalCount !== undefined ? { totalCount } : {}), hasNextPage: connectionHasNextPage(connection), ...(endCursor ? { endCursor } : {}) };
+}
+
+function normalizeProjectV2ItemFieldValue(value: unknown): ToolProjectItemFieldValueSummary | undefined {
+	if (!isObject(value)) return undefined;
+	const field = isObject(value.field) ? value.field : undefined;
+	const fieldId = normalizeProjectV2OutputId(field?.id, "fieldId");
+	const name = typeof field?.name === "string" && field.name.trim() ? field.name.trim() : undefined;
+	if (!fieldId || !name) return undefined;
+	const summary: ToolProjectItemFieldValueSummary = { fieldId, name, kind: "unsupported" };
+	if (typeof field?.dataType === "string" && field.dataType.trim()) summary.dataType = field.dataType.trim();
+	applyProjectV2ItemFieldValue(summary, value);
+	return summary;
+}
+
+function applyProjectV2ItemFieldValue(summary: ToolProjectItemFieldValueSummary, value: Record<string, unknown>): void {
+	const typeName = typeof value.__typename === "string" ? value.__typename : "";
+	if (typeName === "ProjectV2ItemFieldTextValue" && typeof value.text === "string") {
+		summary.kind = "text";
+		summary.text = value.text;
+		return;
+	}
+	if (typeName === "ProjectV2ItemFieldNumberValue" && typeof value.number === "number" && Number.isFinite(value.number)) {
+		summary.kind = "number";
+		summary.number = value.number;
+		return;
+	}
+	if (typeName === "ProjectV2ItemFieldDateValue" && typeof value.date === "string" && value.date.trim()) {
+		summary.kind = "date";
+		summary.date = value.date.trim();
+		return;
+	}
+	if (typeName === "ProjectV2ItemFieldSingleSelectValue") {
+		applyProjectV2SingleSelectValue(summary, value);
+		return;
+	}
+	if (typeName === "ProjectV2ItemFieldIterationValue") {
+		applyProjectV2IterationValue(summary, value);
+		return;
+	}
+	if (typeName) summary.valueType = typeName;
+}
+
+function applyProjectV2SingleSelectValue(summary: ToolProjectItemFieldValueSummary, value: Record<string, unknown>): void {
+	const optionId = normalizeProjectV2OutputId(value.optionId, "singleSelectOptionId");
+	const optionName = typeof value.name === "string" && value.name.trim() ? value.name.trim() : undefined;
+	if (!optionId && !optionName) {
+		summary.valueType = "ProjectV2ItemFieldSingleSelectValue";
+		return;
+	}
+	summary.kind = "single_select";
+	if (optionId) summary.optionId = optionId;
+	if (optionName) summary.optionName = optionName;
+}
+
+function applyProjectV2IterationValue(summary: ToolProjectItemFieldValueSummary, value: Record<string, unknown>): void {
+	const iteration = normalizeProjectV2Iteration({ id: value.iterationId, title: value.title, startDate: value.startDate, duration: value.duration });
+	if (!iteration) {
+		summary.valueType = "ProjectV2ItemFieldIterationValue";
+		return;
+	}
+	summary.kind = "iteration";
+	summary.iterationId = iteration.id;
+	summary.iterationTitle = iteration.title;
+	if (iteration.startDate) summary.startDate = iteration.startDate;
+	if (iteration.duration !== undefined) summary.duration = iteration.duration;
 }
 
 export function buildProjectV2AddValidationQuery(): string {
@@ -193,8 +439,73 @@ export function buildProjectV2ItemValidationQuery(): string {
 	return `query IssueMeValidateProjectV2ItemForUpdate($itemId: ID!) {
 		node(id: $itemId) {
 			... on ProjectV2Item {
+				${projectV2ItemValidationSelection()}
+			}
+		}
+	}`;
+}
+
+/** Item validation plus the presence of one named field value, used before clearing a field. */
+export function buildProjectV2ItemFieldValueValidationQuery(): string {
+	return `query IssueMeValidateProjectV2ItemField($itemId: ID!, $fieldName: String!) {
+		node(id: $itemId) {
+			... on ProjectV2Item {
+				${projectV2ItemValidationSelection()}
+				fieldValueByName(name: $fieldName) { __typename }
+			}
+		}
+	}`;
+}
+
+export function buildProjectV2FieldValidationQuery(): string {
+	return `query IssueMeValidateProjectV2Field($fieldId: ID!) {
+		node(id: $fieldId) {
+			... on ProjectV2FieldCommon { id name dataType project { id } }
+		}
+	}`;
+}
+
+export function buildDeleteProjectV2ItemMutation(): string {
+	return `mutation IssueMeDeleteProjectV2Item($projectId: ID!, $itemId: ID!) {
+		deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) {
+			deletedItemId
+		}
+	}`;
+}
+
+export function buildClearProjectV2ItemFieldValueMutation(): string {
+	return `mutation IssueMeClearProjectV2ItemFieldValue($projectId: ID!, $itemId: ID!, $fieldId: ID!, $fieldName: String!) {
+		clearProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId}) {
+			projectV2Item {
 				id
+				fieldValueByName(name: $fieldName) { __typename }
+			}
+		}
+	}`;
+}
+
+export type ProjectV2ItemArchiveAction = "archive" | "unarchive";
+
+export function projectV2ArchiveOperationName(action: ProjectV2ItemArchiveAction): string {
+	return action === "archive" ? "IssueMeArchiveProjectV2Item" : "IssueMeUnarchiveProjectV2Item";
+}
+
+export function projectV2ArchiveMutationField(action: ProjectV2ItemArchiveAction): "archiveProjectV2Item" | "unarchiveProjectV2Item" {
+	return action === "archive" ? "archiveProjectV2Item" : "unarchiveProjectV2Item";
+}
+
+export function buildArchiveProjectV2ItemMutation(action: ProjectV2ItemArchiveAction): string {
+	return `mutation ${projectV2ArchiveOperationName(action)}($projectId: ID!, $itemId: ID!) {
+		${projectV2ArchiveMutationField(action)}(input: {projectId: $projectId, itemId: $itemId}) {
+			item { id isArchived }
+		}
+	}`;
+}
+
+function projectV2ItemValidationSelection(): string {
+	return `id
 				type
+				isArchived
 				project { id }
 				content {
 					__typename
@@ -205,10 +516,99 @@ export function buildProjectV2ItemValidationQuery(): string {
 						url
 						repository { nameWithOwner }
 					}
-				}
-			}
-		}
-	}`;
+				}`;
+}
+
+/** Project-owned value types IssueMe clears explicitly; issue-owned or system fields are refused. */
+export const CLEARABLE_PROJECT_V2_FIELD_DATA_TYPES = ["TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "ITERATION"] as const;
+
+export interface ProjectV2FieldIdentity {
+	id: string;
+	name: string;
+	dataType: string;
+}
+
+export function normalizeProjectV2ItemArchiveAction(value: unknown): ProjectV2ItemArchiveAction {
+	if (value === "archive" || value === "unarchive") return value;
+	throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "action must be archive or unarchive.", { field: "action" });
+}
+
+export function assertProjectV2FieldClearable(data: ProjectV2IdentityValidationData, input: { projectId: string; fieldId: string }): ProjectV2FieldIdentity {
+	const field = data.node;
+	if (!isObject(field)) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			"fieldId must resolve to an accessible GitHub Projects v2 field before IssueMe clears a value.",
+			{ fieldId: input.fieldId, projectId: input.projectId },
+			{ recoveryHint: "Use issueme_get_project_fields on the selected project to rediscover field IDs." },
+		);
+	}
+	const id = normalizeProjectV2OutputId(field.id, "fieldId");
+	const name = typeof field.name === "string" && field.name.trim() ? field.name.trim() : undefined;
+	const dataType = typeof field.dataType === "string" && field.dataType.trim() ? field.dataType.trim() : undefined;
+	const projectNode = isObject(field.project) ? field.project : undefined;
+	const actualProjectId = normalizeProjectV2OutputId(projectNode?.id, "projectId");
+	if (!id || !name || !dataType || !actualProjectId) {
+		throw new GitHubApiError("GitHub GraphQL ProjectV2 field validation returned incomplete field data.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql` });
+	}
+	if (actualProjectId !== input.projectId) {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "fieldId must belong to projectId before IssueMe clears a value.", { fieldId: input.fieldId, projectId: input.projectId, actualProjectId });
+	}
+	if (!(CLEARABLE_PROJECT_V2_FIELD_DATA_TYPES as readonly string[]).includes(dataType)) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`Project field "${name}" has data type ${dataType}, which IssueMe does not clear; only project-owned text, number, date, single-select, and iteration values can be cleared.`,
+			{ fieldId: input.fieldId, projectId: input.projectId, dataType },
+			{ recoveryHint: "Use issueme_label_issue, issueme_assign_issue, or issueme_update_issue for issue-owned labels, assignees, and milestones; system fields cannot be cleared." },
+		);
+	}
+	return { id, name, dataType };
+}
+
+export function projectV2ItemHasNamedFieldValue(data: ProjectV2ItemValidationData): boolean {
+	return isObject(data.node) && isObject(data.node.fieldValueByName);
+}
+
+export function projectV2ItemArchivedState(data: ProjectV2ItemValidationData): boolean | undefined {
+	if (isObject(data.node) && typeof data.node.isArchived === "boolean") return data.node.isArchived;
+	return undefined;
+}
+
+export function normalizeDeleteProjectV2ItemResult(data: Record<string, unknown>, itemId: string): string {
+	const payload = data.deleteProjectV2Item;
+	const deletedItemId = isObject(payload) ? normalizeProjectV2OutputId(payload.deletedItemId, "deletedItemId") : undefined;
+	if (!deletedItemId) {
+		throw new GitHubApiError("GitHub GraphQL deleteProjectV2Item mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	if (deletedItemId !== itemId) {
+		throw new GitHubApiError("GitHub GraphQL deleteProjectV2Item reported a different deleted item ID than requested.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	return deletedItemId;
+}
+
+export function normalizeClearProjectV2ItemFieldValueResult(data: Record<string, unknown>, itemId: string): void {
+	const payload = data.clearProjectV2ItemFieldValue;
+	const item = isObject(payload) && isObject(payload.projectV2Item) ? payload.projectV2Item : undefined;
+	const returnedItemId = item ? normalizeProjectV2OutputId(item.id, "itemId") : undefined;
+	if (!item || returnedItemId !== itemId) {
+		throw new GitHubApiError("GitHub GraphQL clearProjectV2ItemFieldValue mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	if (isObject(item.fieldValueByName)) {
+		throw new GitHubApiError("GitHub accepted clearProjectV2ItemFieldValue, but the field still reports a value; IssueMe could not verify the clear.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+}
+
+export function normalizeArchiveProjectV2ItemResult(data: Record<string, unknown>, action: ProjectV2ItemArchiveAction, itemId: string): boolean {
+	const payload = data[projectV2ArchiveMutationField(action)];
+	const item = isObject(payload) && isObject(payload.item) ? payload.item : undefined;
+	const returnedItemId = item ? normalizeProjectV2OutputId(item.id, "itemId") : undefined;
+	if (!item || returnedItemId !== itemId || typeof item.isArchived !== "boolean") {
+		throw new GitHubApiError(`GitHub GraphQL ${projectV2ArchiveMutationField(action)} mutation returned an unexpected response shape.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	if (item.isArchived !== (action === "archive")) {
+		throw new GitHubApiError(`GitHub accepted ${projectV2ArchiveMutationField(action)}, but the item reports isArchived=${String(item.isArchived)}; IssueMe could not verify the change.`, { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	return item.isArchived;
 }
 
 function projectV2ItemSummaryFragment(): string {
@@ -475,10 +875,37 @@ export function assertProjectV2AllowedForAdd(
 	);
 }
 
+/**
+ * GitHub answers `node(id:)` for a deleted or foreign Projects v2 item with a GraphQL `NOT_FOUND` error and a null node
+ * instead of a plain null (live-verified 2026-10-10). Tolerating only that error lets callers treat the node as absent.
+ */
+export function isProjectV2NodeNotFoundError(error: unknown): boolean {
+	if (!isObject(error)) return false;
+	const path = Array.isArray(error.path) ? error.path : [];
+	return error.type === "NOT_FOUND" && path[0] === "node";
+}
+
+/** Which backing-issue states a project-only action accepts. "open_or_closed" is the maintainer-approved board-metadata exception (gap spec Task 5, approved 2026-10-10). */
+export type ProjectV2ItemIssueStatePolicy = "open_only" | "open_or_closed";
+
+/**
+ * Approved state policy per project-only action. Adding an issue to a board stays open-only; field update/clear,
+ * item removal, and archive/unarchive change board metadata only, so closed issues are accepted. Nothing here
+ * relaxes issue-content tools, which keep their own closed-issue refusal.
+ */
+export const PROJECT_V2_ITEM_ISSUE_STATE_POLICY = {
+	add_to_project: "open_only",
+	update_field: "open_or_closed",
+	clear_field: "open_or_closed",
+	remove_item: "open_or_closed",
+	archive_item: "open_or_closed",
+} as const satisfies Record<string, ProjectV2ItemIssueStatePolicy>;
+
 export function assertProjectV2ItemTargetsIssue(
 	data: ProjectV2ItemValidationData,
 	input: { projectId: string; itemId: string; issueNumber: number },
 	repository: string,
+	statePolicy: ProjectV2ItemIssueStatePolicy = "open_only",
 ): void {
 	const item = data.node;
 	if (!isObject(item)) throw inaccessibleProjectV2ItemError(input);
@@ -488,7 +915,7 @@ export function assertProjectV2ItemTargetsIssue(
 	const issue = normalizeProjectV2ItemIssueValidation(content);
 	if (issue.actualRepository.toLowerCase() !== repository.toLowerCase()) throw projectV2ItemRepositoryMismatchError(input, repository, issue.actualRepository);
 	if (issue.actualIssueNumber !== input.issueNumber) throw projectV2ItemIssueNumberMismatchError(input, issue.actualIssueNumber);
-	if (issue.state !== "open") throw new ClosedIssueMutationError(issue.actualIssueNumber, issue.state, projectV2ItemContentToSafeSummary(repository, content, issue.actualIssueNumber, issue.state));
+	if (statePolicy === "open_only" && issue.state !== "open") throw new ClosedIssueMutationError(issue.actualIssueNumber, issue.state, projectV2ItemContentToSafeSummary(repository, content, issue.actualIssueNumber, issue.state));
 }
 
 function inaccessibleProjectV2ItemError(input: { projectId: string; itemId: string; issueNumber: number }): IssueMeError {
@@ -716,6 +1143,39 @@ function normalizeProjectV2NumberValue(value: unknown): number {
 		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "numberValue must be a finite number for number project fields.", { field: "numberValue" });
 	}
 	return value;
+}
+
+export function normalizeProjectV2ItemLimit(value: number | undefined): number {
+	return normalizeBoundedInteger(value, "limit", { max: MAX_TOOL_PROJECT_ITEMS, defaultValue: 25 });
+}
+
+export function normalizeProjectV2ItemValueLimit(value: number | undefined): number {
+	return normalizeBoundedInteger(value, "valueLimit", { max: MAX_TOOL_PROJECT_ITEM_VALUES, defaultValue: 25 });
+}
+
+export function assertProjectV2ItemLookupSelector(itemId: string | undefined, issueNumber: number | undefined): void {
+	if ((itemId === undefined) === (issueNumber === undefined)) {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "Provide exactly one of itemId or issueNumber to look up a Projects v2 item.", { fields: ["itemId", "issueNumber"] });
+	}
+}
+
+/** A discovered item ID is only honored when it belongs to the selected project; nothing else about the item is trusted from the ID alone. */
+export function assertProjectV2ItemBelongsToProject(detail: ProjectV2ItemDetail | undefined, input: { projectId: string; itemId: string }): asserts detail is ProjectV2ItemDetail {
+	if (!detail) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			"itemId must resolve to an accessible GitHub Projects v2 item.",
+			{ itemId: input.itemId, projectId: input.projectId },
+			{ recoveryHint: "Use issueme_list_project_items on the selected project to rediscover item IDs before reading one." },
+		);
+	}
+	const actualProjectId = detail.item.project?.id;
+	if (actualProjectId === input.projectId) return;
+	throw new IssueMeError(
+		ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+		"itemId does not belong to projectId; refusing to read an item from a different board.",
+		{ itemId: input.itemId, projectId: input.projectId, ...(actualProjectId ? { actualProjectId } : {}) },
+	);
 }
 
 export function normalizeProjectV2ProjectNumber(value: number | undefined): number {

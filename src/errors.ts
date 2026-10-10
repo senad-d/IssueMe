@@ -65,6 +65,12 @@ export const ISSUEME_ERROR_CODES = {
 	GITHUB_PROJECTS_V2_FORBIDDEN: "github_projects_v2_forbidden",
 	GITHUB_DEVELOPMENT_LINKS_FORBIDDEN: "github_development_links_forbidden",
 	GITHUB_DEVELOPMENT_LINKS_UNSUPPORTED: "github_development_links_unsupported",
+	GITHUB_ISSUE_TYPES_UNSUPPORTED: "github_issue_types_unsupported",
+	ISSUE_TYPE_NOT_APPLIED: "issue_type_not_applied",
+	GITHUB_ISSUE_DEPENDENCIES_UNSUPPORTED: "github_issue_dependencies_unsupported",
+	GITHUB_ISSUE_DEPENDENCY_REFUSED: "github_issue_dependency_refused",
+	GITHUB_RELATED_ISSUES_UNSUPPORTED: "github_related_issues_unsupported",
+	GITHUB_RELATED_ISSUE_REFUSED: "github_related_issue_refused",
 	COMMENT_ISSUE_MISMATCH: "comment_issue_mismatch",
 	CLOSED_ISSUE_MUTATION_REFUSED: "closed_issue_mutation_refused",
 	ISSUE_CREATOR_NOT_ALLOWED: "issue_creator_not_allowed",
@@ -77,6 +83,7 @@ export const ISSUEME_ERROR_CODES = {
 	UNSAFE_ISSUE_DIRECTORY: "unsafe_issue_directory",
 	UNSAFE_ISSUE_FILE: "unsafe_issue_file",
 	INVALID_TOOL_INPUT: "invalid_tool_input",
+	CONTINUATION_TOKEN_INVALID: "continuation_token_invalid",
 	INVALID_ISSUE_NUMBER: "invalid_issue_number",
 	INVALID_SKILL_PATH: "invalid_skill_path",
 	UNSAFE_SKILL_PATH: "unsafe_skill_path",
@@ -254,6 +261,30 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 		category: "github_api",
 		recoveryHint: "Inspect linked development in GitHub UI or update IssueMe when GitHub exposes stable issue development-link GraphQL fields; IssueMe will not invent body-only development links.",
 	},
+	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_TYPES_UNSUPPORTED]: {
+		category: "github_api",
+		recoveryHint: "Issue types are an organization feature; confirm the repository belongs to an organization that enabled issue types and that the token can read organization issue types, or create issues without a type.",
+	},
+	[ISSUEME_ERROR_CODES.ISSUE_TYPE_NOT_APPLIED]: {
+		category: "partial_success",
+		recoveryHint: "GitHub accepted the issue change but did not persist the requested type (push access is required); verify with issueme_list_issue_types and retry the type change with a token that has push access.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_DEPENDENCIES_UNSUPPORTED]: {
+		category: "github_api",
+		recoveryHint: "Confirm the repository exposes GitHub's issue dependency feature to this token, or manage blockers in GitHub's UI; IssueMe will not invent body-only dependencies.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_ISSUE_DEPENDENCY_REFUSED]: {
+		category: "github_api",
+		recoveryHint: "Inspect both issues with issueme_list_issue_dependencies, remove any conflicting or circular edge, and choose a different relationship if GitHub keeps refusing it.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_RELATED_ISSUES_UNSUPPORTED]: {
+		category: "github_api",
+		recoveryHint: "Confirm the repository exposes GitHub's related-issue feature to this token, or manage related issues in GitHub's UI; IssueMe will not invent body-only relationships.",
+	},
+	[ISSUEME_ERROR_CODES.GITHUB_RELATED_ISSUE_REFUSED]: {
+		category: "github_api",
+		recoveryHint: "Inspect both issues with issueme_list_related_issues and choose a different relationship if GitHub keeps refusing it.",
+	},
 	[ISSUEME_ERROR_CODES.COMMENT_ISSUE_MISMATCH]: {
 		category: "validation",
 		recoveryHint: "Use the comment ID from the target issue's comment list/cache and rerun the comment tool with the matching issue number.",
@@ -301,6 +332,10 @@ export const ISSUEME_ERROR_TAXONOMY: Record<string, IssueMeErrorTaxonomyEntry> =
 	[ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT]: {
 		category: "validation",
 		recoveryHint: "Correct the tool input fields described by the message and call the tool again.",
+	},
+	[ISSUEME_ERROR_CODES.CONTINUATION_TOKEN_INVALID]: {
+		category: "validation",
+		recoveryHint: "Pass the continuation token exactly as returned by the same tool with the same filters in the current repository, or omit after to restart from the beginning.",
 	},
 	[ISSUEME_ERROR_CODES.INVALID_ISSUE_NUMBER]: {
 		category: "validation",

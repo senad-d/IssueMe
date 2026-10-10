@@ -1,4 +1,4 @@
-import { GITHUB_API_BASE_URL, GITHUB_API_VERSION } from "../constants.ts";
+import { GITHUB_API_BASE_URL, GITHUB_API_VERSION, GITHUB_GRAPHQL_FEATURE_FLAGS } from "../constants.ts";
 import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, markMutationSettlement, mutationSettlementOf } from "../errors.ts";
 import type { GitHubRepository } from "../types.ts";
 import { redactSecrets } from "../utils/env.ts";
@@ -18,7 +18,33 @@ export interface PaginationOptions {
 	limit?: number;
 	/** Internal request budget; omitted preserves existing pagination behavior. */
 	maxPages?: number;
+	/** Absolute 0-based raw index of the first collection member to consume; decoded from a continuation token. */
+	start?: number;
 }
+
+export interface PaginationPage<T> {
+	items: T[];
+	nextUrl?: string;
+}
+
+export interface PaginationStart {
+	url: string;
+	/** Absolute raw index of the first member on the first page read. */
+	pageBase: number;
+	/** Raw members of the first page already consumed by an earlier call. */
+	skip: number;
+	perPage: number;
+}
+
+export interface PaginatedCollection<T> {
+	items: T[];
+	truncated: boolean;
+	/** Absolute raw index of the next unconsumed member when more data may exist. */
+	next?: number;
+	pagesRead: number;
+}
+
+const DEFAULT_REST_PAGE_SIZE = 30;
 
 export function normalizeMaxPages(value: number | undefined): number | undefined {
 	if (value === undefined) return undefined;
@@ -136,31 +162,59 @@ export class GitHubTransport {
 		query: Record<string, string>,
 		signal?: AbortSignal,
 		options: PaginationFilterOptions<T> = {},
-	): Promise<{ items: T[]; truncated: boolean }> {
+	): Promise<PaginatedCollection<T>> {
+		const start = this.buildPaginationStart(path, query, options.start);
+		return this.paginateCollection<T>(start, (url) => this.fetchPaginationPage<T>(url, signal, options.assertItem), options);
+	}
+
+	/** Resolve the first page URL for an absolute raw index; the first page never carries a page parameter. */
+	buildPaginationStart(path: string, query: Record<string, string>, start: number | undefined): PaginationStart {
+		const perPage = parsePerPage(query.per_page);
+		const index = normalizePaginationStartIndex(start);
+		const page = Math.floor(index / perPage) + 1;
+		const pageBase = (page - 1) * perPage;
+		const pageQuery = page > 1 ? { ...query, page: String(page) } : query;
+		return { url: this.buildUrl(path, pageQuery).toString(), pageBase, skip: index - pageBase, perPage };
+	}
+
+	/** Shared page loop: consumes raw members from `start`, applies filters, and reports the exact resume index when it stops early. */
+	async paginateCollection<T>(
+		start: PaginationStart,
+		readPage: (url: string) => Promise<PaginationPage<T>>,
+		options: PaginationFilterOptions<T> = {},
+	): Promise<PaginatedCollection<T>> {
 		const values: T[] = [];
 		const maxPages = normalizeMaxPages(options.maxPages);
 		let pagesRead = 0;
-		let nextUrl: string | undefined = this.buildUrl(path, query).toString();
+		let pageBase = start.pageBase;
+		let skip = start.skip;
+		let nextUrl: string | undefined = start.url;
 		while (nextUrl) {
-			const response = await this.fetchPaginationPage<T>(nextUrl, signal);
-			assertPaginationPageItems(response.data, options.assertItem, safePath(new URL(nextUrl)));
-			const next = parseNextLink(response.headers.get("link"));
-			const page = collectFilteredPaginationItems(response.data, values.length, options);
-			values.push(...page.items);
+			const page = await readPage(nextUrl);
+			const consumed = collectFilteredPaginationItems(page.items, values.length, skip, options);
+			values.push(...consumed.items);
 			pagesRead += 1;
-			if (page.truncated || hasAdditionalPageBeyondLimit(options.limit, values.length, next)
-				|| (next !== undefined && maxPages !== undefined && pagesRead >= maxPages)) return { items: values, truncated: true };
-			nextUrl = next === undefined ? undefined : this.resolvePaginationUrl(next);
+			if (consumed.stoppedAt !== undefined) return { items: values, truncated: true, next: pageBase + consumed.stoppedAt, pagesRead };
+			if (page.nextUrl === undefined) return { items: values, truncated: false, pagesRead };
+			const nextBase = nextPageBase(page.nextUrl, pageBase, page.items.length, start.perPage);
+			if (hasReachedPaginationLimit(options.limit, values.length) || (maxPages !== undefined && pagesRead >= maxPages)) {
+				return { items: values, truncated: true, next: nextBase, pagesRead };
+			}
+			nextUrl = this.resolvePaginationUrl(page.nextUrl);
+			pageBase = nextBase;
+			skip = 0;
 		}
-		return { items: values, truncated: false };
+		return { items: values, truncated: false, pagesRead };
 	}
 
-	private async fetchPaginationPage<T>(nextUrl: string, signal?: AbortSignal): Promise<{ data: T[]; headers: Headers }> {
-		return this.requestWithHeaders<T[]>("GET", this.resolvePaginationUrl(nextUrl), {
+	private async fetchPaginationPage<T>(nextUrl: string, signal: AbortSignal | undefined, assertItem: ((item: T, path: string) => void) | undefined): Promise<PaginationPage<T>> {
+		const response = await this.requestWithHeaders<T[]>("GET", this.resolvePaginationUrl(nextUrl), {
 			signal,
 			alreadyAbsolute: true,
 			validate: Array.isArray,
 		});
+		assertPaginationPageItems(response.data, assertItem, safePath(new URL(nextUrl)));
+		return { items: response.data, nextUrl: parseNextLink(response.headers.get("link")) };
 	}
 
 	async request<T>(
@@ -243,11 +297,13 @@ export class GitHubTransport {
 		const expectedBase = new URL(GITHUB_API_BASE_URL);
 		const expectedPrefix = `/repos/${encodeURIComponent(this.repository.owner)}/${encodeURIComponent(this.repository.repo)}/`;
 		const onExpectedHost = url.protocol === "https:" && url.host === expectedBase.host;
-		const withinRepository = url.pathname.startsWith(expectedPrefix);
+		const withinRepository = url.pathname.startsWith(expectedPrefix) || url.pathname === expectedPrefix.slice(0, -1);
 		const graphqlEndpoint = url.pathname === "/graphql";
 		const authenticatedUserEndpoint = url.pathname === "/user";
 		const issueSearchEndpoint = url.pathname === "/search/issues" && this.isAllowedIssueSearchUrl(url);
-		if (!onExpectedHost || (!withinRepository && !graphqlEndpoint && !authenticatedUserEndpoint && !issueSearchEndpoint)) {
+		// Narrow organization allowance: only the resolved owner's issue-type list, never other /orgs/* paths.
+		const organizationIssueTypesEndpoint = url.pathname === `/orgs/${encodeURIComponent(this.repository.owner)}/issue-types`;
+		if (!onExpectedHost || (!withinRepository && !graphqlEndpoint && !authenticatedUserEndpoint && !issueSearchEndpoint && !organizationIssueTypesEndpoint)) {
 			throw new GitHubApiError(`${label} left the resolved repository boundary.`, { code: ISSUEME_ERROR_CODES.GITHUB_BOUNDARY_VIOLATION, path: safePath(url) });
 		}
 	}
@@ -316,7 +372,7 @@ function buildGitHubRequestHeaders(url: URL, token: string, userAgent: string, h
 		"User-Agent": userAgent,
 		"X-GitHub-Api-Version": GITHUB_API_VERSION,
 	};
-	if (url.pathname === "/graphql") headers["GraphQL-Features"] = "sub_issues";
+	if (url.pathname === "/graphql") headers["GraphQL-Features"] = GITHUB_GRAPHQL_FEATURE_FLAGS.join(",");
 	if (hasBody) headers["Content-Type"] = "application/json";
 	return headers;
 }
@@ -381,22 +437,46 @@ function assertPaginationPageItems<T>(items: T[], assertItem: ((item: T, path: s
 	for (const item of items) assertItem(item, path);
 }
 
-function collectFilteredPaginationItems<T>(items: T[], currentCount: number, options: PaginationFilterOptions<T>): { items: T[]; truncated: boolean } {
+function collectFilteredPaginationItems<T>(items: T[], currentCount: number, skip: number, options: PaginationFilterOptions<T>): { items: T[]; stoppedAt?: number } {
 	const values: T[] = [];
-	for (const item of items) {
+	for (let index = skip; index < items.length; index += 1) {
+		const item = items[index];
 		if (options.filter && !options.filter(item)) continue;
-		if (hasReachedPaginationLimit(options.limit, currentCount + values.length)) return { items: values, truncated: true };
+		if (hasReachedPaginationLimit(options.limit, currentCount + values.length)) return { items: values, stoppedAt: index };
 		values.push(item);
 	}
-	return { items: values, truncated: false };
-}
-
-function hasAdditionalPageBeyondLimit(limit: number | undefined, count: number, nextUrl: string | undefined): boolean {
-	return nextUrl !== undefined && hasReachedPaginationLimit(limit, count);
+	return { items: values };
 }
 
 function hasReachedPaginationLimit(limit: number | undefined, count: number): boolean {
 	return limit !== undefined && count >= limit;
+}
+
+function parsePerPage(value: string | undefined): number {
+	const parsed = value === undefined ? Number.NaN : Number(value);
+	if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+	return DEFAULT_REST_PAGE_SIZE;
+}
+
+function normalizePaginationStartIndex(value: number | undefined): number {
+	if (value === undefined) return 0;
+	if (!Number.isSafeInteger(value) || value < 0) {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "pagination start must be a non-negative integer.");
+	}
+	return value;
+}
+
+/** GitHub next links carry the next page number; fall back to counting when a link omits it. */
+function nextPageBase(nextUrl: string, pageBase: number, pageLength: number, perPage: number): number {
+	let page: number | undefined;
+	try {
+		const raw = new URL(nextUrl, GITHUB_API_BASE_URL).searchParams.get("page");
+		page = raw !== null && /^\d+$/.test(raw) ? Number(raw) : undefined;
+	} catch {
+		page = undefined;
+	}
+	if (page !== undefined && Number.isSafeInteger(page) && page > 1) return (page - 1) * perPage;
+	return pageBase + pageLength;
 }
 
 const NEXT_LINK_PATTERN = /<([^<>]+)>;\s*rel="next"/u;

@@ -14,7 +14,7 @@
 - Display name: `IssueMe`
 - Exported extension function: `issueMeExtension`
 - Repository URL: `https://github.com/senad-d/IssueMe`
-- One-sentence pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents list/search, sync, create, update, add/edit/delete comments, label, assign, manage repository labels/milestones, update Projects v2 items, reopen, close, bulk-update explicit issue lists, inspect linked development, and inspect/link/reorder native sub-issues through structured Pi tools, with an optional IssueMe-only creator processing scope; native dependency/blocker links are documented as unsupported until GitHub exposes a stable API.
+- One-sentence pitch: IssueMe is an agent-friendly GitHub issue management layer that lets LLM agents list/search, sync, create, update, add/edit/delete comments, label, assign, manage repository labels/milestones, update Projects v2 items, reopen, close, bulk-update explicit issue lists, inspect linked development, and inspect/link/reorder native sub-issues through structured Pi tools, with an optional IssueMe-only creator processing scope; native blocked-by/blocking dependencies are managed through GitHub's documented REST endpoints.
 
 ## 3. Users and use cases
 
@@ -32,7 +32,7 @@
   - Close open issues with optional GitHub close reasons and remove their local issue files.
   - Apply guarded bulk updates to explicit issue-number lists.
   - Inspect, create, attach, remove, and reorder native GitHub sub-issue relationships.
-  - Avoid body-only dependency/blocker fallbacks; native dependency/blocker links remain unsupported until GitHub exposes a stable API.
+  - Inspect, add, and remove native blocked-by dependencies without body-only fallbacks.
   - Start issue workflows with `/issueme start [skill-path]` using an explicit or configured project-local skill file.
 - Non-goals:
   - No GitHub CLI.
@@ -77,7 +77,7 @@
 | Tool | `issueme_close_issue` | Close open issue and remove local file | Implemented with optional GitHub close reason; preserves the remote issue. |
 | Tool | `issueme_delete_issue` | Permanently delete one mistaken GitHub issue | Implemented with REST identity/creator preflight plus GraphQL `deleteIssue`; requires explicit irreversible intent, `confirmDelete: true`, non-PR target, and repository administrator permission. |
 | Tool | `issueme_bulk_update_issues` | Apply guarded bulk actions to explicit issue-number lists | Implemented sequentially with bounded per-issue results and no query-derived mutation targets. |
-| Unsupported | Native issue dependency/blocker tools | Manage native depends-on/blocked-by links | Not registered: no stable native GitHub REST/GraphQL API with documented list/add/remove semantics is available; no body-only fallback. |
+| Tool | `issueme_list_issue_dependencies`, `issueme_add_issue_dependency`, `issueme_remove_issue_dependency` | Inspect and manage native blocked-by/blocking links | Implemented over GitHub's REST dependency endpoints with open-issue, creator-scope, pull-request, and self-dependency guards; no body-only fallback. |
 | Event | Lifecycle only if needed | Status/cleanup | No background listeners, timers, sockets, or webhooks. |
 | UI | Config TUI | Configure non-secret settings | Implemented for TUI mode with safe non-TUI fallback. |
 | Resource | Project-local skill path | User-supplied workflow guide | No bundled skill; validated path must remain inside the trusted project; prompts use relative `@path` references rather than absolute local paths. |
@@ -160,7 +160,7 @@
   - `/issueme start [skill-path]` accepts project-relative paths or absolute paths only when they resolve inside the trusted project, uses configured `defaultSkillPath` when the argument is omitted, and sends project-relative skill references to the agent.
 - Decisions:
   - REST and GraphQL APIs are used directly; native sub-issues use GitHub GraphQL inspection/mutations.
-  - Native dependency/blocker links are documented as unsupported until GitHub exposes a stable API; no body-only fallback is provided.
+  - Native dependency tools use GitHub's REST `blocked_by`/`blocking` endpoints; no body-only fallback is provided.
   - No webhooks now.
   - No GitHub CLI.
   - Project-local IssueMe state is honored only in trusted projects.

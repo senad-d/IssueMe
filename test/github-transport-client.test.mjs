@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GITHUB_API_VERSION, GITHUB_DOCUMENTED_API_VERSIONS, GITHUB_GRAPHQL_FEATURE_FLAGS } from "../src/constants.ts";
 import { GitHubApiError, IssueMeError } from "../src/errors.ts";
 import { GitHubClient } from "../src/github/client.ts";
 import {
@@ -88,6 +89,30 @@ test("parseNextLink handles absent, ordered, relative, and malformed link header
 	assert.equal(parseNextLink('</repos/owner/repo/issues?page=2>; rel="next"'), "/repos/owner/repo/issues?page=2");
 	assert.equal(parseNextLink('<https://api.github.com/repos/owner/repo/issues?page=9>; rel="last"'), undefined);
 	assert.equal(parseNextLink('not a valid link header'), undefined);
+});
+
+test("GitHubTransport pins a documented REST API version and sends the sub_issues feature flag only to GraphQL", async () => {
+	const calls = [];
+	const transport = new GitHubTransport({
+		repository: REPOSITORY,
+		token: TOKEN,
+		fetchFn: async (input, init = {}) => {
+			const { url } = captureCall(calls, input, init);
+			if (url.pathname === "/graphql") return jsonResponse({ data: { viewer: { login: "octocat" } } });
+			return jsonResponse(issue(1));
+		},
+	});
+
+	await transport.request("GET", transport.repoPath("/issues/1"));
+	await transport.graphqlRequest("Viewer", "query Viewer { viewer { login } }", {});
+
+	assert.equal(GITHUB_API_VERSION, "2022-11-28");
+	assert.ok(GITHUB_DOCUMENTED_API_VERSIONS.includes(GITHUB_API_VERSION), "pinned REST version must be a documented supported version");
+	assert.equal(calls[0].headers["X-GitHub-Api-Version"], GITHUB_API_VERSION);
+	assert.equal(calls[0].headers["GraphQL-Features"], undefined);
+	assert.equal(calls[1].headers["X-GitHub-Api-Version"], GITHUB_API_VERSION);
+	assert.equal(calls[1].headers["GraphQL-Features"], GITHUB_GRAPHQL_FEATURE_FLAGS.join(","));
+	assert.ok(GITHUB_GRAPHQL_FEATURE_FLAGS.includes("sub_issues"));
 });
 
 test("GitHubTransport sends safe REST requests and maps malformed, GraphQL, and text errors", async () => {

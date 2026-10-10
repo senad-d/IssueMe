@@ -41,7 +41,7 @@ Every implementation task includes these requirements even when not repeated bel
 
 ### 1. Establish API compatibility and correct the dependency availability decision
 
-- [ ] Record supported API versions and feature requirements, and replace outdated dependency API unavailability claims.
+- [x] Record supported API versions and feature requirements, and replace outdated dependency API unavailability claims.
 
 #### Why
 
@@ -67,9 +67,17 @@ The README, previous expansion spec, and a registration test encode an outdated 
 - Current docs and tests no longer claim native dependency APIs do not exist, but still accurately state IssueMe's implementation status.
 - Any version change has regression coverage; unresolved compatibility blocks only the affected feature.
 
+#### Outcome (2026-10-09)
+
+- Matrix recorded in `docs/github-api-compatibility.md` with documented / mocked / live evidence levels per capability and an explicit unknowns list.
+- REST version decision: `2022-11-28` retained (documented until 2028-03-10). `GITHUB_DOCUMENTED_API_VERSIONS`, `GITHUB_API_VERSION_END_OF_SUPPORT`, and `GITHUB_GRAPHQL_FEATURE_FLAGS` were added to `src/constants.ts`; `test/github-transport-client.test.mjs` asserts the pinned header and feature flag.
+- README, `docs/tool-reference.md`, `docs/usage.md`, `docs/STRUCTURE.md`, `docs/PROJECT_DEFINITION_BRIEF.md`, `SECURITY.md`, and `CHANGELOG.md` now say dependency tools are not implemented yet although GitHub documents the endpoints. The historical decision in `specs/spec-issue-management-expansion-tasks.md` is annotated as superseded; its checkbox is unchanged.
+- `test/extension-registration.test.mjs` now asserts the current boundary (no dependency tools registered, no "no native API" claim, compatibility doc present) instead of permanent absence. No placeholder tools were registered.
+- Not done: live verification. Compatibility of the new endpoints under the pinned version is recorded as unverified; the earlier `401` backlog sync was not retried.
+
 ### 2. Add bounded continuation to discovery tools
 
-- [ ] Let callers resume truncated REST and GraphQL discovery results without removing per-call limits.
+- [x] Let callers resume truncated REST and GraphQL discovery results without removing per-call limits.
 
 #### Why
 
@@ -97,9 +105,17 @@ A truncation flag without continuation prevents complete triage and can hide rec
 - Every supported collection reports truthful continuation/completeness metadata; unsupported nested continuation has a documented retrieval alternative or explicit limitation.
 - Existing default calls and overview request budgets remain compatible.
 
+#### Outcome (2026-10-09)
+
+- New `src/github/continuation.ts`: opaque tokens bound to repository, collection, and a fingerprint of normalized filters with a checksum; REST positions are absolute raw indexes (page/offset derived from the current page size, so `limit` may change between calls), GraphQL positions are page cursor plus consumed-node offset. Tokens never carry URLs; forged, mismatched, malformed, or out-of-bounds tokens throw `continuation_token_invalid` before any request.
+- `GitHubTransport.paginateCollection` is the shared REST page loop (issue list, search, labels, milestones, assignees) and reports the exact resume index after filtered or partially consumed pages. Projects list, project fields, sub-issues, and development links resume from GitHub cursors; sub-issue/development-link count heuristics no longer mark resumed pages as truncated.
+- Eight discovery tools accept `after` and return `details.continuation` (`collection`, `complete`, `resumed`, `pagesRead`, `nextToken`); `issueme_list_sub_issues` refuses `after` with `refreshCache`. Overview is unchanged (one page per section, no `page`/`after`). Nested field options/iterations are documented as not paginated by GitHub; development-link pages deduplicate per page only.
+- Tests: `test/discovery-continuation.test.mjs` (codec failure modes, filtered multi-page traversal without skips/repeats for REST and GraphQL, limit changes between calls, tool-level token binding). Three query-shape assertions and the schema-budget drift baseline were updated deliberately (recorded baseline 3679 tokens for 30 tools; hard cap now per registered tool).
+- Docs: tool reference (Continuation section), public contracts, SECURITY, STRUCTURE, README, usage, CHANGELOG.
+
 ### 3. Add native dependency inspection and mutation
 
-- [ ] Implement `issueme_list_issue_dependencies`, `issueme_add_issue_dependency`, and `issueme_remove_issue_dependency`.
+- [x] Implement `issueme_list_issue_dependencies`, `issueme_add_issue_dependency`, and `issueme_remove_issue_dependency`.
 
 #### Why
 
@@ -125,9 +141,17 @@ Agents need to distinguish work decomposition from prerequisites and manage real
 - Tests prove ID resolution, direction, self-reference rejection, scope/state/PR guards, idempotency, and API refusal handling.
 - Documentation differentiates dependencies, related issues, and sub-issues, and no body-only fallback exists.
 
+#### Outcome (2026-10-09)
+
+- New `src/github/issue-dependencies-client.ts` and `src/tools/issue-dependencies.ts`; `GitHubClient` gained `listIssueDependencies`, `findIssueDependency` (bounded 10-page preflight), `addIssueDependency[ByIssueResponses]`, and `removeIssueDependency[ByIssueResponses]`.
+- Identity: the blocking issue's integer database `id` is resolved from its own current-repository REST record and sent as `issue_id`; numbers and node IDs are never used for the edge. Self-dependencies are refused before any request; both endpoints must be open, non-pull-request issues in creator scope (same policy as native sub-issues; no closed-issue exception was added).
+- Reads: both directions by default, per-direction limits/truncation, continuation for a single direction, foreign-repository members marked, out-of-scope members omitted and counted; 404/410 on the collection throws `github_issue_dependencies_unsupported`, never an empty list. No cache reads or writes.
+- Mutations: already-present/absent edges are success no-ops; GitHub 422 (cycle/validation) and unavailable-feature 404/410 answers return `result: error` with codes `github_issue_dependency_refused` / `github_issue_dependencies_unsupported`; malformed accepted responses are retry-safe `partial_success`; DELETE 404 after a found preflight is reported as an inferred no-op.
+- Registered, inventoried, contracted, smoke-covered, and documented (README, tool reference, usage, SECURITY, STRUCTURE, public contracts, available tools, compatibility matrix, project brief, CHANGELOG). Tests: `test/issue-dependencies-tool.test.mjs` (23 scenarios across helpers, list, add, remove, client). Live mutation behavior remains unverified.
+
 ### 4. Add read-only project item discovery
 
-- [ ] Implement `issueme_list_project_items` and `issueme_get_project_item` with current field values.
+- [x] Implement `issueme_list_project_items` and `issueme_get_project_item` with current field values.
 
 #### Why
 
@@ -152,9 +176,16 @@ Field-definition discovery does not reveal which issues are on a board or their 
 - Archived items, cleared fields, mixed-content boards, inaccessible content, and multi-page/nested results are handled truthfully.
 - Item IDs cannot retrieve unrelated repository issue content, and no cache or remote writes occur.
 
+#### Outcome (2026-10-09)
+
+- New `src/tools/project-items.ts`; `GitHubClient.listProjectV2Items` and `getProjectV2Item` over `ProjectV2.items`/`node(id)`/`Issue.projectItems` with typed `fieldValues` (text, number, date, single select with `optionId`, iteration with `iterationId`); label, milestone, assignee, repository, reviewer, and pull-request values are reported as `kind: unsupported` with their GraphQL type so set values are never mistaken for cleared ones. Absent values mean cleared or unset.
+- Content policy: only issue-backed items of the current repository within creator scope expose content; pull request, draft, foreign-repository, out-of-scope, and redacted/inaccessible items are counted and omitted in lists and refused in focused reads. Item IDs must belong to the selected project; closed issues are readable.
+- Continuation: items by cursor (`project_items`), nested field values by cursor per item (`project_item_field_values`); a resumed issue-number lookup resolves the item first, then reads by ID so a cursor never crosses connections. An issue with no item on the board is a valid empty result (`project_item_not_found`), including when the bounded 50-item lookup was truncated.
+- Registered after the project mutation tools, contracted, smoke-covered, bounded in tool details, and documented. Tests: `test/project-items-tool.test.mjs`. Live GraphQL field-value shapes remain documentation-verified only.
+
 ### 5. Define the closed-issue policy for project-only operations
 
-- [ ] Document and obtain approval for any narrowly scoped closed-issue exceptions needed by project maintenance.
+- [x] Document and obtain approval for any narrowly scoped closed-issue exceptions needed by project maintenance.
 
 #### Why
 
@@ -179,9 +210,37 @@ Completed work often needs a final board status or archival, but current project
 - Unrelated closed-issue protections remain unchanged and covered by regression tests if guards are changed.
 - New project mutation tasks have an explicit policy to enforce instead of inferring permission from this plan.
 
+#### Status (2026-10-09): blocked on approval; current protections retained
+
+Approval for a closed-issue exception has not been given, so the task stays unchecked and every project-only mutation shipped by Tasks 6 to 8 enforces the existing policy: the backing issue must be open, in the current repository, and in creator scope, verified immediately before mutation (`ensureIssueOpen` plus `assertProjectV2ItemTargetsIssue`). Closed issues are readable through Task 4's tools. No issue is reopened as a workaround.
+
+Proposed exception for review (not enforced):
+
+| Project-only action | Proposed allowed issue states | Rationale |
+| --- | --- | --- |
+| Field value update (`issueme_update_project_item`) | open and closed | Final board status (for example "Done") is usually set after closing; values are board metadata only. |
+| Field clear (`issueme_clear_project_item_field`) | open and closed | Same metadata-only scope as update. |
+| Item removal (`issueme_remove_issue_from_project`) | open and closed | Board membership cleanup after completion; the issue, its comments, and other boards are untouched. |
+| Archive / unarchive (`issueme_archive_project_item`) | open and closed | Archive is the documented way to retire completed work from a board without losing values. |
+| Item ordering (optional Task 17) | open only | Prioritization applies to active work. |
+
+Guards that would need action-specific handling if approved: `GitHubClient.updateProjectV2ItemField`, `removeProjectV2Item`, `clearProjectV2ItemField`, and `archiveProjectV2Item` call `ensureIssueOpen`; `assertProjectV2ItemTargetsIssue` throws `ClosedIssueMutationError` for closed content; `issueme_bulk_update_issues` `add_to_project` would stay open-only. The shared prompt guideline sentence about closed-issue mutations and `SECURITY.md` would gain a "project-only metadata" clause. Test matrix before relaxing: closed issue accepted for each listed action, still refused for add-to-project and all issue-content tools, creator scope and repository checks unchanged, bulk `add_to_project` unchanged, and `ClosedIssueMutationError` still raised for the issue tools in `test/tool-failure-semantics.test.mjs`.
+
+#### Approval record (2026-10-10)
+
+The maintainer approved the full table above (option "O1: approve all four rows") in the implementation session on 2026-10-10. Item ordering remains open-only and stays optional (Task 17).
+
+#### Outcome (2026-10-10)
+
+- Policy is explicit in code: `PROJECT_V2_ITEM_ISSUE_STATE_POLICY` in `src/github/projects-client.ts` maps `add_to_project` to `open_only` and `update_field`, `clear_field`, `remove_item`, `archive_item` to `open_or_closed`. `assertProjectV2ItemTargetsIssue` takes the policy (default `open_only`), and `GitHubClient` uses `ensureIssueForProjectItemMutation` so the four approved actions fetch the issue without the open-state guard while `addIssueToProjectV2` keeps `ensureIssueOpen`.
+- Tools: `issueme_update_project_item`, `issueme_clear_project_item_field`, `issueme_remove_issue_from_project`, and `issueme_archive_project_item` run the creator-scope preflight with `requireOpen: false`; repository, item identity, project membership, and creator-scope checks are unchanged. Bulk `add_to_project` and all issue-content tools are untouched.
+- Tests: `test/project-item-closed-issue-policy.test.mjs` (policy map, shared assertion default versus approved policy, closed acceptance for each action with no REST mutation or cache write, add/bulk-add refusal, creator-scope refusal, issue-content refusal); `test/project-item-maintenance-tool.test.mjs` closed case now asserts acceptance; `test/tool-integration.test.mjs` keeps the closed refusal list for the remaining tools; `test/tool-failure-semantics.test.mjs` asserts `ClosedIssueMutationError` for update/comment.
+- Docs: SECURITY, README, tool reference, public contracts, usage, STRUCTURE, live verification, contracts, and CHANGELOG record the exception and its limits.
+- Live-verified 2026-10-10 on the user board `issueme-testing` (run id `20261010063443`, issue #24 closed with `completed`): field update, archive/unarchive, clear, and remove all succeeded on the closed issue; `issueme_add_issue_to_project` and bulk `add_to_project` were refused with `closed_issue_mutation_refused`.
+
 ### 6. Add project item removal
 
-- [ ] Implement `issueme_remove_issue_from_project` without deleting the issue itself.
+- [x] Implement `issueme_remove_issue_from_project` without deleting the issue itself.
 
 #### Why
 
@@ -205,9 +264,14 @@ An accidentally added project item cannot currently be removed, and live verific
 - Confirmation, scope/state checks, safe no-op behavior, permissions, and uncertain settlement are tested.
 - The supported live project workflow no longer requires manual item removal.
 
+#### Outcome (2026-10-09)
+
+- `issueme_remove_issue_from_project` (`src/tools/project-item-maintenance.ts`, `GitHubClient.removeProjectV2Item`) requires `confirmRemove: true`, re-checks the open issue and creator scope, validates that the item belongs to the project, current repository, and issue, then calls `deleteProjectV2Item` and checks `deletedItemId`. An unresolvable item ID is reported as absent only when the issue's own project items prove the board no longer holds it; a different current item ID is refused with that ID, and a truncated lookup refuses rather than guesses. The issue, its comments, other boards, and the local cache are untouched.
+- Policy: the existing open-issue rule is enforced (Task 5 is unapproved). `docs/live-github-verification.md` now archives or removes the run item through IssueMe before closing run issues. Tests: `test/project-item-maintenance-tool.test.mjs`.
+
 ### 7. Add explicit project field clearing
 
-- [ ] Add a clear-field operation to the project tool surface.
+- [x] Add a clear-field operation to the project tool surface.
 
 #### Why
 
@@ -231,9 +295,13 @@ Setting text, number, date, status, or iteration does not provide a safe way to 
 - Already-empty fields, foreign fields/options, unsupported types, invalid combinations, and state policies are tested.
 - Existing field-setting calls remain backward compatible.
 
+#### Outcome (2026-10-09)
+
+- Focused `issueme_clear_project_item_field` (`GitHubClient.clearProjectV2ItemField`): validates the field node belongs to the project and has a clearable project-owned type (`TEXT`, `NUMBER`, `DATE`, `SINGLE_SELECT`, `ITERATION`; labels, assignees, milestone, repository, reviewers, linked PRs, and system fields are refused), validates the item against project/repository/issue/open state, preflights `fieldValueByName` so an already-clear field is a no-op, then runs `clearProjectV2ItemFieldValue` and reads the value back in the mutation payload; a read-back that still shows a value is retry-safe `partial_success`. The tool schema has no value inputs, so set-and-clear requests cannot be expressed. `issueme_update_project_item` is unchanged.
+
 ### 8. Add project item archive and unarchive
 
-- [ ] Implement an explicit archive/unarchive project item operation.
+- [x] Implement an explicit archive/unarchive project item operation.
 
 #### Why
 
@@ -256,9 +324,14 @@ Board cleanup should preserve project values when permanent removal is unnecessa
 - Already-archived/already-active outcomes, inaccessible items, identity mismatches, approved closed-state behavior, and settlement failures are tested.
 - Project readers expose the resulting archive state.
 
+#### Outcome (2026-10-09)
+
+- `issueme_archive_project_item` with `action: archive | unarchive` (`GitHubClient.setProjectV2ItemArchived`): the item validation query now returns `isArchived`, so already-matching states are no-ops without a mutation; otherwise `archiveProjectV2Item`/`unarchiveProjectV2Item` run and the returned `item.isArchived` must match the request or the result is retry-safe `partial_success`. Values are preserved; Task 4's readers expose `isArchived` per item. Same open-issue, repository, identity, and creator-scope guards as the other project-only operations.
+- Shared updates for Tasks 6 to 8: inventory, registration, contracts, smoke scenarios, schema budget (per-tool caps), README, tool reference, public contracts, available tools, SECURITY, STRUCTURE, compatibility matrix, CHANGELOG.
+
 ### 9. Add paginated comment reading and focused comment retrieval
 
-- [ ] Implement `issueme_list_issue_comments` and `issueme_get_comment` without requiring cache sync.
+- [x] Implement `issueme_list_issue_comments` and `issueme_get_comment` without requiring cache sync.
 
 #### Why
 
@@ -283,9 +356,15 @@ The issue summary shows five comments and the cache caps fetching at 100. Later 
 - A selected comment can be read by verified ID, including content continuation when needed.
 - Wrong-issue comments, closed-issue reads, empty threads, filters, truncation, and safe errors are covered.
 
+#### Outcome (2026-10-09)
+
+- New `src/tools/issue-comments.ts`; `GitHubClient.listIssueComments` (continuation-aware, `since`, bound to `issue_comments`) and `getIssueCommentForIssue` (ownership verified with the existing `commentBelongsToIssue` check; open or closed issues). The cache path still uses `listComments` with the 100-comment cap, and no read tool writes cache files.
+- `issueme_list_issue_comments` returns stable IDs, author, timestamps, URL, and a per-comment body window (`bodyLimit`, default 400, max 4000) with per-comment truncation flags, GitHub's total from the issue record, and `after` continuation, so comment 101 and later are reachable. `issueme_get_comment` returns up to `bodyLimit` (default 4000) characters and a body-continuation token (`readTextWindow` in `src/github/continuation.ts`) bound to the issue, comment ID, and `updated_at`, so an edited comment invalidates the token instead of returning a stale offset.
+- Pull-request numbers and out-of-scope issues are refused before any comment read; malformed members and GitHub failures throw. Tests: `test/issue-comments-tool.test.mjs` (130-comment traversal, since binding, empty threads, closed issues, ownership mismatch, version-bound continuation).
+
 ### 10. Add issue type discovery and existing-tool support
 
-- [ ] Implement `issueme_list_issue_types` and extend create/update/list/get for native issue types.
+- [x] Implement `issueme_list_issue_types` and extend create/update/list/get for native issue types.
 
 #### Why
 
@@ -311,9 +390,15 @@ Native Bug/Task/Feature classification is not equivalent to labels. Agents need 
 - Missing permissions, ignored writes, disabled/unknown types, and non-organization repositories have explicit tested outcomes.
 - Cache compatibility and repository/organization boundaries are preserved; no organization taxonomy mutation is introduced.
 
+#### Outcome (2026-10-09)
+
+- Discovery: `issueme_list_issue_types` (`src/tools/issue-types.ts`, `GitHubClient.listRepositoryIssueTypes`) resolves the owner account type through `GET /repos/{owner}/{repo}` and reads `GET /orgs/{owner}/issue-types` only for organization owners. The transport boundary now allows exactly the repository root and `/orgs/<resolved owner>/issue-types`; every other `/orgs/*` path is still refused (tested). User-owned repositories return `status: issue_types_unavailable` with no organization request; 404/410 throws `github_issue_types_unsupported`; disabled types are listed with `isEnabled: false`.
+- Existing tools: `issueme_create_issue` accepts `type`; `issueme_update_issue` accepts `type` or `clearType` (mutually exclusive); both verify the persisted type from the mutation response and return `partial_success` (`create_issue_type_not_applied` / `update_issue_type_not_applied`, `needsSync: false`, cache still written) when GitHub silently dropped the change. `issueme_list_issues` gained a `type` filter (REST `type` with `*`/`none`; search uses a `type:` qualifier and rejects wildcards). Issue summaries carry `issueType` (string, null, or absent); cache records carry `issue_type` with backward-compatible validation (absent, null, or a non-empty name) and the writer persists it.
+- No organization type create/update/delete was added. Tests: `test/issue-types.test.mjs`.
+
 ### 11. Add full issue timeline inspection
 
-- [ ] Implement `issueme_list_issue_timeline` as a bounded read-only history tool.
+- [x] Implement `issueme_list_issue_timeline` as a bounded read-only history tool.
 
 #### Why
 
@@ -337,9 +422,15 @@ Development-link inspection intentionally omits most issue history. Agents canno
 - Unknown events, deleted actors, missing optional metadata, large histories, and permission failures are handled safely.
 - Existing development-link behavior remains unchanged.
 
+#### Outcome (2026-10-09)
+
+- New `src/github/issue-timeline-client.ts` and `src/tools/issue-timeline.ts`; `GitHubClient.listIssueTimeline` reads `GET /issues/{n}/timeline` with continuation (`issue_timeline`, bound to the issue and the normalized `eventTypes` filter).
+- Each event becomes `event`, `actor` (or `actorDeleted`), `createdAt`, and a typed bounded `metadata` map for the modeled kinds: labeled/unlabeled, milestoned/demilestoned, renamed, assigned/unassigned, closed/reopened with `state_reason`, commented (comment ID and URL only, never the body), cross-referenced, issue type changes, sub-issue/parent/blocked-by/blocking edges, committed, referenced, review events, locks, and project-card events. Unfamiliar kinds are flagged and carry only the common fields; raw payloads are never emitted. Strings are capped at 200 characters.
+- Open and closed in-scope issues are readable; pull requests and out-of-scope issues are refused before the timeline request. `issueme_list_issue_development_links` is unchanged. Tests: `test/issue-timeline-tool.test.mjs`.
+
 ### 12. Add native related-issue relationships
 
-- [ ] Implement list/add/remove tools for GitHub's native `relates_to` relationships.
+- [x] Implement list/add/remove tools for GitHub's native `relates_to` relationships.
 
 #### Why
 
@@ -363,9 +454,14 @@ Some issues are related without being blockers or parent/child work. Body refere
 - Direction/symmetry behavior follows the documented API rather than assumptions.
 - Tests cover identities, pagination, scope/state guards, feature refusal, no-ops, and mutation settlement; no body fallback exists.
 
+#### Outcome (2026-10-09)
+
+- New `src/github/related-issues-client.ts` and `src/tools/related-issues.ts`; `GitHubClient.listRelatedIssues`, `findRelatedIssue`, `addRelatedIssue[ByIssueResponses]`, `removeRelatedIssue[ByIssueResponses]` over `GET/POST /issues/{n}/relates_to` and `DELETE .../relates_to/{issue_id}`, reusing the dependency identity helpers (database id, pull-request refusal, member validation) while keeping distinct error codes (`github_related_issues_unsupported`, `github_related_issue_refused`) and statuses.
+- Semantics: GitHub documents one `relates_to` collection per issue without stating symmetry, so IssueMe reports only the requested issue's collection and never assumes the reverse link. Live run 2026-10-10 (senad-d/IssueMe #21 ↔ #19): GitHub mirrors the link, the reverse side lists it immediately, and the timeline records `relates_to_added`/`relates_to_removed` without a related-issue payload. Both ends must be open, in-scope, non-pull-request issues (same policy as dependencies); self-relations are refused; already-present/absent links are no-ops; 422 and unavailable-feature answers are structured results; reads are cache-free and continuation-aware. Dependency and sub-issue relationships are untouched (tested). Tests: `test/related-issues-tool.test.mjs`.
+
 ### 13. Preserve close reasons in issue records and reads
 
-- [ ] Expose close reasons consistently through issue normalization, cache, and tool summaries.
+- [x] Expose close reasons consistently through issue normalization, cache, and tool summaries.
 
 #### Why
 
@@ -389,9 +485,16 @@ IssueMe can set a close reason, but its current issue record does not retain `st
 - Legacy cache files still load, and missing or unfamiliar reasons do not become fabricated defaults.
 - Reopening and closed-cache cleanup remain correct without additional overview requests.
 
+#### Outcome (2026-10-10)
+
+- `IssueStateReason` type; `GitHubIssueResponse.state_reason`, `IssueRecord.state_reason?: IssueStateReason | null`, `ToolIssueSummary.stateReason`. `normalizeIssueStateReason` keeps `completed`/`not_planned`/`duplicate`/`reopened`, preserves `null`, and omits unknown or missing values instead of inventing one. `issueResponseToSafeSummary` carries the same field for relationship summaries.
+- Store: `validateIssueRecordCore` accepts absent, `null`, or documented values (`issue_file_state_reason_invalid` otherwise); `orderIssueRecord` persists `state_reason` after `state`; legacy files without the field load unchanged.
+- Reads: `formatIssueSummary` prints `State: closed (completed)` / `(no recorded reason)`; `issueme_list_issues` rows show `[closed: not_planned]`; `issueme_close_issue` reports the recorded reason GitHub returned; `issueme_reopen_issue` and bulk results carry `stateReason: "reopened"`. The overview keeps its open-only single-page requests and unchanged rows; closed-issue cache removal is unchanged. No new tool.
+- Tests: `test/close-reasons.test.mjs` (normalization, cache persistence/legacy/invalid, list/get-refresh, close/reopen); docs, contracts, compatibility row, and CHANGELOG updated.
+
 ### 14. Extend bulk actions symmetrically
 
-- [ ] Extend `issueme_bulk_update_issues` with selected existing single-issue operations instead of adding more bulk tools.
+- [x] Extend `issueme_bulk_update_issues` with selected existing single-issue operations instead of adding more bulk tools.
 
 #### Why
 
@@ -415,9 +518,15 @@ Bulk add-label, assign, set-milestone, and close have no corresponding remove-la
 - Partial results identify exactly which items succeeded, failed, or were skipped, and retries do not repeat earlier work blindly.
 - Existing bulk actions and the schema/prompt budget remain compatible.
 
+#### Outcome (2026-10-10)
+
+- `BULK_ISSUE_ACTIONS` now enumerates `add_labels`, `remove_labels`, `assign`, `unassign`, `set_milestone`, `clear_milestone`, `add_to_project`, `close`, `reopen`; `BULK_ISSUE_ACTION_FIELDS` maps the new actions (`remove_labels`→`labels`, `unassign`→`assignees`, `clear_milestone`/`reopen`→none) so the field-parity test and `assertNoUnexpectedActionFields` reject stray fields such as `reason` on `reopen`.
+- Semantics mirror the single-issue tools: `remove_labels` accepts open or closed issues, issues one DELETE per label, treats missing labels as no-ops, and reports `partial_success` (`remote_partial_success`) when a later removal fails after earlier ones; `unassign` uses `removeAssignees` on open issues without assignable preflight; `clear_milestone` sends `{ milestone: null }` on open issues; `reopen` runs the per-issue creator check, returns a no-change success for already-open issues, PATCHes `state: open, state_reason: reopened`, and refreshes/writes the cache. Sequential execution, explicit unique numbers, per-run preflights, stop-on-error, and per-item settlement receipts are unchanged; reopen is never used as a repair step.
+- Tests: four new cases in `test/bulk-issues-tool.test.mjs`; matrix mock gained `removeLabel`/`removeAssignees`/`reopenIssue` and the bulk success matrix covers all nine actions; registration enum assertion updated; schema budget unchanged (description text unchanged). Docs, contracts, SECURITY, README, usage, STRUCTURE, live-verification, and CHANGELOG updated.
+
 ### 15. Verify the integrated core tool surface and documentation
 
-- [ ] Validate the completed core expansion and reconcile all public tool contracts and workflows.
+- [x] Validate the completed core expansion and reconcile all public tool contracts and workflows.
 
 #### Why
 
@@ -442,6 +551,14 @@ New tools must work together without drifting from inventory, documentation, saf
 - Registered tools, docs, contracts, schema budgets, and package contents agree.
 - Mocked workflow coverage demonstrates safe composition and cleanup; any live claims have explicit evidence.
 - The default task workflow stops here unless an optional task is explicitly selected.
+
+#### Outcome (2026-10-10)
+
+- `npm run validate` passes (typecheck, eslint, format, 493 tests, package check, packaged install smoke, handler smoke for all 45 tools, Pi lifecycle smoke). Inventory order, registrations, `src/contracts.ts`, `docs/public-contracts.md`, strict schemas, execution modes, enum/required assertions, and the per-tool description/schema budget are enforced by `test/extension-registration.test.mjs` and `test/tool-schema-budget.test.mjs`; every inventory tool has a handler smoke scenario.
+- Added `test/workflow-composition.test.mjs`: four mocked end-to-end workflows over one stateful fake GitHub (REST + GraphQL): dependency planning (create → link → list both directions → timeline → unlink → bulk close with recorded reasons), board discovery/add/update/get/clear/archive/list/remove with the issue and cache untouched until an explicit close, later-comment reading through list continuation and `get_comment` on open and closed issues, and issue-type discovery/typed create/refresh/list filter/timeline. Each workflow ends with cleanup and asserts no token leakage.
+- Documentation reconciled: README, `docs/tool-reference.md`, `docs/STRUCTURE.md`, and `docs/development.md` now say forty-five tools; `docs/live-github-verification.md` gained matrix rows for comment reads, issue types, timeline, dependencies/related issues, project item maintenance (replacing the stale "no remove-project-item tool" note), bulk symmetry, overview/continuation/close reasons, plus cleanup steps for dependency/related links; all new families are recorded as mocked-only and live-unverified. `docs/github-api-compatibility.md` states what is implemented versus deferred (project item position, custom fields, duplicate close reason) so deferred features are not advertised. CHANGELOG updated.
+- Live verification (2026-10-10, maintainer-authorized, run id `20261010063443` on `senad-d/IssueMe`, token from `.env`): every non-Projects family passed end to end with cleanup; see the run record in `docs/live-github-verification.md`. It exposed five defects that mocks could not catch, all fixed with regression tests: an invalid `Repository` fragment inside `ProjectV2Owner` that broke every Projects v2 query, a fragment nested inside the fields-by-id query body, GitHub's `NOT_FOUND` answer for deleted item ids, unknown `relates_to_*` timeline events, and a noisy open-issue state suffix. Projects v2 was first blocked because fine-grained tokens cannot access user-owned Projects; with a classic `project`-scoped token every Projects tool passed on the `issueme-testing` board, including the Task 5 closed-issue exception. All 45 tools were exercised live.
+- Not done by design: no commit/push. Tasks 16–22 were not selected.
 
 ## Optional track — explicit selection required
 

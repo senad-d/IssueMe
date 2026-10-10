@@ -5,10 +5,12 @@ import { Type, type Static } from "typebox";
 import { MAX_TOOL_ISSUES, MAX_TOOL_LABELS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
 import type { GitHubIssueListDirection, GitHubIssueListSort, GitHubIssueListState } from "../github/client.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
+import { normalizeIssueTypeFilter } from "../github/issues-client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { GitHubIssueResponse, IssueMeConfig, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalIsoDateOrTimestamp, normalizeOptionalTextFilter } from "../utils/validation.ts";
-import { createIssueMeRuntime, issueCreatorMatchesConfig, issueCreatorScopeLabel, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, createIssueMeRuntime, issueCreatorMatchesConfig, issueCreatorScopeLabel, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_ISSUE_LIST_LIMIT = 25;
 
@@ -21,11 +23,13 @@ const ListIssuesParams = Type.Object(
 		author: Type.Optional(Type.String({ description: "Alias for creator; do not conflict." })),
 		mentioned: Type.Optional(Type.String({ description: "Mentioned login." })),
 		milestone: Type.Optional(Type.String({ description: "Milestone number/title, none, or *." })),
+		type: Type.Optional(Type.String({ description: "Issue type name; * or none without query." })),
 		since: Type.Optional(Type.String({ description: "Updated at/after ISO date (YYYY-MM-DD) or timestamp with timezone." })),
 		sort: Type.Optional(StringEnum(["created", "updated", "comments"] as const, { description: "Sort field." })),
 		direction: Type.Optional(StringEnum(["asc", "desc"] as const, { description: "Sort direction." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_ISSUES, description: `Max results. Default ${DEFAULT_ISSUE_LIST_LIMIT}; max ${MAX_TOOL_ISSUES}.` })),
 		query: Type.Optional(Type.String({ description: "Text search; repo/is:issue are added." })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},
 	{ additionalProperties: false },
 );
@@ -39,11 +43,13 @@ interface NormalizedListIssuesParams {
 	creator?: string;
 	mentioned?: string;
 	milestone?: string;
+	type?: string;
 	since?: string;
 	sort?: GitHubIssueListSort;
 	direction?: GitHubIssueListDirection;
 	limit: number;
 	query?: string;
+	after?: string;
 }
 
 export function registerListIssuesTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -76,8 +82,9 @@ export function registerListIssuesTool(pi: ExtensionAPI, options: IssueMeToolReg
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(truncation ? { truncation } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatListIssuesText(runtime.repository, scoped, result.mode, summaries, result.truncated, creatorScope), details);
+				return toolText(appendContinuationLine(formatListIssuesText(runtime.repository, scoped, result.mode, summaries, result.truncated, creatorScope), result.continuation), details);
 			},
 		}),
 	);
@@ -104,10 +111,12 @@ function normalizeListIssuesParams(params: ListIssuesToolParams): NormalizedList
 	const creator = normalizeCreator(params.creator, params.author);
 	const mentioned = normalizeLoginLikeFilter(params.mentioned, "mentioned");
 	const milestone = normalizeOptionalFilter(params.milestone, "milestone");
+	const type = normalizeIssueTypeFilter(params.type);
 	const since = normalizeSince(params.since);
 	const sort = normalizeSort(params.sort);
 	const direction = normalizeDirection(params.direction);
 	const query = normalizeQuery(params.query);
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		state: normalizeState(params.state),
 		labels: normalizeLabels(params.labels),
@@ -115,11 +124,13 @@ function normalizeListIssuesParams(params: ListIssuesToolParams): NormalizedList
 		...(creator ? { creator } : {}),
 		...(mentioned ? { mentioned } : {}),
 		...(milestone ? { milestone } : {}),
+		...(type ? { type } : {}),
 		...(since ? { since } : {}),
 		...(sort ? { sort } : {}),
 		...(direction ? { direction } : {}),
 		limit: normalizeLimit(params.limit),
 		...(query ? { query } : {}),
+		...(after ? { after } : {}),
 	};
 }
 
@@ -257,5 +268,7 @@ function formatIssueLine(issue: ToolIssueSummary): string {
 	const labels = issue.labels.length ? issue.labels.join(", ") : "no labels";
 	const assignees = issue.assignees.length ? issue.assignees.join(", ") : "unassigned";
 	const creator = issue.creator ? `; by ${issue.creator}` : "";
-	return `- #${issue.number} [${issue.state}] ${issue.title} — ${labels}; ${assignees}${creator}; ${issue.html_url}`;
+	const type = typeof issue.issueType === "string" ? `; type ${issue.issueType}` : "";
+	const state = typeof issue.stateReason === "string" ? `${issue.state}: ${issue.stateReason}` : issue.state;
+	return `- #${issue.number} [${state}] ${issue.title} — ${labels}; ${assignees}${creator}${type}; ${issue.html_url}`;
 }

@@ -12,6 +12,7 @@ import type {
 	IssueRecord,
 	IssueRelationshipSummary,
 	IssueState,
+	IssueStateReason,
 	ToolIssueSummary,
 } from "../types.ts";
 
@@ -85,8 +86,12 @@ export function githubIssueToRecord(
 		closed_at: typeof issue.closed_at === "string" ? issue.closed_at : null,
 		synced_at: syncedAt,
 	};
+	const stateReason = normalizeIssueStateReason(issue.state_reason);
+	if (stateReason !== undefined) record.state_reason = stateReason;
 	const creator = normalizeIssueCreator(issue.user);
 	if (creator) record.creator = creator;
+	const issueType = normalizeIssueTypeName(issue.type);
+	if (issueType !== undefined) record.issue_type = issueType;
 	if (relationships.parent_issue !== undefined) record.parent_issue = relationships.parent_issue;
 	if (relationships.sub_issues !== undefined) record.sub_issues = relationships.sub_issues;
 	if (relationships.sub_issues_count !== undefined) record.sub_issues_count = relationships.sub_issues_count;
@@ -108,6 +113,8 @@ export function issueRecordToToolSummary(record: IssueRecord, localPath?: string
 		html_url: record.html_url,
 	};
 	if (record.creator) summary.creator = record.creator;
+	if (record.state_reason !== undefined) summary.stateReason = record.state_reason;
+	if (record.issue_type !== undefined) summary.issueType = record.issue_type;
 	if (localPath) summary.localPath = localPath;
 	if (record.parent_issue !== undefined) summary.parentIssue = record.parent_issue;
 	if (record.sub_issues !== undefined) summary.subIssues = [...record.sub_issues];
@@ -165,9 +172,10 @@ function issueSummaryHeaderLines(record: IssueRecord, bodyText: string): string[
 	const lines = [
 		`#${record.number} ${record.title}`,
 		`Repository: ${record.repository}`,
-		`State: ${record.state}`,
+		`State: ${formatIssueStateWithReason(record)}`,
 	];
 	if (record.creator) lines.push(`Creator: ${record.creator}`);
+	if (record.issue_type !== undefined) lines.push(`Type: ${record.issue_type ?? "none"}`);
 	lines.push(
 		`URL: ${record.html_url}`,
 		`Labels: ${record.labels.length ? record.labels.join(", ") : "none"}`,
@@ -299,6 +307,26 @@ function formatSubIssueSummary(record: IssueRecord): string {
 function formatSubIssueCount(total: number | undefined): string {
 	if (total === undefined) return "none";
 	return `${total} total`;
+}
+
+/** Documented reasons pass through, null stays null, and unknown or missing values are left absent rather than invented. */
+export function normalizeIssueStateReason(value: unknown): IssueStateReason | null | undefined {
+	if (value === null) return null;
+	if (value === "completed" || value === "not_planned" || value === "duplicate" || value === "reopened") return value;
+	return undefined;
+}
+
+/** Only a recorded reason is shown; GitHub reports `null` for ordinary open issues, which is not worth a suffix. */
+export function formatIssueStateWithReason(record: Pick<IssueRecord, "state" | "state_reason">): string {
+	if (typeof record.state_reason !== "string") return record.state;
+	return `${record.state} (${record.state_reason})`;
+}
+
+/** Only GitHub's documented shape counts: `null` means no type, an object with a name means typed, anything else is unknown. */
+function normalizeIssueTypeName(value: unknown): string | null | undefined {
+	if (value === null) return null;
+	if (!isObject(value)) return undefined;
+	return typeof value.name === "string" && value.name.trim() ? value.name.trim() : undefined;
 }
 
 function normalizeIssueCreator(value: unknown): string | undefined {

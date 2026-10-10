@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -804,4 +804,174 @@ test("issueme_bulk_update_issues closes issues with default reason and cleans ma
 	assert.deepEqual(result.details.bulkResults[0].changedFields, ["state"]);
 	assert.deepEqual(result.details.removedPaths, ["issues/8-default-close.json"]);
 	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues remove_labels mirrors single-issue removal on open and closed issues", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([
+		[1, githubIssue(1, "Open Labeled", { labels: ["bug", "triage"] })],
+		[2, githubIssue(2, "Closed Labeled", { labels: ["bug"], state: "closed", closed_at: "2026-06-27T01:00:00Z" })],
+	]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		calls.push({ method, path: url.pathname });
+		const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
+		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
+		const labelMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)\/labels\/([^/]+)$/);
+		if (labelMatch && method === "DELETE") {
+			const issue = issues.get(Number(labelMatch[1]));
+			const label = decodeURIComponent(labelMatch[2]);
+			if (!issue.labels.some((entry) => entry.name === label)) return jsonResponse({ message: "Label does not exist" }, { status: 404, statusText: "Not Found" });
+			issue.labels = issue.labels.filter((entry) => entry.name !== label);
+			return jsonResponse(issue.labels);
+		}
+		if (url.pathname.endsWith("/comments") && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected bulk remove_labels request: ${method} ${url.pathname}`);
+	});
+
+	await writeIssueRecord(projectRoot, config, issueRecord(1, "Open Labeled", { labels: ["bug", "triage"] }));
+	await writeIssueRecord(projectRoot, config, issueRecord(2, "Closed Labeled", { labels: ["bug"] }));
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "remove_labels", labels: ["bug", "missing"] });
+
+	assert.equal(result.details.result, "success");
+	assert.deepEqual(result.details.changedFields, ["labels"]);
+	assert.deepEqual(calls.filter((call) => call.method === "DELETE").map((call) => call.path), [
+		"/repos/owner/repo/issues/1/labels/bug",
+		"/repos/owner/repo/issues/1/labels/missing",
+		"/repos/owner/repo/issues/2/labels/bug",
+		"/repos/owner/repo/issues/2/labels/missing",
+	]);
+	assert.equal(calls.some((call) => call.path === "/repos/owner/repo/labels"), false);
+	assert.deepEqual(result.details.bulkResults.map((entry) => [entry.number, entry.status, entry.cacheUpdated]), [[1, "success", true], [2, "success", true]]);
+	assert.deepEqual(result.details.bulkResults[0].issue.labels, ["triage"]);
+	assert.deepEqual(result.details.bulkResults[0].paths, ["issues/1-open-labeled.json"]);
+	assert.deepEqual(result.details.bulkResults[1].removedPaths, ["issues/2-closed-labeled.json"]);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).filter((name) => name.endsWith(".json")), ["1-open-labeled.json"]);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues remove_labels reports partial success after earlier label removals", async () => {
+	const projectRoot = await tempProject();
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		if (url.pathname === "/repos/owner/repo/issues/3" && method === "GET") return jsonResponse(githubIssue(3, "Partial Remove", { labels: ["bug", "triage"] }));
+		if (url.pathname === "/repos/owner/repo/issues/3/labels/bug" && method === "DELETE") return jsonResponse([{ name: "triage" }]);
+		if (url.pathname === "/repos/owner/repo/issues/3/labels/triage" && method === "DELETE") return jsonResponse({ message: "Server Error" }, { status: 503, statusText: "Service Unavailable" });
+		throw new Error(`Unexpected bulk partial remove request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [3, 4], action: "remove_labels", labels: ["bug", "triage"] });
+
+	assert.equal(result.details.result, "partial_success");
+	assert.equal(result.details.status, "bulk_partial_success");
+	assert.deepEqual(result.details.bulkResults.map((entry) => [entry.number, entry.status]), [[3, "partial_success"], [4, "skipped"]]);
+	assert.equal(result.details.bulkResults[0].error.code, "github_api_error");
+	assert.equal(result.details.bulkResults[0].needsSync, true);
+	assert.equal(result.details.bulkResults[0].cacheUpdated, false);
+	assert.match(result.details.bulkResults[0].message, /Removed 1 label\(s\) from issue #3 before a later label removal failed/);
+	assert.equal(result.details.needsSync, true);
+	assertNoToken(result);
+});
+
+test("issueme_bulk_update_issues unassign and clear_milestone require open issues and reuse single-issue payloads", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([
+		[1, githubIssue(1, "Assigned", { assignees: ["octocat", "hubot"], milestone: { number: 4, title: "v1" } })],
+		[2, githubIssue(2, "Closed Assigned", { assignees: ["octocat"], state: "closed", closed_at: "2026-06-27T01:00:00Z" })],
+	]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
+		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
+		if (url.pathname === "/repos/owner/repo/issues/1/assignees" && method === "DELETE") {
+			const updated = githubIssue(1, "Assigned", { assignees: ["hubot"], milestone: { number: 4, title: "v1" } });
+			issues.set(1, updated);
+			return jsonResponse(updated);
+		}
+		if (url.pathname === "/repos/owner/repo/issues/1" && method === "PATCH") {
+			const updated = githubIssue(1, "Assigned", { assignees: ["hubot"], milestone: null });
+			issues.set(1, updated);
+			return jsonResponse(updated);
+		}
+		if (url.pathname.endsWith("/comments") && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected bulk unassign request: ${method} ${url.pathname}`);
+	});
+
+	const unassigned = await executeBulk(tool, projectRoot, { issueNumbers: [1, 2], action: "unassign", assignees: ["octocat"], continueOnError: true });
+	assert.equal(unassigned.details.result, "partial_success");
+	assert.deepEqual(unassigned.details.bulkResults.map((entry) => [entry.number, entry.status]), [[1, "success"], [2, "failed"]]);
+	assert.deepEqual(calls.find((call) => call.method === "DELETE").body, { assignees: ["octocat"] });
+	assert.equal(calls.some((call) => call.path.startsWith("/repos/owner/repo/assignees/")), false);
+	assert.deepEqual(unassigned.details.bulkResults[0].issue.assignees, ["hubot"]);
+	assert.deepEqual(unassigned.details.bulkResults[0].changedFields, ["assignees"]);
+	assert.equal(unassigned.details.bulkResults[1].error.code, "closed_issue_mutation_refused");
+	assert.equal(calls.filter((call) => call.method === "DELETE").length, 1);
+
+	calls.length = 0;
+	const cleared = await executeBulk(tool, projectRoot, { issueNumbers: [1], action: "clear_milestone" });
+	assert.equal(cleared.details.result, "success");
+	assert.deepEqual(calls.find((call) => call.method === "PATCH").body, { milestone: null });
+	assert.deepEqual(cleared.details.changedFields, ["milestone"]);
+	assert.equal(JSON.parse(await readFile(join(projectRoot, cleared.details.bulkResults[0].paths[0]), "utf8")).milestone, null);
+	assert.match(cleared.content[0].text, /Cleared milestone for issue #1/);
+
+	await assert.rejects(() => executeBulk(tool, projectRoot, { issueNumbers: [1], action: "clear_milestone", milestoneNumber: 4 }), (error) => error.code === "invalid_tool_input" && /milestoneNumber/.test(error.message));
+	await assert.rejects(() => executeBulk(tool, projectRoot, { issueNumbers: [1], action: "unassign", assignees: [] }), (error) => error.code === "invalid_tool_input");
+	assertNoToken({ unassigned, cleared });
+});
+
+test("issueme_bulk_update_issues reopen is explicit, treats open issues as no-ops, and refreshes cache after reopening", async () => {
+	const projectRoot = await tempProject();
+	const calls = [];
+	const issues = new Map([
+		[5, githubIssue(5, "Closed Five", { state: "closed", closed_at: "2026-06-27T01:00:00Z", state_reason: "completed" })],
+		[6, githubIssue(6, "Open Six")],
+		[7, githubIssue(7, "Foreign Seven", { state: "closed", closed_at: "2026-06-27T01:00:00Z", user: { login: "octocat" } })],
+	]);
+	const tool = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		const method = init.method ?? "GET";
+		const body = init.body === undefined ? undefined : JSON.parse(init.body);
+		calls.push({ method, path: url.pathname, body });
+		const issueMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)$/);
+		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
+		if (url.pathname === "/repos/owner/repo/issues/5" && method === "PATCH") {
+			const updated = githubIssue(5, "Closed Five", { state_reason: "reopened" });
+			issues.set(5, updated);
+			return jsonResponse(updated);
+		}
+		if (url.pathname.endsWith("/comments") && method === "GET") return jsonResponse([]);
+		throw new Error(`Unexpected bulk reopen request: ${method} ${url.pathname}`);
+	});
+
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [5, 6], action: "reopen" });
+
+	assert.equal(result.details.result, "success");
+	assert.deepEqual(calls.filter((call) => call.method === "PATCH").map((call) => [call.path, call.body]), [["/repos/owner/repo/issues/5", { state: "open", state_reason: "reopened" }]]);
+	assert.deepEqual(result.details.bulkResults.map((entry) => [entry.number, entry.status, entry.cacheUpdated, entry.changedFields]), [[5, "success", true, ["state"]], [6, "success", false, []]]);
+	assert.equal(result.details.bulkResults[0].issue.stateReason, "reopened");
+	assert.deepEqual(result.details.bulkResults[0].paths, ["issues/5-closed-five.json"]);
+	assert.match(result.details.bulkResults[1].message, /already open; no change/);
+	assert.deepEqual((await readdir(join(projectRoot, "issues"))).filter((name) => name.endsWith(".json")), ["5-closed-five.json"]);
+	assert.deepEqual(result.details.changedFields, ["state"]);
+
+	await assert.rejects(() => executeBulk(tool, projectRoot, { issueNumbers: [5], action: "reopen", reason: "completed" }), (error) => error.code === "invalid_tool_input" && /reason/.test(error.message));
+
+	const restricted = registerBulkTool(async (input, init = {}) => {
+		const url = new URL(input.toString());
+		if (url.pathname === "/repos/owner/repo/issues/7" && (init.method ?? "GET") === "GET") return jsonResponse(issues.get(7));
+		throw new Error(`Unexpected restricted reopen request: ${init.method} ${url.pathname}`);
+	}, restrictedConfig);
+	const refused = await executeBulk(restricted, projectRoot, { issueNumbers: [7], action: "reopen" });
+	assert.equal(refused.details.result, "error");
+	assert.equal(refused.details.bulkResults[0].status, "failed");
+	assert.equal(refused.details.bulkResults[0].error.code, "issue_creator_not_allowed");
+	assertNoToken({ result, refused });
 });

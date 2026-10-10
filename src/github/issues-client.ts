@@ -1,7 +1,8 @@
-import { GITHUB_API_BASE_URL } from "../constants.ts";
+import { GITHUB_API_BASE_URL, MAX_ISSUE_TYPE_NAME_CHARS } from "../constants.ts";
 import { GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError } from "../errors.ts";
-import type { GitHubCommentResponse, GitHubIssueResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
-import { normalizeOptionalIsoDateOrTimestamp, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger } from "../utils/validation.ts";
+import { normalizeIssueStateReason } from "../issues/format.ts";
+import type { GitHubCommentResponse, GitHubIssueResponse, GitHubIssueTypeResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, ToolIssueSummary } from "../types.ts";
+import { normalizeOptionalIsoDateOrTimestamp, normalizeOptionalLowercaseTextFilter, normalizeOptionalTrimmedText, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { normalizeGraphQLIssueCreator } from "./graphql-normalizers.ts";
 import type { GitHubIssueListDirection, GitHubIssueListFilters, GitHubIssueListSort, GitHubIssueListState, GitHubIssueSearchFilters, GitHubMilestoneListDirection, GitHubMilestoneListSort, GitHubMilestoneListState, GitHubRepositoryMilestoneListFilters, IssueUpdateInput } from "./client.ts";
 import { isObject } from "./shared.ts";
@@ -33,10 +34,53 @@ export function buildIssueListQuery(filters: GitHubIssueListFilters, limit: numb
 		creator: normalizeOptionalQueryValue(filters.creator),
 		mentioned: normalizeOptionalQueryValue(filters.mentioned),
 		milestone: normalizeOptionalQueryValue(filters.milestone),
+		type: normalizeIssueTypeFilter(filters.type),
 		since: normalizeIssueSinceFilter(filters.since),
 		sort: normalizeIssueListSort(filters.sort),
 		direction: normalizeIssueListDirection(filters.direction),
 	});
+}
+
+/** List mode accepts a type name plus GitHub's `*` (any type) and `none` (untyped) wildcards. */
+export function normalizeIssueTypeFilter(value: string | undefined): string | undefined {
+	const normalized = normalizeOptionalTrimmedText(value, "type", { oneLine: true, maxLength: MAX_ISSUE_TYPE_NAME_CHARS, nullByteMessage: "type must not contain null bytes." });
+	if (normalized === undefined) return undefined;
+	if (normalized === "*" || normalized === "none") return normalized;
+	return normalizeIssueTypeName(normalized);
+}
+
+export function normalizeIssueTypeName(value: string | undefined, field = "type"): string {
+	return normalizeRequiredTrimmedText(value, field, {
+		oneLine: true,
+		maxLength: MAX_ISSUE_TYPE_NAME_CHARS,
+		requiredMessage: `${field} must name an issue type.`,
+		emptyMessage: `${field} must name an issue type.`,
+		nullByteMessage: `${field} must not contain null bytes.`,
+		oneLineMessage: `${field} must be a one-line issue type name.`,
+		maxLengthMessage: `${field} must be ${MAX_ISSUE_TYPE_NAME_CHARS} characters or fewer.`,
+	});
+}
+
+/** GitHub documents that type changes are dropped silently without push access; a mismatch is reported, never assumed applied. */
+export function issueTypeNotAppliedError(requested: string | null, persisted: string | null | undefined): IssueMeError {
+	const requestedText = requested === null ? "no type" : `type "${requested}"`;
+	const persistedText = persisted === undefined ? "no type information" : persisted === null ? "no type" : `type "${persisted}"`;
+	return new IssueMeError(
+		ISSUEME_ERROR_CODES.ISSUE_TYPE_NOT_APPLIED,
+		`GitHub accepted the issue change but persisted ${persistedText} instead of the requested ${requestedText}; issue type changes require push access.`,
+		{ requestedType: requested, persistedType: persisted ?? null, needsSync: false },
+	);
+}
+
+export function issueTypeNameOf(issue: GitHubIssueResponse): string | null | undefined {
+	if (issue.type === null) return null;
+	if (!isObject(issue.type)) return undefined;
+	return typeof issue.type.name === "string" && issue.type.name.trim() ? issue.type.name.trim() : undefined;
+}
+
+export function assertGitHubIssueTypeDiscoveryResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubIssueTypeResponse & { id: number; name: string } {
+	if (isObject(value) && typeof value.id === "number" && Number.isSafeInteger(value.id) && value.id > 0 && typeof value.name === "string" && value.name.trim()) return;
+	throw githubDiscoveryResponseShapeError("issue type", path);
 }
 
 export function buildIssueSearchRequestQuery(repository: string, filters: GitHubIssueSearchFilters, limit: number | undefined): Record<string, string> {
@@ -54,6 +98,11 @@ export function buildIssueSearchRequestQuery(repository: string, filters: GitHub
 	if (mentioned) terms.push(`mentions:${quoteSearchQualifierValue(mentioned)}`);
 	const milestone = normalizeOptionalQueryValue(filters.milestone);
 	if (milestone) terms.push(`milestone:${quoteSearchQualifierValue(milestone)}`);
+	const type = normalizeIssueTypeFilter(filters.type);
+	if (type === "*" || type === "none") {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "type wildcards (* or none) are only supported without a text query; use a concrete issue type name with search.", { field: "type" });
+	}
+	if (type) terms.push(`type:${quoteSearchQualifierValue(type)}`);
 	const since = normalizeIssueSinceFilter(filters.since);
 	if (since) terms.push(`updated:>=${since}`);
 	return compactQuery({
@@ -97,7 +146,12 @@ export function assertGitHubAssigneeDiscoveryResponse(value: unknown, path = GIT
 	throw githubDiscoveryResponseShapeError("assignee", path);
 }
 
-function githubDiscoveryResponseShapeError(kind: "label" | "milestone" | "assignee", path: string): GitHubApiError {
+export function assertGitHubCommentDiscoveryResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubCommentResponse & { id: number } {
+	if (isObject(value) && typeof value.id === "number" && Number.isSafeInteger(value.id) && value.id > 0) return;
+	throw githubDiscoveryResponseShapeError("comment", path);
+}
+
+function githubDiscoveryResponseShapeError(kind: "label" | "milestone" | "assignee" | "comment" | "issue type", path: string): GitHubApiError {
 	return new GitHubApiError(`GitHub REST API returned a malformed ${kind} collection member.`, {
 		code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID,
 		path,
@@ -302,6 +356,8 @@ export function normalizePositiveMilestoneNumber(value: number | undefined, fiel
 export function issueResponseToSafeSummary(repository: string, issue: GitHubIssueResponse, fallbackNumber: number): ToolIssueSummary | undefined {
 	if (issue.state !== "open" && issue.state !== "closed") return undefined;
 	const creator = normalizeGraphQLIssueCreator(issue.user);
+	const issueType = issueTypeNameOf(issue);
+	const stateReason = normalizeIssueStateReason(issue.state_reason);
 	return {
 		repository,
 		number: typeof issue.number === "number" && Number.isSafeInteger(issue.number) ? issue.number : fallbackNumber,
@@ -311,5 +367,7 @@ export function issueResponseToSafeSummary(repository: string, issue: GitHubIssu
 		labels: [],
 		assignees: [],
 		html_url: typeof issue.html_url === "string" ? issue.html_url : `https://github.com/${repository}/issues/${fallbackNumber}`,
+		...(issueType !== undefined ? { issueType } : {}),
+		...(stateReason !== undefined ? { stateReason } : {}),
 	};
 }

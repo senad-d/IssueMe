@@ -108,7 +108,7 @@ test("Projects v2 query builders include expected operations, owners, and fragme
 	assert.match(userQuery, /user\(login: \$owner\)/);
 
 	assert.match(buildProjectV2FieldsByIdQuery(), /query IssueMeGetProjectV2FieldsById/);
-	assert.match(buildProjectV2FieldsByIdQuery(), /fields\(first: \$fieldsFirst\)/);
+	assert.match(buildProjectV2FieldsByIdQuery(), /fields\(first: \$fieldsFirst, after: \$fieldsAfter\)/);
 	assert.match(buildProjectV2FieldsByNumberQuery("repository"), /projectV2\(number: \$projectNumber\)/);
 	assert.match(buildProjectV2FieldsByNumberQuery("user"), /user\(login: \$owner\)/);
 	assert.match(buildProjectV2AddValidationQuery(), /query IssueMeValidateProjectV2ForAdd/);

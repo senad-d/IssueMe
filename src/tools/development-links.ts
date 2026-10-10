@@ -3,9 +3,10 @@ import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_DEVELOPMENT_LINKS } from "../constants.ts";
 import type { GitHubIssueDevelopmentLinksResult, NativeSubIssueSummary } from "../github/client.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import type { IssueMeToolDetails, ToolIssueDevelopmentLinkSummary, ToolIssueSummary } from "../types.ts";
 import { normalizeBoundedInteger, normalizePositiveSafeInteger } from "../utils/validation.ts";
-import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_DEVELOPMENT_LINK_LIMIT = 25;
 const DEVELOPMENT_LINK_LIMITATION = "GitHub development-link data comes from issue timeline events; standalone branches or private/cross-repository references may be absent unless GitHub exposes them to the token.";
@@ -14,6 +15,7 @@ const ListIssueDevelopmentLinksParams = Type.Object(
 	{
 		issueNumber: Type.Integer({ minimum: 1, description: "Issue number." }),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_DEVELOPMENT_LINKS, description: `Max timeline events. Default ${DEFAULT_DEVELOPMENT_LINK_LIMIT}; max ${MAX_TOOL_DEVELOPMENT_LINKS}.` })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same issue." })),
 	},
 	{ additionalProperties: false },
 );
@@ -23,6 +25,7 @@ type ListIssueDevelopmentLinksToolParams = Static<typeof ListIssueDevelopmentLin
 interface NormalizedListIssueDevelopmentLinksParams {
 	issueNumber: number;
 	limit: number;
+	after?: string;
 }
 
 export function registerListIssueDevelopmentLinksTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -40,19 +43,21 @@ export function registerListIssueDevelopmentLinksTool(pi: ExtensionAPI, options:
 				const normalized = normalizeListIssueDevelopmentLinksParams(params);
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "list_issue_development_links", signal, { requireOpen: false });
-				const result = await runtime.client.listIssueDevelopmentLinks(normalized.issueNumber, { limit: normalized.limit }, signal);
+				const result = await runtime.client.listIssueDevelopmentLinks(normalized.issueNumber, { limit: normalized.limit, after: normalized.after }, signal);
 				const creatorScope = issueCreatorScopeLabel(runtime.config);
 				const details = buildDevelopmentLinksDetails(runtime.repository, result, normalized, creatorScope);
-				return toolText(formatDevelopmentLinksText(runtime.repository, result, normalized, creatorScope), details);
+				return toolText(appendContinuationLine(formatDevelopmentLinksText(runtime.repository, result, normalized, creatorScope), result.continuation), details);
 			},
 		}),
 	);
 }
 
 function normalizeListIssueDevelopmentLinksParams(params: ListIssueDevelopmentLinksToolParams): NormalizedListIssueDevelopmentLinksParams {
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		issueNumber: normalizePositiveInteger(params.issueNumber, "issueNumber"),
 		limit: normalizeLimit(params.limit),
+		...(after ? { after } : {}),
 	};
 }
 
@@ -90,6 +95,7 @@ function buildDevelopmentLinksDetails(
 		truncated: result.truncated,
 		message: DEVELOPMENT_LINK_LIMITATION,
 		...(result.truncated ? { truncation: { developmentLinks: { shown: result.links.length, total: result.timelineEventCount, max: params.limit } } } : {}),
+		...(result.continuation ? { continuation: result.continuation } : {}),
 	};
 }
 
@@ -105,7 +111,7 @@ function formatDevelopmentLinksText(
 		"This tool is read-only; it does not fetch pull-request bodies or write local IssueMe cache files.",
 		result.links.length === 0 ? "No linked pull requests, commits, or development references were returned by GitHub for this issue." : undefined,
 		...result.links.map(formatDevelopmentLinkLine),
-		result.truncated ? `Development timeline inspection truncated at ${params.limit} event(s); rerun with a higher limit up to ${MAX_TOOL_DEVELOPMENT_LINKS} if needed.` : undefined,
+		result.truncated ? `Development timeline inspection truncated at ${params.limit} event(s); continue with the returned token or rerun with a higher limit up to ${MAX_TOOL_DEVELOPMENT_LINKS}. A pull request referenced by events on several pages appears on each page.` : undefined,
 		`Limitation: ${DEVELOPMENT_LINK_LIMITATION}`,
 	].filter(isDevelopmentLinkTextLine);
 	return lines.join("\n");

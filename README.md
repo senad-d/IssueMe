@@ -31,7 +31,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 
 - **GitHub API native:** no GitHub CLI dependency and no shell execution for GitHub issue operations.
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
-- **Agent tool suite:** registers thirty `issueme_*` tools for repository overview, issue, label, milestone, assignee, Projects v2, comment, sub-issue, development-link, permanent-deletion, and bulk workflows.
+- **Agent tool suite:** registers forty-five `issueme_*` tools for repository overview, issue, label, milestone, assignee, issue-type, Projects v2 (discovery, items, maintenance), comment, sub-issue, dependency, related-issue, timeline, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
 - **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels/reopen/confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
@@ -116,7 +116,7 @@ Requirements:
 
 - pi with Node.js 22.19.0 or newer.
 - A trusted project checkout.
-- `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access. Projects v2, native sub-issues, and linked-development inspection require the matching GitHub permissions/features.
+- `GH_TOKEN` or `GITHUB_TOKEN` with repository issue access. Projects v2, native sub-issues, and linked-development inspection require the matching GitHub permissions/features; see [GitHub token types](#github-token-types) for which token type reaches which boards.
 
 Source checkout:
 
@@ -173,11 +173,11 @@ IssueMe provides tools; your project `SKILL.md` should describe your team's issu
 
 ## Agent Tools
 
-IssueMe registers thirty `issueme_*` tools. The most common flow is:
+IssueMe registers forty-five `issueme_*` tools. The most common flow is:
 
 1. Orient: `issueme_get_overview` returns bounded summaries in one call, with no cache writes and at most five GitHub requests. Inspect section status; returned rows are not repository totals.
-2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_get_project_fields`, `issueme_list_sub_issues`, and `issueme_list_issue_development_links`. Sync only when local cache files are needed.
-3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update Projects v2 items, manage native sub-issues, or bulk-update a confirmed list of issue numbers.
+2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_get_project_fields`, `issueme_list_project_items`, `issueme_list_issue_comments`, `issueme_list_sub_issues`, `issueme_list_issue_dependencies`, `issueme_list_issue_timeline`, and `issueme_list_issue_development_links`. When a result is truncated, pass `details.continuation.nextToken` as `after` with the same filters to read the next page. Sync only when local cache files are needed.
+3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update/clear/archive/remove Projects v2 items, manage native sub-issues and blocked-by dependencies, or bulk-update a confirmed list of issue numbers.
 
 Use the detailed references when building agent workflows:
 
@@ -206,12 +206,32 @@ Token precedence:
 
 Tokens are read but never written to config, cache files, tool output, or logs. Full configuration, trust, local cache, and request-boundary details are in [`docs/configuration.md`](docs/configuration.md).
 
+### GitHub token types
+
+IssueMe accepts either kind of personal access token and behaves the same with both. The difference is what GitHub lets the token reach.
+
+| Token type | Grant | Covers | Cannot reach |
+| --- | --- | --- | --- |
+| Fine-grained personal access token | Repository permissions: Issues read and write, Metadata read. For organization boards add the organization permission Projects. | Every issue, comment, label, milestone, assignee, sub-issue, dependency, related-issue, timeline, development-link, issue-type, deletion, and bulk tool. Projects v2 boards owned by an organization. | Projects v2 boards owned by a user account. GitHub documents this as a limitation of fine-grained tokens, and no permission exists to grant it. |
+| Classic personal access token | Scopes `repo` and `project` (`read:project` is enough for read-only board discovery). | Everything above plus user-owned Projects v2 boards. | Nothing, but `repo` grants access to every repository the account can reach, so prefer the fine-grained token unless you need a user-owned board. |
+
+How the limitation shows up: with a fine-grained token the eight Projects v2 tools (`issueme_list_projects`, `issueme_get_project_fields`, `issueme_add_issue_to_project`, `issueme_update_project_item`, `issueme_list_project_items`, `issueme_get_project_item`, `issueme_remove_issue_from_project`, `issueme_clear_project_item_field`, `issueme_archive_project_item`) fail cleanly with `github_projects_v2_forbidden` ("Resource not accessible by personal access token"), and `issueme_get_overview` reports its projects section as unavailable while every other section still works. Nothing else degrades.
+
+Independent of token type:
+
+- `issueme_delete_issue` needs repository administrator permission.
+- Native issue types persist only with push access; without it GitHub drops the type silently and IssueMe reports `partial_success`.
+- Organization issue types need `read:org` on a classic token or the organization permission on a fine-grained token; user-owned repositories report `issue_types_unavailable`.
+- `/issueme info` reports whether a token is present and where it came from, never its value.
+
+Both token types were verified live against this repository on 2026-10-10; see [`docs/live-github-verification.md`](docs/live-github-verification.md).
+
 ---
 
 ## Safety Model
 
 - IssueMe honors project-local config, tokens, Git metadata, skills, and cache files only when pi reports the project as trusted.
-- Closed issues remain protected from normal mutations; `issueme_label_issue` (and bulk `add_labels`) may change their labels, while explicit `issueme_reopen_issue` and confirmed `issueme_delete_issue` provide the other documented exceptions.
+- Closed issues remain protected from content mutations; `issueme_label_issue` (and bulk `add_labels`/`remove_labels`) may change their labels, project-only board metadata tools (`issueme_update_project_item`, `issueme_clear_project_item_field`, `issueme_remove_issue_from_project`, `issueme_archive_project_item`) may change their board values or membership, and explicit `issueme_reopen_issue` (and bulk `reopen`) and confirmed `issueme_delete_issue` provide the other documented exceptions. Adding a closed issue to a board is still refused.
 - `issueme_delete_issue` permanently deletes only one exact issue after explicit intent, an irreversibility warning, and `confirmDelete: true`; it accepts open or closed issues, refuses pull requests, and requires GitHub repository administrator permission.
 - Repository label, milestone, and issue deletion require explicit actions and confirmation flags.
 - Bulk updates accept only explicit issue number lists, never unconstrained search targets.
@@ -221,7 +241,7 @@ Tokens are read but never written to config, cache files, tool output, or logs. 
 
 ### Issue dependencies and blockers
 
-IssueMe does not register issue dependency/blocker tools today. GitHub exposes native sub-issues and Projects v2 APIs, but there is no stable native GitHub REST or GraphQL API for issue dependency, blocker, or tracked-by links with documented list/add/remove semantics. IssueMe does not create body-only `blocked by`, `depends on`, or `tracked by` references as a silent fallback; use native sub-issues, Projects v2 fields, or GitHub's UI instead.
+GitHub documents native issue dependency endpoints (`blocked_by` and `blocking`) in its REST API, and IssueMe implements them as `issueme_list_issue_dependencies`, `issueme_add_issue_dependency`, and `issueme_remove_issue_dependency`. Both ends of an edge must be open issues in the current repository and creator scope, the blocking issue is identified by its GitHub database id, self-dependencies are refused, already-present or already-absent edges are no-ops, and GitHub cycle/validation refusals come back as structured `result: error` results. Dependencies are prerequisites, distinct from sub-issues (decomposition) and related issues; IssueMe does not create body-only `blocked by`, `depends on`, or `tracked by` references as a silent fallback. [`docs/github-api-compatibility.md`](docs/github-api-compatibility.md) records that this support is documentation-verified and mocked, not live-verified.
 
 Read [`SECURITY.md`](SECURITY.md) before installing in sensitive environments.
 
@@ -303,6 +323,7 @@ The publish script validates, versions, tags, publishes with `npm publish --acce
 - [`docs/tool-reference.md`](docs/tool-reference.md) - complete tool catalog, result semantics, examples, and limitations.
 - [`docs/development.md`](docs/development.md) - diagnostics, validation, smoke tests, and release workflow.
 - [`docs/public-contracts.md`](docs/public-contracts.md) - public command/tool contract matrix.
+- [`docs/github-api-compatibility.md`](docs/github-api-compatibility.md) - pinned REST version, documented versus tested GitHub capabilities, and open unknowns.
 - [`docs/STRUCTURE.md`](docs/STRUCTURE.md) - source layout and architecture boundaries.
 - [`docs/live-github-verification.md`](docs/live-github-verification.md) - opt-in live GitHub verification plan.
 - [`docs/pi-lifecycle-verification.md`](docs/pi-lifecycle-verification.md) - manual pi lifecycle checks.

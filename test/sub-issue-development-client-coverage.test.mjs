@@ -130,7 +130,7 @@ test("sub-issue query builders and input normalizers cover validation edges", ()
 	const query = buildSubIssueRelationshipsQuery();
 	assert.match(query, /query IssueMeListSubIssues/);
 	assert.match(query, /parent/);
-	assert.match(query, /subIssues\(first: \$first\)/);
+	assert.match(query, /subIssues\(first: \$first, after: \$after\)/);
 	assert.equal(normalizeSubIssueRelationshipLimit(undefined), 25);
 	assert.equal(normalizeSubIssueRelationshipLimit(1), 1);
 	assert.equal(normalizeSubIssueRelationshipLimit(100), 100);

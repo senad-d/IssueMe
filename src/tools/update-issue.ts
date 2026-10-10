@@ -3,9 +3,11 @@ import { Type } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES, MAX_TOOL_LABELS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
+import { issueTypeNameOf, normalizeIssueTypeName } from "../github/issues-client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
-import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, listChangedFields, normalizeIssueBody, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyTitle, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { issueTypeMismatch } from "./create-issue.ts";
+import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, listChangedFields, normalizeIssueBody, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyTitle, safeToolError, sanitizeGitHubLoginList, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const UpdateIssueParams = Type.Object(
 	{
@@ -16,6 +18,8 @@ const UpdateIssueParams = Type.Object(
 		assignees: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_ASSIGNEES, description: `Complete assignee set. Max ${MAX_TOOL_ASSIGNEES}.` })),
 		milestoneNumber: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number." })),
 		clearMilestone: Type.Optional(Type.Boolean({ description: "True clears milestone." })),
+		type: Type.Optional(Type.String({ description: "Native issue type name from issueme_list_issue_types." })),
+		clearType: Type.Optional(Type.Boolean({ description: "True clears the issue type." })),
 	},
 	{ additionalProperties: false },
 );
@@ -39,6 +43,7 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 					labels?: string[];
 					assignees?: string[];
 					milestone?: number | null;
+					type?: string | null;
 				} = {};
 				if (params.title !== undefined) updatePayload.title = requireNonEmptyTitle(params.title);
 				if (params.body !== undefined) updatePayload.body = normalizeIssueBody(params.body, "update");
@@ -49,6 +54,11 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				}
 				if (params.milestoneNumber !== undefined) updatePayload.milestone = params.milestoneNumber;
 				if (params.clearMilestone) updatePayload.milestone = null;
+				if (params.type !== undefined && params.clearType) {
+					throw new IssueMeError("invalid_tool_input", "Use type or clearType, not both.", { fields: ["type", "clearType"] });
+				}
+				if (params.type !== undefined) updatePayload.type = normalizeIssueTypeName(params.type);
+				if (params.clearType) updatePayload.type = null;
 
 				const changedFields = listChangedFields(updatePayload);
 				if (changedFields.length === 0) throw new IssueMeError("invalid_tool_input", "Provide at least one field to update.");
@@ -60,7 +70,25 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 				try {
 					updatedSummary = issueRecordToToolSummary(githubIssueToRecord(runtime.client.repository, updatedIssue, []));
 					const { summary, path, removedPaths } = await refreshAndCacheIssue(ctx, runtime, params.number, signal);
-					return toolText(`Updated issue #${params.number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`, {
+					const successText = `Updated issue #${params.number}: ${changedFields.join(", ")}\nLocal file: ${path ?? "removed"}`;
+					const typeMismatch = updatePayload.type === undefined ? undefined : issueTypeMismatch(updatePayload.type, issueTypeNameOf(updatedIssue));
+					if (typeMismatch) {
+						return toolText(`${successText}\n${typeMismatch.message}`, {
+							repository: runtime.repository,
+							creatorScope: issueCreatorScopeLabel(runtime.config),
+							issue: summary,
+							changedFields,
+							paths: path ? [path] : [],
+							removedPaths,
+							cacheUpdated: true,
+							needsSync: false,
+							result: "partial_success",
+							status: "update_issue_type_not_applied",
+							message: typeMismatch.message,
+							error: safeToolError(typeMismatch),
+						});
+					}
+					return toolText(successText, {
 						repository: runtime.repository,
 						creatorScope: issueCreatorScopeLabel(runtime.config),
 						issue: summary,

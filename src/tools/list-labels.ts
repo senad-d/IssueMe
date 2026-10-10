@@ -2,10 +2,11 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
+import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import { assertGitHubLabelDiscoveryResponse } from "../github/issues-client.ts";
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
 import { normalizeBoundedToolLimit, normalizeOptionalTextFilter } from "../utils/validation.ts";
-import { createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { appendContinuationLine, createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const DEFAULT_LABEL_LIST_LIMIT = Math.min(25, MAX_TOOL_LABELS);
 
@@ -14,6 +15,7 @@ const ListLabelsParams = Type.Object(
 		name: Type.Optional(Type.String({ description: "Name substring." })),
 		query: Type.Optional(Type.String({ description: "Name/description search." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_LABELS, description: `Max results. Default ${DEFAULT_LABEL_LIST_LIMIT}; max ${MAX_TOOL_LABELS}.` })),
+		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},
 	{ additionalProperties: false },
 );
@@ -24,6 +26,7 @@ interface NormalizedListLabelsParams {
 	name?: string;
 	query?: string;
 	limit: number;
+	after?: string;
 }
 
 export function registerListLabelsTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -53,8 +56,9 @@ export function registerListLabelsTool(pi: ExtensionAPI, options: IssueMeToolReg
 					cacheUpdated: false,
 					truncated: result.truncated,
 					...(result.truncated ? { truncation: { labels: { shown: labels.length, max: normalized.limit } } } : {}),
+					...(result.continuation ? { continuation: result.continuation } : {}),
 				};
-				return toolText(formatListLabelsText(runtime.repository, normalized, labels, result.truncated), details);
+				return toolText(appendContinuationLine(formatListLabelsText(runtime.repository, normalized, labels, result.truncated), result.continuation), details);
 			},
 		}),
 	);
@@ -63,10 +67,12 @@ export function registerListLabelsTool(pi: ExtensionAPI, options: IssueMeToolReg
 function normalizeListLabelsParams(params: ListLabelsToolParams): NormalizedListLabelsParams {
 	const name = normalizeOptionalTextFilter(params.name, "name");
 	const query = normalizeOptionalTextFilter(params.query, "query");
+	const after = normalizeContinuationTokenInput(params.after);
 	return {
 		...(name ? { name } : {}),
 		...(query ? { query } : {}),
 		limit: normalizeBoundedToolLimit(params.limit, { max: MAX_TOOL_LABELS, defaultValue: DEFAULT_LABEL_LIST_LIMIT }),
+		...(after ? { after } : {}),
 	};
 }
 

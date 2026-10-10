@@ -31,6 +31,9 @@ export interface TokenStatus {
 
 export type IssueState = "open" | "closed";
 
+/** GitHub's documented state_reason values; null means GitHub reported no reason, absent means unknown or never recorded. */
+export type IssueStateReason = "completed" | "not_planned" | "duplicate" | "reopened";
+
 export interface IssueCommentRecord {
 	id: number;
 	author: string;
@@ -54,11 +57,15 @@ export interface IssueRecord {
 	number: number;
 	title: string;
 	state: IssueState;
+	/** Close/reopen reason as GitHub reported it; absent in records written before reason support. */
+	state_reason?: IssueStateReason | null;
 	creator?: string;
 	body: string;
 	labels: string[];
 	assignees: string[];
 	milestone: string | null;
+	/** Native issue type name; null when GitHub reports no type, absent in records written before type support. */
+	issue_type?: string | null;
 	parent_issue?: IssueRelationshipSummary | null;
 	sub_issues?: IssueRelationshipSummary[];
 	sub_issues_count?: number;
@@ -138,10 +145,13 @@ export interface GitHubMilestoneResponse {
 }
 
 export interface GitHubIssueResponse {
+	id?: unknown;
 	node_id?: unknown;
 	number?: unknown;
+	repository_url?: unknown;
 	title?: unknown;
 	state?: unknown;
+	state_reason?: unknown;
 	user?: unknown;
 	body?: unknown;
 	labels?: unknown;
@@ -158,6 +168,24 @@ export interface GitHubIssueResponse {
 	closed_at?: unknown;
 	comments?: unknown;
 	pull_request?: unknown;
+	type?: unknown;
+}
+
+export interface GitHubIssueTypeResponse {
+	id?: unknown;
+	node_id?: unknown;
+	name?: unknown;
+	description?: unknown;
+	color?: unknown;
+	is_enabled?: unknown;
+}
+
+export interface ToolIssueTypeSummary {
+	id: number;
+	name: string;
+	description?: string;
+	color?: string;
+	isEnabled?: boolean;
 }
 
 export interface GitHubCommentResponse {
@@ -188,11 +216,26 @@ export interface ToolIssueSummary {
 	commentsFetchLimit?: number;
 	updatedAt?: string;
 	milestone?: { number: number; title: string } | null;
+	issueType?: string | null;
+	stateReason?: IssueStateReason | null;
 }
 
 export interface ToolCommentSummary {
 	id?: number;
 	html_url?: string;
+}
+
+/** Bounded comment content for read tools; `body` is a window of the full text when `bodyTruncated` is true. */
+export interface ToolIssueCommentSummary {
+	id: number;
+	author: string;
+	createdAt: string;
+	updatedAt: string;
+	html_url: string;
+	body: string;
+	bodyLength: number;
+	bodyTruncated: boolean;
+	bodyOffset?: number;
 }
 
 export interface ToolLabelSummary {
@@ -283,11 +326,65 @@ export interface ToolIssueDevelopmentLinkSummary {
 	isDraft?: boolean;
 }
 
+export type ToolProjectItemFieldValueKind = "text" | "number" | "date" | "single_select" | "iteration" | "unsupported";
+
+/** One current field value on a Projects v2 item; absent fields have no value (cleared or never set). */
+export interface ToolProjectItemFieldValueSummary {
+	fieldId: string;
+	name: string;
+	kind: ToolProjectItemFieldValueKind;
+	dataType?: string;
+	/** GraphQL value type name, reported for unsupported kinds so the field is not mistaken for empty. */
+	valueType?: string;
+	text?: string;
+	number?: number;
+	date?: string;
+	optionId?: string;
+	optionName?: string;
+	iterationId?: string;
+	iterationTitle?: string;
+	startDate?: string;
+	duration?: number;
+}
+
 export interface ToolProjectItemSummary {
 	id: string;
 	type?: string;
 	project?: ToolProjectSummary;
 	issue?: IssueRelationshipSummary;
+	isArchived?: boolean;
+	createdAt?: string;
+	updatedAt?: string;
+	fieldValues?: ToolProjectItemFieldValueSummary[];
+	fieldValuesCount?: number;
+	fieldValuesTruncated?: boolean;
+}
+
+/** One bounded timeline event; `metadata` holds only the typed fields IssueMe recognizes for that event kind. */
+export interface ToolIssueTimelineEventSummary {
+	event: string;
+	id?: number;
+	actor?: string;
+	actorDeleted?: boolean;
+	createdAt?: string;
+	metadata?: Record<string, string | number | boolean | null>;
+	/** True when IssueMe does not model the event kind; only common fields are returned. */
+	unfamiliar?: boolean;
+}
+
+/** One native related-issue member; `id` is the GitHub database id used by relates_to mutations. */
+export interface ToolRelatedIssueSummary extends IssueRelationshipSummary {
+	id?: number;
+	repository?: string;
+}
+
+export type IssueDependencyDirection = "blocked_by" | "blocking";
+
+/** One native dependency edge member; `id` is the GitHub database id used by dependency mutations. */
+export interface ToolIssueDependencySummary extends IssueRelationshipSummary {
+	direction: IssueDependencyDirection;
+	id?: number;
+	repository?: string;
 }
 
 export interface ToolFileActionSummary {
@@ -341,6 +438,15 @@ export interface ToolOverviewMetadata {
 	sections: Record<OverviewSectionName, ToolOverviewSection>;
 }
 
+export interface ToolContinuationSummary {
+	collection: string;
+	/** True when the collection was exhausted; false with a nextToken means more pages exist, false without one means GitHub exposes no further page. */
+	complete: boolean;
+	resumed: boolean;
+	pagesRead: number;
+	nextToken?: string;
+}
+
 export type IssueMeToolResult = "success" | "partial_success" | "error";
 
 export interface IssueMeToolBaseDetails {
@@ -353,11 +459,18 @@ export interface IssueMeToolBaseDetails {
 	labels?: ToolLabelSummary[];
 	milestones?: ToolMilestoneSummary[];
 	assignees?: ToolAssigneeSummary[];
+	issueTypes?: ToolIssueTypeSummary[];
 	projects?: ToolProjectSummary[];
 	project?: ToolProjectSummary;
 	projectFields?: ToolProjectFieldSummary[];
 	projectItem?: ToolProjectItemSummary;
+	projectItems?: ToolProjectItemSummary[];
 	developmentLinks?: ToolIssueDevelopmentLinkSummary[];
+	timeline?: ToolIssueTimelineEventSummary[];
+	dependencies?: ToolIssueDependencySummary[];
+	dependency?: ToolIssueDependencySummary;
+	relatedIssues?: ToolRelatedIssueSummary[];
+	relatedIssue?: ToolRelatedIssueSummary;
 	bulkResults?: ToolBulkIssueResultSummary[];
 	counts?: Record<string, number>;
 	paths?: string[];
@@ -366,10 +479,12 @@ export interface IssueMeToolBaseDetails {
 	invalidFiles?: InvalidIssueFileDiagnostic[];
 	changedFields?: string[];
 	comment?: ToolCommentSummary;
+	comments?: ToolIssueCommentSummary[];
 	cacheUpdated?: boolean;
 	needsSync?: boolean;
 	truncated?: boolean;
 	truncation?: Record<string, unknown>;
+	continuation?: ToolContinuationSummary;
 	status?: string;
 	message?: string;
 	error?: SafeToolError;
