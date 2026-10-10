@@ -229,8 +229,9 @@ function buildListCommentsDetails(
 }
 
 function formatListCommentsText(repository: string, issue: ToolIssueSummary, comments: ToolIssueCommentSummary[], result: GitHubIssueCommentListResult, params: NormalizedListIssueCommentsParams): string {
+	const since = params.since ? ` (updated since ${params.since})` : "";
 	const lines = [
-		`Comments for ${repository}#${issue.number} [${issue.state}] ${issue.title}: ${comments.length} returned${params.since ? ` (updated since ${params.since})` : ""}.`,
+		`Comments for ${repository}#${issue.number} [${issue.state}] ${issue.title}: ${comments.length} returned${since}.`,
 		`Limit: ${params.limit}; bodyLimit: ${params.bodyLimit} chars per comment. ${READ_ONLY_NOTE}`,
 		"",
 		comments.length === 0 ? "No comments were returned for this request." : undefined,

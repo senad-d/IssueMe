@@ -267,10 +267,17 @@ function canonicalize(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(canonicalize);
 	if (!isObject(value)) return value;
 	const output: Record<string, unknown> = {};
-	for (const key of Object.keys(value).sort()) {
+	for (const key of Object.keys(value).sort(compareCanonicalKeys)) {
 		const child = value[key];
 		if (child === undefined) continue;
 		output[key] = canonicalize(child);
 	}
 	return output;
+}
+
+/** Preserve version-1 UTF-16 key ordering; locale collation would invalidate existing token fingerprints. */
+function compareCanonicalKeys(left: string, right: string): number {
+	if (left < right) return -1;
+	if (left > right) return 1;
+	return 0;
 }

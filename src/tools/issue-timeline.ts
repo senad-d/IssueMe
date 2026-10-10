@@ -133,6 +133,7 @@ function formatTimelineEventLine(event: ToolIssueTimelineEventSummary): string {
 	const actor = event.actor ?? (event.actorDeleted ? "deleted user" : "unknown actor");
 	const when = event.createdAt ?? "unknown time";
 	const metadata = event.metadata ? Object.entries(event.metadata).map(([key, value]) => `${key}=${String(value)}`).join(", ") : "";
-	const suffix = event.unfamiliar ? " [unfamiliar event type; details omitted]" : metadata ? `: ${metadata}` : "";
+	const metadataSuffix = metadata ? `: ${metadata}` : "";
+	const suffix = event.unfamiliar ? " [unfamiliar event type; details omitted]" : metadataSuffix;
 	return `- ${when} ${event.event} by ${actor}${suffix}`;
 }

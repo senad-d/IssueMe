@@ -223,7 +223,7 @@ test("configuration TUI renderer sanitizes invalid in-memory data before plain-t
 		const lines = renderConfigTuiSnapshot("/tmp/issueme-project", config, 120, state);
 		assertNoTerminalControls(lines);
 		assertVisibleLineBounds(lines, 120);
-		assert.match(lines.join("\n"), /�/);
+		assert.match(lines.join("\n"), /\uFFFD/);
 	}
 });
 

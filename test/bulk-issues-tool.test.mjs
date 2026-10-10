@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { writeIssueRecord } from "../src/issues/store.ts";
 import { registerBulkIssueOperationsTool } from "../src/tools/bulk-issues.ts";
@@ -813,7 +814,9 @@ test("issueme_bulk_update_issues remove_labels mirrors single-issue removal on o
 		[1, githubIssue(1, "Open Labeled", { labels: ["bug", "triage"] })],
 		[2, githubIssue(2, "Closed Labeled", { labels: ["bug"], state: "closed", closed_at: "2026-06-27T01:00:00Z" })],
 	]);
+	let removalInFlight = false;
 	const tool = registerBulkTool(async (input, init = {}) => {
+		assert.equal(removalInFlight, false, "a previous label removal must settle before any later request starts");
 		const url = new URL(input.toString());
 		const method = init.method ?? "GET";
 		calls.push({ method, path: url.pathname });
@@ -821,6 +824,9 @@ test("issueme_bulk_update_issues remove_labels mirrors single-issue removal on o
 		if (issueMatch && method === "GET") return jsonResponse(issues.get(Number(issueMatch[1])));
 		const labelMatch = url.pathname.match(/^\/repos\/owner\/repo\/issues\/(\d+)\/labels\/([^/]+)$/);
 		if (labelMatch && method === "DELETE") {
+			removalInFlight = true;
+			await delay(5);
+			removalInFlight = false;
 			const issue = issues.get(Number(labelMatch[1]));
 			const label = decodeURIComponent(labelMatch[2]);
 			if (!issue.labels.some((entry) => entry.name === label)) return jsonResponse({ message: "Label does not exist" }, { status: 404, statusText: "Not Found" });
@@ -854,17 +860,21 @@ test("issueme_bulk_update_issues remove_labels mirrors single-issue removal on o
 
 test("issueme_bulk_update_issues remove_labels reports partial success after earlier label removals", async () => {
 	const projectRoot = await tempProject();
+	const removedLabels = [];
 	const tool = registerBulkTool(async (input, init = {}) => {
 		const url = new URL(input.toString());
 		const method = init.method ?? "GET";
+		if (method === "DELETE") removedLabels.push(decodeURIComponent(url.pathname.split("/").at(-1)));
 		if (url.pathname === "/repos/owner/repo/issues/3" && method === "GET") return jsonResponse(githubIssue(3, "Partial Remove", { labels: ["bug", "triage"] }));
+		if (url.pathname === "/repos/owner/repo/issues/3/labels/missing" && method === "DELETE") return jsonResponse({ message: "Not Found" }, { status: 404, statusText: "Not Found" });
 		if (url.pathname === "/repos/owner/repo/issues/3/labels/bug" && method === "DELETE") return jsonResponse([{ name: "triage" }]);
 		if (url.pathname === "/repos/owner/repo/issues/3/labels/triage" && method === "DELETE") return jsonResponse({ message: "Server Error" }, { status: 503, statusText: "Service Unavailable" });
 		throw new Error(`Unexpected bulk partial remove request: ${method} ${url.pathname}`);
 	});
 
-	const result = await executeBulk(tool, projectRoot, { issueNumbers: [3, 4], action: "remove_labels", labels: ["bug", "triage"] });
+	const result = await executeBulk(tool, projectRoot, { issueNumbers: [3, 4], action: "remove_labels", labels: ["missing", "bug", "triage", "later"] });
 
+	assert.deepEqual(removedLabels, ["missing", "bug", "triage"], "later labels must not start after a failure, and missing labels must not count as successful removals");
 	assert.equal(result.details.result, "partial_success");
 	assert.equal(result.details.status, "bulk_partial_success");
 	assert.deepEqual(result.details.bulkResults.map((entry) => [entry.number, entry.status]), [[3, "partial_success"], [4, "skipped"]]);

@@ -152,6 +152,15 @@ test("issue record validation rejects unsafe schema, identity, comment, URL, tim
 	for (const [fileName, value, reason] of cases) await assertInvalidRecordReason(projectRoot, fileName, value, reason);
 });
 
+test("issue cache validation keeps identity diagnostics ahead of content diagnostics", async () => {
+	const projectRoot = await tempProject();
+	const invalidContent = { body: 1, labels: [""], assignees: ["bad_login"], milestone: "", issue_type: 2 };
+	await assertInvalidRecordReason(projectRoot, "1-state.json", record(1, "State", { ...invalidContent, state_reason: "unknown" }), "issue_file_state_reason_invalid");
+	await assertInvalidRecordReason(projectRoot, "2-creator.json", record(2, "Creator", { ...invalidContent, creator: "bad_login" }), "issue_file_creator_invalid");
+	await assertInvalidRecordReason(projectRoot, "3-body.json", record(3, "Body", invalidContent), "issue_file_body_invalid");
+	await assertInvalidRecordReason(projectRoot, "4-labels.json", record(4, "Labels", { ...invalidContent, body: "valid" }), "issue_file_labels_invalid");
+});
+
 test("issue lookup resolves numbers, filenames, slugs, titles, and ambiguous matches deterministically", async () => {
 	const projectRoot = await tempProject();
 	const alpha = record(1, "Alpha Target");

@@ -86,6 +86,7 @@ test("timeline normalizers produce bounded typed metadata, flag unfamiliar event
 	const long = normalizeTimelineEventSummary({ event: "renamed", rename: { from: "x".repeat(300), to: "y" } });
 	assert.equal(long.metadata.from.length, 200);
 	assert.deepEqual(normalizeTimelineEventTypes([" Labeled ", "closed", "labeled"]), ["closed", "labeled"]);
+	assert.deepEqual(normalizeTimelineEventTypes(["SUB_ISSUE_REMOVED", "sub_issue_added", "closed", "sub_issue_added"]), ["closed", "sub_issue_added", "sub_issue_removed"]);
 	assert.equal(normalizeTimelineEventTypes(undefined), undefined);
 	assert.equal(normalizeTimelineEventTypes([" "]), undefined);
 	assert.throws(() => normalizeTimelineEventTypes(["not a name"]), (error) => error instanceof IssueMeError && error.safeDetails.field === "eventTypes");

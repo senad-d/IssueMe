@@ -64,7 +64,8 @@ export function normalizeIssueTypeName(value: string | undefined, field = "type"
 /** GitHub documents that type changes are dropped silently without push access; a mismatch is reported, never assumed applied. */
 export function issueTypeNotAppliedError(requested: string | null, persisted: string | null | undefined): IssueMeError {
 	const requestedText = requested === null ? "no type" : `type "${requested}"`;
-	const persistedText = persisted === undefined ? "no type information" : persisted === null ? "no type" : `type "${persisted}"`;
+	const persistedTypeText = persisted === null ? "no type" : `type "${persisted}"`;
+	const persistedText = persisted === undefined ? "no type information" : persistedTypeText;
 	return new IssueMeError(
 		ISSUEME_ERROR_CODES.ISSUE_TYPE_NOT_APPLIED,
 		`GitHub accepted the issue change but persisted ${persistedText} instead of the requested ${requestedText}; issue type changes require push access.`,

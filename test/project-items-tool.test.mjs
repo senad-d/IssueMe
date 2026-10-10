@@ -107,6 +107,35 @@ test("project item normalizers classify content and parse typed field values wit
 	assert.equal(cleared.item.fieldValuesTruncated, undefined);
 });
 
+test("project item metadata preserves valid values and omits malformed optional classification fields", () => {
+	const node = {
+		...itemNode("PVTI_metadata", issueContent(7)),
+		type: " ISSUE ",
+		createdAt: " 2026-06-27T00:00:00Z ",
+	};
+	const detail = normalizeProjectV2ItemDetail(node, TEST_REPOSITORY);
+	assert.equal(detail.item.type, "ISSUE");
+	assert.equal(detail.item.createdAt, node.createdAt);
+	assert.equal(detail.item.updatedAt, node.updatedAt);
+	assert.equal(detail.item.isArchived, false);
+	assert.equal(detail.item.project.id, PROJECT.id);
+
+	const malformed = normalizeProjectV2ItemDetail({
+		...node,
+		type: " ",
+		project: null,
+		isArchived: "false",
+		createdAt: " ",
+		updatedAt: 123,
+		content: issueContent(-1, { repository: { nameWithOwner: " " }, author: { login: 123 }, state: "UNKNOWN" }),
+	}, TEST_REPOSITORY);
+	assert.deepEqual(malformed.content, { kind: "issue" });
+	assert.equal(malformed.item.issue, undefined);
+	for (const field of ["type", "project", "isArchived", "createdAt", "updatedAt"]) assert.equal(Object.hasOwn(malformed.item, field), false);
+	assert.deepEqual(classifyProjectV2ItemContent(null, "PULL_REQUEST"), { kind: "redacted" });
+	assert.deepEqual(classifyProjectV2ItemContent(null, undefined), { kind: "unknown" });
+});
+
 test("issueme_list_project_items returns current-repository issue items with values and omits other content honestly", async () => {
 	const items = [
 		itemNode("PVTI_1", issueContent(1), { fieldValues: allValueKinds(), valuesHasNextPage: true, valuesTotal: 8 }),

@@ -291,9 +291,10 @@ function formatListProjectItemsText(result: GitHubProjectV2ItemListResult, class
 
 function formatGetProjectItemText(detail: ProjectV2ItemDetail, result: GitHubProjectV2ItemLookupResult, params: NormalizedGetProjectItemParams): string {
 	const item = detail.item;
+	const totalValues = item.fieldValuesCount !== undefined ? ` of ${item.fieldValuesCount}` : "";
 	const lines = [
 		`Project item ${item.id} on ${formatProjectLabel(item.project)}: ${formatProjectItemIssue(item)} (${item.isArchived ? "archived" : "active"}).`,
-		`Field values (${item.fieldValues?.length ?? 0}${item.fieldValuesCount !== undefined ? ` of ${item.fieldValuesCount}` : ""}; valueLimit ${params.valueLimit}):`,
+		`Field values (${item.fieldValues?.length ?? 0}${totalValues}; valueLimit ${params.valueLimit}):`,
 		...(item.fieldValues?.length ? item.fieldValues.map((value) => `- ${formatFieldValue(value)}`) : ["- none; every project field is unset for this item"]),
 		item.fieldValuesTruncated ? "More field values exist; continue with the returned token." : undefined,
 		result.searchTruncated ? "The issue has more project items than IssueMe inspected; the match came from the first page." : undefined,
@@ -343,7 +344,17 @@ function formatFieldValueContent(value: ToolProjectItemFieldValueSummary): strin
 	if (value.kind === "text") return value.text ?? "";
 	if (value.kind === "number") return String(value.number);
 	if (value.kind === "date") return value.date ?? "";
-	if (value.kind === "single_select") return `${value.optionName ?? "option"}${value.optionId ? ` [optionId ${value.optionId}]` : ""}`;
-	if (value.kind === "iteration") return `${value.iterationTitle ?? "iteration"}${value.startDate ? ` ${value.startDate}` : ""}${value.duration !== undefined ? `/${value.duration}d` : ""}${value.iterationId ? ` [iterationId ${value.iterationId}]` : ""}`;
+	if (value.kind === "single_select") {
+		const optionId = value.optionId ? ` [optionId ${value.optionId}]` : "";
+		return `${value.optionName ?? "option"}${optionId}`;
+	}
+	if (value.kind === "iteration") return formatIterationValueContent(value);
 	return `set (${value.valueType ?? "unsupported value type"}; not exposed by IssueMe)`;
+}
+
+function formatIterationValueContent(value: ToolProjectItemFieldValueSummary): string {
+	const startDate = value.startDate ? ` ${value.startDate}` : "";
+	const duration = value.duration !== undefined ? `/${value.duration}d` : "";
+	const iterationId = value.iterationId ? ` [iterationId ${value.iterationId}]` : "";
+	return `${value.iterationTitle ?? "iteration"}${startDate}${duration}${iterationId}`;
 }

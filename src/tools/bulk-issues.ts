@@ -8,6 +8,7 @@ import type { GitHubIssueCloseReason, GitHubIssueCollectionPreflight, GitHubProj
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, IssueMeToolResult, SafeToolError, ToolBulkIssueResultSummary, ToolIssueSummary } from "../types.ts";
+import { mapSequentially } from "../utils/sequential.ts";
 import { normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
 import {
 	assertIssueCreatorAllowed,
@@ -325,17 +326,25 @@ async function removeLabelsForBulk(
 	issueNumber: number,
 	signal?: AbortSignal,
 ): Promise<ToolBulkIssueResultSummary> {
-	let removedLabelMutations = 0;
+	const progress = { removed: 0 };
 	try {
-		for (const label of params.labels ?? []) {
-			const response = await runtime.client.removeLabel(issueNumber, label, signal);
-			if (response !== undefined) removedLabelMutations += 1;
-		}
+		await mapSequentially(params.labels ?? [], removeBulkLabel.bind(undefined, runtime, issueNumber, progress, signal));
 	} catch (error) {
-		if (removedLabelMutations === 0) throw error;
-		return bulkLabelRemovalPartialResult(issueNumber, params, removedLabelMutations, error);
+		if (progress.removed === 0) throw error;
+		return bulkLabelRemovalPartialResult(issueNumber, params, progress.removed, error);
 	}
 	return refreshIssueAfterRemoteSuccess(ctx, runtime, issueNumber, params, undefined, signal);
+}
+
+async function removeBulkLabel(
+	runtime: IssueMeRuntime,
+	issueNumber: number,
+	progress: { removed: number },
+	signal: AbortSignal | undefined,
+	label: string,
+): Promise<void> {
+	const response = await runtime.client.removeLabel(issueNumber, label, signal);
+	if (response !== undefined) progress.removed += 1;
 }
 
 function bulkLabelRemovalPartialResult(

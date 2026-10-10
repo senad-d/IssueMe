@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { ISSUEME_ERROR_CODES, IssueMeError } from "../src/errors.ts";
 import { GitHubClient } from "../src/github/client.ts";
-import { consumeConnectionNodes, decodeContinuationToken, encodeContinuationToken, normalizeContinuationTokenInput } from "../src/github/continuation.ts";
+import { consumeConnectionNodes, decodeContinuationToken, encodeContinuationToken, fingerprintFilters, normalizeContinuationTokenInput } from "../src/github/continuation.ts";
 import { registerListLabelsTool } from "../src/tools/list-labels.ts";
 import { registerListMilestonesTool } from "../src/tools/list-milestones.ts";
 import { registerListSubIssuesTool } from "../src/tools/sub-issue.ts";
@@ -113,6 +113,18 @@ test("continuation tokens round-trip and fail safely when forged, mismatched, ma
 	// Filter fingerprints ignore key order and undefined values, so normalized filters bind consistently.
 	const reordered = { collection: "labels", repository: TEST_REPOSITORY, filters: { query: undefined, name: "wanted" } };
 	assert.deepEqual(decodeContinuationToken(restToken, reordered, "rest"), { kind: "rest", index: 7 });
+});
+
+test("continuation fingerprints preserve version-1 key ordering and ignore object insertion order", () => {
+	const filters = { "é": true, z: { b: 2, a: 1 }, a: [2, 1], _: "separator", A: "upper", omitted: undefined };
+	const reordered = { A: "upper", _: "separator", a: [2, 1], z: { a: 1, b: 2 }, "é": true };
+	// A fixed legacy fingerprint catches locale-dependent collation and accidental token protocol changes.
+	assert.equal(fingerprintFilters(filters), "8dc8572fcd4bd90f");
+	assert.equal(fingerprintFilters(reordered), fingerprintFilters(filters));
+	assert.notEqual(fingerprintFilters({ ...filters, a: [1, 2] }), fingerprintFilters(filters));
+	const binding = { ...LABEL_BINDING, filters };
+	const token = encodeContinuationToken(binding, { kind: "rest", index: 3 });
+	assert.deepEqual(decodeContinuationToken(token, { ...binding, filters: reordered }, "rest"), { kind: "rest", index: 3 });
 });
 
 test("consumeConnectionNodes skips consumed nodes, filters, stops at the limit, and carries oversized skips", () => {

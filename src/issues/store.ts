@@ -568,6 +568,10 @@ function validateIssueRecordCore(record: Partial<IssueRecord>): IssueValidationF
 	// state_reason is optional for backward compatibility: absent, null, or one of GitHub's documented reasons.
 	if (record.state_reason !== undefined && record.state_reason !== null && !isIssueStateReason(record.state_reason)) return validationFailure("issue_file_state_reason_invalid", "state_reason");
 	if (record.creator !== undefined && !isGitHubLogin(record.creator)) return validationFailure("issue_file_creator_invalid", "creator");
+	return validateIssueRecordContent(record);
+}
+
+function validateIssueRecordContent(record: Partial<IssueRecord>): IssueValidationFailure | undefined {
 	if (typeof record.body !== "string") return validationFailure("issue_file_body_invalid", "body");
 	if (!isLabelList(record.labels)) return validationFailure("issue_file_labels_invalid", "labels");
 	if (!isAssigneeList(record.assignees)) return validationFailure("issue_file_assignees_invalid", "assignees");

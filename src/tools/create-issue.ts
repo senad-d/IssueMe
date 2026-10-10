@@ -1,8 +1,9 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES, MAX_TOOL_LABELS } from "../constants.ts";
 import { isRemoteMutationSuccessKnown, markMutationSettlement, type IssueMeError } from "../errors.ts";
+import type { IssueCreateInput } from "../github/client.ts";
 import { issueTypeNameOf, issueTypeNotAppliedError, normalizeIssueTypeName } from "../github/issues-client.ts";
 import { githubIssueToRecord } from "../issues/format.ts";
 import type { GitHubIssueResponse } from "../types.ts";
@@ -25,6 +26,18 @@ const CreateIssueParams = Type.Object(
 	{ additionalProperties: false },
 );
 
+type CreateIssueToolParams = Static<typeof CreateIssueParams>;
+
+function normalizeCreateIssueInput(params: CreateIssueToolParams): IssueCreateInput {
+	return {
+		title: requireNonEmptyTitle(params.title),
+		body: normalizeIssueBody(params.body, "create"),
+		labels: params.labels === undefined ? undefined : sanitizeStringList(params.labels, "labels"),
+		assignees: params.assignees === undefined ? undefined : sanitizeGitHubLoginList(params.assignees, "assignees"),
+		type: params.type === undefined ? undefined : normalizeIssueTypeName(params.type),
+	};
+}
+
 export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
@@ -38,11 +51,7 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			executionMode: "sequential",
 			parameters: CreateIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const title = requireNonEmptyTitle(params.title);
-				const body = normalizeIssueBody(params.body, "create");
-				const inputLabels = params.labels === undefined ? undefined : sanitizeStringList(params.labels, "labels");
-				const inputAssignees = params.assignees === undefined ? undefined : sanitizeGitHubLoginList(params.assignees, "assignees");
-				const type = params.type === undefined ? undefined : normalizeIssueTypeName(params.type);
+				const { title, body, labels: inputLabels, assignees: inputAssignees, type } = normalizeCreateIssueInput(params);
 				const changedFields = type === undefined ? ["title", "body", "labels", "assignees"] : ["title", "body", "labels", "assignees", "type"];
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);
 				const labels = inputLabels ?? sanitizeStringList(runtime.config.defaultLabels, "labels");

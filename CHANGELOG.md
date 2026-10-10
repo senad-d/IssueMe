@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- Remediated fresh Sonar findings with explicit sorting, focused validation/normalization helpers, and simpler output formatting. Version-1 continuation fingerprints, cache diagnostic precedence, and tool output remain compatible; bulk label removals use the shared sequential mapper and retain fail-fast partial-success receipts. Added regressions for those contracts and escaped the intentional replacement-character test literal to avoid a scanner encoding warning.
 - Projects v2 queries no longer spread a `Repository` fragment inside `ProjectV2Owner`; GitHub rejects that query (`cannotSpreadFragment`), which broke every Projects v2 tool and the overview's projects section live. Project owners are `User` or `Organization` only. Found by the 2026-10-10 live run.
 - `issueme_get_project_fields` by project ID no longer nests its fragment definition inside the query body, which GitHub rejected (`Field 'fragment' doesn't exist on type 'Query'`). `test/graphql-document-shape.test.mjs` now checks fragment placement, fragment usage, brace balance, and `ProjectV2Owner` types for every GraphQL document. Found by the 2026-10-10 live run.
 - Projects v2 item lookups tolerate GitHub's GraphQL `NOT_FOUND` answer for a deleted or foreign item id (returned with a null node) so `issueme_remove_issue_from_project` reaches its verified-absent no-op and the other item tools report the documented inaccessible-item refusal instead of a raw API error. Found by the 2026-10-10 live run.

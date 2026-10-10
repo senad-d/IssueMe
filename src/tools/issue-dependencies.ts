@@ -364,9 +364,11 @@ function formatDependencyMutationText(result: GitHubIssueDependencyMutationResul
 	const edge = `#${params.issueNumber} blocked by #${params.blockingIssueNumber} (${dependency.title})`;
 	const lines = [formatDependencyMutationHeadline(result.status, edge)];
 	if (result.inferred) lines.push("GitHub reported the dependency as not found during removal; no edge remains.");
-	lines.push(`Blocking issue database id: ${result.blockingIssueId}.`);
-	lines.push("No local cache files were changed; dependencies are not stored in issue cache records.");
-	lines.push(`Semantics: ${DEPENDENCY_SEMANTICS_NOTE}`);
+	lines.push(
+		`Blocking issue database id: ${result.blockingIssueId}.`,
+		"No local cache files were changed; dependencies are not stored in issue cache records.",
+		`Semantics: ${DEPENDENCY_SEMANTICS_NOTE}`,
+	);
 	return lines.join("\n");
 }
 

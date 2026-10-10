@@ -282,14 +282,8 @@ export function normalizeProjectV2ItemDetail(value: unknown, repository: string)
 	const id = normalizeProjectV2OutputId(value.id, "itemId") ?? "";
 	if (!id) return undefined;
 	const item: ToolProjectItemSummary = { id };
-	const type = typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
-	if (type) item.type = type;
-	const project = normalizeProjectV2Summary(value.project);
-	if (project) item.project = project;
-	if (typeof value.isArchived === "boolean") item.isArchived = value.isArchived;
-	if (typeof value.createdAt === "string" && value.createdAt.trim()) item.createdAt = value.createdAt;
-	if (typeof value.updatedAt === "string" && value.updatedAt.trim()) item.updatedAt = value.updatedAt;
-	const content = classifyProjectV2ItemContent(value.content, type);
+	applyProjectV2ItemMetadata(item, value);
+	const content = classifyProjectV2ItemContent(value.content, item.type);
 	if (content.kind === "issue") {
 		const issue = normalizeProjectV2ItemIssue(value.content, content.repository ?? repository);
 		if (issue) item.issue = issue;
@@ -299,6 +293,16 @@ export function normalizeProjectV2ItemDetail(value: unknown, repository: string)
 	if (values.totalCount !== undefined) item.fieldValuesCount = values.totalCount;
 	if (values.hasNextPage) item.fieldValuesTruncated = true;
 	return { item, content, valuesHasNextPage: values.hasNextPage, ...(values.endCursor ? { valuesEndCursor: values.endCursor } : {}) };
+}
+
+function applyProjectV2ItemMetadata(item: ToolProjectItemSummary, value: Record<string, unknown>): void {
+	const type = typeof value.type === "string" && value.type.trim() ? value.type.trim() : undefined;
+	if (type) item.type = type;
+	const project = normalizeProjectV2Summary(value.project);
+	if (project) item.project = project;
+	if (typeof value.isArchived === "boolean") item.isArchived = value.isArchived;
+	if (typeof value.createdAt === "string" && value.createdAt.trim()) item.createdAt = value.createdAt;
+	if (typeof value.updatedAt === "string" && value.updatedAt.trim()) item.updatedAt = value.updatedAt;
 }
 
 export function requireProjectV2ItemDetail(value: unknown, repository: string): ProjectV2ItemDetail {
@@ -315,15 +319,17 @@ export function classifyProjectV2ItemContent(content: unknown, itemType: string 
 	if (!isObject(content)) return itemType === "ISSUE" || itemType === "PULL_REQUEST" ? { kind: "redacted" } : { kind: "unknown" };
 	const repositoryNode = isObject(content.repository) ? content.repository : undefined;
 	const contentRepository = typeof repositoryNode?.nameWithOwner === "string" && repositoryNode.nameWithOwner.trim() ? repositoryNode.nameWithOwner.trim() : undefined;
-	if (content.__typename === "Issue") {
-		const issueNumber = typeof content.number === "number" && Number.isSafeInteger(content.number) && content.number > 0 ? content.number : undefined;
-		const creator = isObject(content.author) && typeof content.author.login === "string" ? content.author.login : undefined;
-		const state = normalizeGraphQLIssueState(content.state);
-		return compactClassification({ kind: "issue", repository: contentRepository, creator, issueNumber, state });
-	}
+	if (content.__typename === "Issue") return classifyProjectV2IssueContent(content, contentRepository);
 	if (content.__typename === "PullRequest") return compactClassification({ kind: "pull_request", repository: contentRepository });
 	if (content.__typename === "DraftIssue") return { kind: "draft_issue" };
 	return { kind: "unknown" };
+}
+
+function classifyProjectV2IssueContent(content: Record<string, unknown>, repository: string | undefined): ProjectV2ItemContentClassification {
+	const issueNumber = typeof content.number === "number" && Number.isSafeInteger(content.number) && content.number > 0 ? content.number : undefined;
+	const creator = isObject(content.author) && typeof content.author.login === "string" ? content.author.login : undefined;
+	const state = normalizeGraphQLIssueState(content.state);
+	return compactClassification({ kind: "issue", repository, creator, issueNumber, state });
 }
 
 function compactClassification(value: ProjectV2ItemContentClassification): ProjectV2ItemContentClassification {

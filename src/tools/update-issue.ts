@@ -1,8 +1,9 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_ASSIGNEES, MAX_TOOL_LABELS } from "../constants.ts";
 import { IssueMeError } from "../errors.ts";
+import type { IssueUpdateInput } from "../github/client.ts";
 import { issueTypeNameOf, normalizeIssueTypeName } from "../github/issues-client.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import type { ToolIssueSummary } from "../types.ts";
@@ -24,6 +25,27 @@ const UpdateIssueParams = Type.Object(
 	{ additionalProperties: false },
 );
 
+type UpdateIssueToolParams = Static<typeof UpdateIssueParams>;
+
+function normalizeUpdateIssuePayload(params: UpdateIssueToolParams): IssueUpdateInput {
+	const payload: IssueUpdateInput = {};
+	if (params.title !== undefined) payload.title = requireNonEmptyTitle(params.title);
+	if (params.body !== undefined) payload.body = normalizeIssueBody(params.body, "update");
+	if (params.labels !== undefined) payload.labels = sanitizeStringList(params.labels, "labels");
+	if (params.assignees !== undefined) payload.assignees = sanitizeGitHubLoginList(params.assignees, "assignees");
+	if (params.milestoneNumber !== undefined && params.clearMilestone) {
+		throw new IssueMeError("invalid_tool_input", "Use milestoneNumber or clearMilestone, not both.", { fields: ["milestoneNumber", "clearMilestone"] });
+	}
+	if (params.milestoneNumber !== undefined) payload.milestone = params.milestoneNumber;
+	if (params.clearMilestone) payload.milestone = null;
+	if (params.type !== undefined && params.clearType) {
+		throw new IssueMeError("invalid_tool_input", "Use type or clearType, not both.", { fields: ["type", "clearType"] });
+	}
+	if (params.type !== undefined) payload.type = normalizeIssueTypeName(params.type);
+	if (params.clearType) payload.type = null;
+	return payload;
+}
+
 export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
 	pi.registerTool(
 		defineTool({
@@ -37,30 +59,9 @@ export function registerUpdateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			executionMode: "sequential",
 			parameters: UpdateIssueParams,
 			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				const updatePayload: {
-					title?: string;
-					body?: string;
-					labels?: string[];
-					assignees?: string[];
-					milestone?: number | null;
-					type?: string | null;
-				} = {};
-				if (params.title !== undefined) updatePayload.title = requireNonEmptyTitle(params.title);
-				if (params.body !== undefined) updatePayload.body = normalizeIssueBody(params.body, "update");
-				if (params.labels !== undefined) updatePayload.labels = sanitizeStringList(params.labels, "labels");
-				if (params.assignees !== undefined) updatePayload.assignees = sanitizeGitHubLoginList(params.assignees, "assignees");
-				if (params.milestoneNumber !== undefined && params.clearMilestone) {
-					throw new IssueMeError("invalid_tool_input", "Use milestoneNumber or clearMilestone, not both.", { fields: ["milestoneNumber", "clearMilestone"] });
-				}
-				if (params.milestoneNumber !== undefined) updatePayload.milestone = params.milestoneNumber;
-				if (params.clearMilestone) updatePayload.milestone = null;
-				if (params.type !== undefined && params.clearType) {
-					throw new IssueMeError("invalid_tool_input", "Use type or clearType, not both.", { fields: ["type", "clearType"] });
-				}
-				if (params.type !== undefined) updatePayload.type = normalizeIssueTypeName(params.type);
-				if (params.clearType) updatePayload.type = null;
+				const updatePayload = normalizeUpdateIssuePayload(params);
 
-				const changedFields = listChangedFields(updatePayload);
+				const changedFields = listChangedFields({ ...updatePayload });
 				if (changedFields.length === 0) throw new IssueMeError("invalid_tool_input", "Provide at least one field to update.");
 
 				const runtime = await createIssueMeRuntime(ctx, options.runtime);

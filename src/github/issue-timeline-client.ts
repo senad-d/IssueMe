@@ -41,7 +41,11 @@ export function normalizeTimelineEventTypes(values: readonly string[] | undefine
 		}
 		normalized.add(event);
 	}
-	return normalized.size > 0 ? [...normalized].sort() : undefined;
+	return normalized.size > 0 ? [...normalized].sort(compareTimelineEventTypes) : undefined;
+}
+
+function compareTimelineEventTypes(left: string, right: string): number {
+	return left.localeCompare(right, "en");
 }
 
 export function assertGitHubTimelineEventResponse(value: unknown, path = GITHUB_API_BASE_URL): asserts value is GitHubTimelineEventResponse & { event: string } {
