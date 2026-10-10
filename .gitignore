@@ -22,6 +22,7 @@ coverage/
 .pi/
 
 # Local caches and generated reports
+.scannerwork/
 .cache/
 .local/
 .trivycache/
@@ -38,3 +39,4 @@ temp/
 !.pi/issues/**
 
 .orchestrateme
+.scannerwork

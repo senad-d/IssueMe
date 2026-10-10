@@ -21,6 +21,7 @@ const sequentialTools = [
 	"issueme_remove_issue_from_project",
 	"issueme_clear_project_item_field",
 	"issueme_archive_project_item",
+	"issueme_move_project_item",
 	"issueme_manage_label",
 	"issueme_manage_milestone",
 	"issueme_create_issue",
@@ -50,6 +51,7 @@ const perIssueMutationTools = [
 	"issueme_remove_issue_from_project",
 	"issueme_clear_project_item_field",
 	"issueme_archive_project_item",
+	"issueme_move_project_item",
 	"issueme_create_sub_issue",
 	"issueme_add_sub_issue",
 	"issueme_remove_sub_issue",
@@ -232,6 +234,7 @@ test("tool schemas avoid provider-hostile union, literal, and nullable patterns"
 	assert.deepEqual(pi.tools.get("issueme_close_issue").parameters.properties.reason.enum, ["completed", "not_planned"]);
 	assert.deepEqual(pi.tools.get("issueme_list_issue_dependencies").parameters.properties.direction.enum, ["blocked_by", "blocking", "both"]);
 	assert.deepEqual(pi.tools.get("issueme_archive_project_item").parameters.properties.action.enum, ["archive", "unarchive"]);
+	assert.deepEqual(pi.tools.get("issueme_move_project_item").parameters.required, ["projectId", "itemId", "issueNumber"]);
 	assert.equal(pi.tools.get("issueme_remove_issue_from_project").parameters.properties.confirmRemove.type, "boolean");
 	assert.deepEqual(pi.tools.get("issueme_remove_issue_from_project").parameters.required, ["projectId", "itemId", "issueNumber", "confirmRemove"]);
 	assert.deepEqual(pi.tools.get("issueme_add_issue_dependency").parameters.required, ["issueNumber", "blockingIssueNumber"]);

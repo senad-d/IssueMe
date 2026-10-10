@@ -1,6 +1,6 @@
-import { GITHUB_API_BASE_URL, MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_LABELS, MAX_TOOL_PROJECT_ITEMS } from "../constants.ts";
+import { GITHUB_API_BASE_URL, MAX_TOOL_ASSIGNEES, MAX_TOOL_ISSUES, MAX_TOOL_ISSUE_TEMPLATES, MAX_TOOL_LABELS, MAX_TOOL_PROJECT_ITEMS } from "../constants.ts";
 import { ClosedIssueMutationError, GitHubApiError, ISSUEME_ERROR_CODES, IssueMeError, markMutationSettlement } from "../errors.ts";
-import type { GitHubCommentResponse, GitHubIssueResponse, GitHubIssueTypeResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, IssueDependencyDirection, ProjectV2OwnerType, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
+import type { GitHubCommentResponse, GitHubIssueResponse, GitHubIssueTypeResponse, GitHubLabelListResponse, GitHubLabelResponse, GitHubMilestoneResponse, GitHubRepository, GitHubUserResponse, IssueDependencyDirection, ProjectV2OwnerType, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary, ToolIssueTemplateConfigSummary, ToolIssueTemplateSummary } from "../types.ts";
 import { isValidGitHubLogin } from "../utils/github-login.ts";
 import { mapSequentially } from "../utils/sequential.ts";
 import { assertCollectionItemLimit, normalizeOptionalIsoDateOrTimestamp } from "../utils/validation.ts";
@@ -9,10 +9,11 @@ import { buildDeleteIssueMutation, normalizeDeleteIssueMutationResult, requireDe
 import { buildIssueDevelopmentLinksQuery, isInaccessibleCloserError, normalizeIssueDevelopmentLinkLimit, normalizeIssueDevelopmentLinksResult } from "./development-links-client.ts";
 import { RELATED_ISSUE_PREFLIGHT_PAGE_CAP, assertDistinctRelatedNumbers, isRelatedIssueMember, isRelatedIssueRemovalNotFound, mapRelatedIssueMutationError, mapRelatedIssueReadError, relatedIssueRemovalPath, relatedIssuesPath } from "./related-issues-client.ts";
 import { assertGitHubTimelineEventResponse, normalizeTimelineEventTypes, timelineEventMatches, timelineEventPath, type GitHubTimelineEventResponse } from "./issue-timeline-client.ts";
+import { assertGitHubContentsDirectoryResponse, assertGitHubContentsFileResponse, classifyTemplateFilename, decodeContentsFile, ISSUE_TEMPLATE_DIRECTORY, isTemplateFileTooLarge, LEGACY_ISSUE_TEMPLATE_PATHS, normalizeTemplateFilename, parseTemplateConfig, summarizeIssueTemplate, type GitHubContentsEntry, type GitHubContentsFile } from "./issue-templates-client.ts";
 import { ISSUE_DEPENDENCY_PREFLIGHT_PAGE_CAP, assertDependencyTargetIsIssue, assertDistinctDependencyNumbers, assertIssueDependencyMember, isIssueDependencyMember, isIssueDependencyRemovalNotFound, issueDependencyPath, issueDependencyRemovalPath, mapIssueDependencyMutationError, mapIssueDependencyReadError, normalizeIssueDependencyDirection, requireIssueDatabaseId } from "./issue-dependencies-client.ts";
 import { mapGitHubGraphQLError } from "./graphql-errors.ts";
 import { assertGitHubAssigneeDiscoveryResponse, assertGitHubCommentDiscoveryResponse, assertGitHubIssueTypeDiscoveryResponse, assertGitHubLabelDiscoveryResponse, assertGitHubMilestoneDiscoveryResponse, assigneeMatchesFilters, buildAssigneeListQuery, buildIssueListQuery, buildIssueSearchRequestQuery, buildLabelListQuery, buildMilestoneListQuery, commentBelongsToIssue, isIssueSearchResponse, isPullRequestIssueResponse, issueResponseToSafeSummary, labelMatchesFilters, normalizeIssueSearchResponse, normalizeIssueUpdateInput, normalizeOptionalTextFilter, normalizePaginationLimit, normalizePositiveCommentId, normalizePositiveIssueNumber, normalizePositiveMilestoneNumber } from "./issues-client.ts";
-import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2FieldClearable, assertProjectV2ItemBelongsToProject, assertProjectV2ItemLookupSelector, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, isProjectV2NodeNotFoundError, PROJECT_V2_ITEM_ISSUE_STATE_POLICY, type ProjectV2ItemIssueStatePolicy, buildArchiveProjectV2ItemMutation, buildClearProjectV2ItemFieldValueMutation, buildDeleteProjectV2ItemMutation, buildProjectV2AddValidationQuery, buildProjectV2FieldValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemByIdQuery, buildProjectV2ItemByIssueQuery, buildProjectV2ItemFieldValueValidationQuery, buildProjectV2ItemValidationQuery, buildProjectV2ItemsByIdQuery, buildProjectV2ItemsByNumberQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeArchiveProjectV2ItemResult, normalizeClearProjectV2ItemFieldValueResult, normalizeDeleteProjectV2ItemResult, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2ItemArchiveAction, normalizeProjectV2ItemLimit, normalizeProjectV2ItemValueLimit, normalizeProjectV2IterationLimit, normalizeProjectV2ItemMutationResult, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, projectV2ArchiveOperationName, projectV2ItemArchivedState, projectV2ItemHasNamedFieldValue, requireProjectV2ItemDetail, requireProjectV2Summary, type ProjectV2FieldIdentity, type ProjectV2ItemArchiveAction, type ProjectV2ItemDetail } from "./projects-client.ts";
+import { PROJECTS_V2_LIST_PAGE_CAP, assertProjectV2AllowedForAdd, assertProjectV2FieldClearable, assertProjectV2ItemBelongsToProject, assertProjectV2ItemLookupSelector, assertProjectV2ItemTargetsIssue, buildAddIssueToProjectV2Mutation, isProjectV2NodeNotFoundError, PROJECT_V2_ITEM_ISSUE_STATE_POLICY, type ProjectV2ItemIssueStatePolicy, assertProjectV2AnchorItem, buildMoveProjectV2ItemMutation, normalizeMoveProjectV2ItemResult, buildArchiveProjectV2ItemMutation, buildClearProjectV2ItemFieldValueMutation, buildDeleteProjectV2ItemMutation, buildProjectV2AddValidationQuery, buildProjectV2FieldValidationQuery, buildProjectV2FieldsByIdQuery, buildProjectV2FieldsByNumberQuery, buildProjectV2ItemByIdQuery, buildProjectV2ItemByIssueQuery, buildProjectV2ItemFieldValueValidationQuery, buildProjectV2ItemValidationQuery, buildProjectV2ItemsByIdQuery, buildProjectV2ItemsByNumberQuery, buildProjectsV2ListQuery, buildUpdateProjectV2ItemFieldValueMutation, extractProjectV2Connection, extractProjectV2FieldProject, normalizeArchiveProjectV2ItemResult, normalizeClearProjectV2ItemFieldValueResult, normalizeDeleteProjectV2ItemResult, normalizeProjectV2AddValidationPolicy, normalizeProjectV2FieldLimit, normalizeProjectV2FieldSummary, normalizeProjectV2FieldValueInput, normalizeProjectV2Id, normalizeProjectV2IdRequired, normalizeProjectV2ItemArchiveAction, normalizeProjectV2ItemLimit, normalizeProjectV2ItemValueLimit, normalizeProjectV2IterationLimit, normalizeProjectV2ItemMutationResult, normalizeProjectV2ListLimit, normalizeProjectV2OptionLimit, normalizeProjectV2Owner, normalizeProjectV2ProjectNumber, normalizeProjectV2Query, normalizeProjectV2Scope, normalizeProjectV2Summary, projectV2ArchiveOperationName, projectV2ItemArchivedState, projectV2ItemHasNamedFieldValue, requireProjectV2ItemDetail, requireProjectV2Summary, type ProjectV2FieldIdentity, type ProjectV2ItemArchiveAction, type ProjectV2ItemDetail } from "./projects-client.ts";
 import { compactObject, connectionEndCursor, connectionHasNextPage, extractConnectionNodes, isObject, normalizeConnectionTotalCount } from "./shared.ts";
 import { assertReorderableSubIssueList, buildSubIssueRelationshipsQuery, moveNativeSubIssue, normalizeNativeSubIssueRelationshipResult, normalizeReprioritizeSubIssueResult, normalizeSubIssueMutationResult, normalizeSubIssueRelationshipLimit, normalizeSubIssueReorderNumbers, requireIssueNodeId } from "./sub-issues-client.ts";
 import { GitHubTransport, normalizeMaxPages, parseNextLink } from "./transport.ts";
@@ -40,6 +41,21 @@ export type GitHubRepositoryOwnerType = "Organization" | "User";
 export interface GitHubRepositoryIssueTypesResult {
 	ownerType: GitHubRepositoryOwnerType;
 	issueTypes: GitHubIssueTypeResponse[];
+}
+
+export interface GitHubIssueTemplateFile {
+	template: ToolIssueTemplateSummary;
+	/** Decoded file text; undefined when the file was not read (too large or unsupported format). */
+	text?: string;
+}
+
+export interface GitHubIssueTemplatesResult {
+	source: "directory" | "legacy_file" | "none";
+	sourcePath?: string;
+	templates: GitHubIssueTemplateFile[];
+	config?: ToolIssueTemplateConfigSummary;
+	/** True when the directory held more template files than the read limit. */
+	truncated: boolean;
 }
 
 export interface GitHubIssueCollectionPreflight {
@@ -268,6 +284,22 @@ export interface GitHubProjectV2ItemArchiveResult {
 	itemId: string;
 	issue: GitHubIssueResponse;
 	isArchived: boolean;
+}
+
+export interface GitHubProjectV2ItemMoveInput extends GitHubProjectV2ItemTarget {
+	/** Anchor item on the same board; omitted means move to the top. */
+	afterItemId?: string;
+}
+
+export interface GitHubProjectV2ItemMoveResult {
+	status: "moved";
+	itemId: string;
+	issue: GitHubIssueResponse;
+	afterItemId?: string;
+	/** Zero-based position inside the order GitHub returned. */
+	position: number;
+	/** Size of the returned order window the position was verified against. */
+	inspected: number;
 }
 
 export interface GitHubRepositoryAssigneeListResult {
@@ -817,6 +849,28 @@ export class GitHubClient {
 		return { status: desired ? "archived" : "unarchived", itemId: target.itemId, issue, isArchived };
 	}
 
+	/** Moves one board item to the top or directly after an anchor on the same board; fields, archive state, relationships, and the issue are untouched. */
+	async moveProjectV2Item(input: GitHubProjectV2ItemMoveInput, signal?: AbortSignal): Promise<GitHubProjectV2ItemMoveResult> {
+		const target = this.normalizeProjectV2ItemTarget(input);
+		const afterItemId = input.afterItemId === undefined ? undefined : normalizeProjectV2IdRequired(input.afterItemId, "afterItemId");
+		if (afterItemId === target.itemId) {
+			throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "afterItemId must differ from itemId; an item cannot be positioned after itself.", { itemId: target.itemId, afterItemId });
+		}
+		const issue = await this.ensureIssueForProjectItemMutation(target.issueNumber, PROJECT_V2_ITEM_ISSUE_STATE_POLICY.move_item, signal);
+		const validation = await this.readProjectV2ItemValidation(target.itemId, signal);
+		assertProjectV2ItemTargetsIssue(validation, target, this.repository.fullName, PROJECT_V2_ITEM_ISSUE_STATE_POLICY.move_item);
+		if (afterItemId !== undefined) assertProjectV2AnchorItem(await this.readProjectV2ItemValidation(afterItemId, signal), { ...target, afterItemId });
+		const data = await this.graphqlRequest<Record<string, unknown>>(
+			"IssueMeMoveProjectV2Item",
+			buildMoveProjectV2ItemMutation(),
+			{ projectId: target.projectId, itemId: target.itemId, afterId: afterItemId ?? null, verifyFirst: MAX_TOOL_PROJECT_ITEMS },
+			signal,
+			true,
+		);
+		const verification = normalizeMoveProjectV2ItemResult(data, target.itemId, afterItemId);
+		return { status: "moved", itemId: target.itemId, issue, ...(afterItemId === undefined ? {} : { afterItemId }), ...verification };
+	}
+
 	private normalizeProjectV2ItemTarget(input: GitHubProjectV2ItemTarget): GitHubProjectV2ItemTarget {
 		return {
 			projectId: normalizeProjectV2IdRequired(input.projectId, "projectId"),
@@ -923,6 +977,82 @@ export class GitHubClient {
 		const owner = isObject(repository.owner) ? repository.owner : undefined;
 		if (owner?.type === "Organization" || owner?.type === "User") return owner.type;
 		throw new GitHubApiError("GitHub repository response did not include a valid owner type.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: this.repoPath("") });
+	}
+
+	/** This repository's issue templates through the contents endpoint; organization defaults are outside the boundary and stay unresolved. */
+	async listIssueTemplates(signal?: AbortSignal): Promise<GitHubIssueTemplatesResult> {
+		const directory = await this.readContents(ISSUE_TEMPLATE_DIRECTORY, signal);
+		if (Array.isArray(directory)) return this.readIssueTemplateDirectory(assertGitHubContentsDirectoryResponse(directory, ISSUE_TEMPLATE_DIRECTORY), signal);
+		for (const path of LEGACY_ISSUE_TEMPLATE_PATHS) {
+			const legacy = await this.readContents(path, signal);
+			if (legacy === undefined || Array.isArray(legacy)) continue;
+			return { source: "legacy_file", sourcePath: path, templates: [this.issueTemplateFromFile(assertGitHubContentsFileResponse(legacy, path))], truncated: false };
+		}
+		return { source: "none", templates: [], truncated: false };
+	}
+
+	/** One template by plain file name, looked up in the template directory and then the legacy single-file locations. */
+	async readIssueTemplate(filename: string, signal?: AbortSignal): Promise<GitHubIssueTemplateFile> {
+		const name = normalizeTemplateFilename(filename);
+		const candidates = [`${ISSUE_TEMPLATE_DIRECTORY}/${name}`, ...LEGACY_ISSUE_TEMPLATE_PATHS.filter((path) => path === name || path.endsWith(`/${name}`))];
+		for (const path of candidates) {
+			const value = await this.readContents(path, signal);
+			if (value === undefined || Array.isArray(value)) continue;
+			return this.issueTemplateFromFile(assertGitHubContentsFileResponse(value, path));
+		}
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			`No issue template named ${name} exists in ${this.repository.fullName}.`,
+			{ filename: name },
+			{ recoveryHint: "Call issueme_list_issue_templates without filename to see the available template files." },
+		);
+	}
+
+	private async readIssueTemplateDirectory(entries: GitHubContentsEntry[], signal?: AbortSignal): Promise<GitHubIssueTemplatesResult> {
+		const files = entries.filter((entry) => entry.type === "file");
+		const configEntry = files.find((entry) => classifyTemplateFilename(entry.name) === "config");
+		const templateEntries = files.filter((entry) => classifyTemplateFilename(entry.name) !== "config");
+		const selected = templateEntries.slice(0, MAX_TOOL_ISSUE_TEMPLATES);
+		// Cap Contents requests at one in flight; preserve directory order and stop before later reads on failure or cancellation.
+		const templates = await mapSequentially(selected, (entry) => this.readIssueTemplateEntry(entry, signal));
+		const config = await this.readIssueTemplateConfig(configEntry, signal);
+		return { source: "directory", sourcePath: ISSUE_TEMPLATE_DIRECTORY, templates, ...(config ? { config } : {}), truncated: templateEntries.length > selected.length };
+	}
+
+	private async readIssueTemplateConfig(entry: GitHubContentsEntry | undefined, signal?: AbortSignal): Promise<ToolIssueTemplateConfigSummary | undefined> {
+		if (!entry || isTemplateFileTooLarge(entry.size)) return undefined;
+		const value = await this.readContents(entry.path, signal);
+		if (value === undefined || Array.isArray(value)) return undefined;
+		return parseTemplateConfig(entry.path, decodeContentsFile(assertGitHubContentsFileResponse(value, entry.path)));
+	}
+
+	private async readIssueTemplateEntry(entry: GitHubContentsEntry, signal?: AbortSignal): Promise<GitHubIssueTemplateFile> {
+		if (classifyTemplateFilename(entry.name) === "unsupported" || isTemplateFileTooLarge(entry.size)) return { template: summarizeIssueTemplate(entry, undefined) };
+		const value = await this.readContents(entry.path, signal);
+		if (value === undefined || Array.isArray(value)) return { template: summarizeIssueTemplate(entry, undefined) };
+		return this.issueTemplateFromFile(assertGitHubContentsFileResponse(value, entry.path));
+	}
+
+	private issueTemplateFromFile(file: GitHubContentsFile): GitHubIssueTemplateFile {
+		if (isTemplateFileTooLarge(file.size)) return { template: summarizeIssueTemplate(file, undefined) };
+		const text = decodeContentsFile(file);
+		return { template: summarizeIssueTemplate(file, text), text };
+	}
+
+	/** Repository-scoped contents read; 404 means absent, and 403 is rewrapped so the missing Contents permission is explicit. */
+	private async readContents(path: string, signal?: AbortSignal): Promise<unknown> {
+		try {
+			return await this.request<unknown>("GET", this.repoPath(`/contents/${path}`), { signal, validate: (value) => isObject(value) || Array.isArray(value) });
+		} catch (error) {
+			if (error instanceof GitHubApiError && error.status === 404) return undefined;
+			if (error instanceof GitHubApiError && error.status === 403) {
+				throw new GitHubApiError(
+					`Issue template discovery for ${this.repository.fullName} was forbidden; the GH_TOKEN/GITHUB_TOKEN needs repository Contents read access to read ${path}. GitHub detail: ${error.message}`,
+					{ code: ISSUEME_ERROR_CODES.GITHUB_API_ERROR, status: 403, path: `${GITHUB_API_BASE_URL}/repos` },
+				);
+			}
+			throw error;
+		}
 	}
 
 	/** Organization issue types for the resolved repository owner; user-owned repositories return an empty list with ownerType User. */

@@ -46,7 +46,7 @@ export function registerCreateIssueTool(pi: ExtensionAPI, options: IssueMeToolRe
 			description: "Create repo issue and local cache file.",
 			promptSnippet: "Create repo issue and cache file.",
 			promptGuidelines: [
-				"Use issueme_create_issue for explicit new issues; omit labels/assignees for defaults, pass [] for none, and never put secrets in bodies.",
+				"Use issueme_create_issue for explicit new issues; omit labels/assignees for defaults, pass [] for none, never put secrets in bodies, and read issueme_list_issue_templates first when the repository has templates.",
 			],
 			executionMode: "sequential",
 			parameters: CreateIssueParams,

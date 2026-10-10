@@ -76,7 +76,8 @@ function isProjectV2Operation(operationName: string): boolean {
 		|| operationName === "IssueMeClearProjectV2ItemFieldValue"
 		|| operationName === "IssueMeDeleteProjectV2Item"
 		|| operationName === "IssueMeArchiveProjectV2Item"
-		|| operationName === "IssueMeUnarchiveProjectV2Item";
+		|| operationName === "IssueMeUnarchiveProjectV2Item"
+		|| operationName === "IssueMeMoveProjectV2Item";
 }
 
 function isDevelopmentLinkOperation(operationName: string): boolean {

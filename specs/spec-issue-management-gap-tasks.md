@@ -590,7 +590,7 @@ Organization-defined issue fields are distinct from Projects v2 fields and curre
 
 ### 17. Add project item prioritization
 
-- [ ] Add a bounded project item move operation using native position updates.
+- [x] Add a bounded project item move operation using native position updates.
 
 #### Why
 
@@ -611,6 +611,14 @@ Board ordering can represent implementation priority independently of field valu
 - One item can be repositioned using documented native ordering semantics.
 - Foreign anchors, self-anchors, unsupported content, state refusals, and partial settlement fail safely.
 - The operation does not change issue relationships or unrelated project fields.
+
+#### Outcome (2026-10-10)
+
+- `issueme_move_project_item` (`src/tools/project-item-maintenance.ts`) over `GitHubClient.moveProjectV2Item` and `updateProjectV2ItemPosition` (`buildMoveProjectV2ItemMutation`). Schema introspection confirmed `afterId` omitted or null moves the item to the top and the payload's `items` connection is the new order. Single-item moves only; no whole-board reorder.
+- Guards: `PROJECT_V2_ITEM_ISSUE_STATE_POLICY.move_item = "open_only"` (Task 5 table); the moved item is validated like the other item tools (project, repository, issue number, open state, creator scope); the anchor must differ from the item and resolve (`assertProjectV2AnchorItem`) to an accessible item on the same board, with GitHub's `NOT_FOUND` tolerated as inaccessible. Self, foreign, and inaccessible anchors fail before mutation.
+- Verification: `normalizeMoveProjectV2ItemResult` checks the returned order window (first 50 items) for the item at the top or directly after the anchor; anything else, including a concurrent edit or a longer board, is an accepted-but-unverified mutation reported as retry-safe `partial_success`, because repeating the move is safe. Fields, archive state, relationships, and the issue are untouched (asserted in tests).
+- Tests: `test/project-item-move-tool.test.mjs` (builder/verifier unit cases, top and anchored moves, anchor refusals, closed/scope/identity guards, unverifiable and malformed payloads); policy map and closed-issue matrix updated; GraphQL document shape test covers the new mutation. Registration, contracts, budget, smoke, docs, SECURITY, compatibility matrix, and CHANGELOG updated (46 tools).
+- Live-verified 2026-10-10 on `issueme-testing` (run id `20261010073343`, issues #31/#32): move after anchor (position 2 of 2), move to top (position 1 of 2), self-anchor, stale-anchor, and closed-issue refusals, field values untouched, both items removed afterwards.
 
 ### 18. Add issue conversation lock and unlock
 
@@ -687,7 +695,7 @@ Agents sometimes need to acknowledge discussion or inspect feedback without post
 
 ### 21. Add issue template discovery
 
-- [ ] Expose bounded repository issue template discovery before issue creation.
+- [x] Expose bounded repository issue template discovery before issue creation.
 
 #### Why
 
@@ -710,6 +718,12 @@ Agents should be able to inspect repository reporting expectations rather than i
 - Available supported templates can be inspected without changing repository files or GitHub state.
 - Missing templates, unsupported forms/inheritance, large content, and API permission errors are explicit.
 - Documentation separates template discovery from validated form submission or automatic issue creation.
+
+#### Outcome (2026-10-10)
+
+- API path: the REST repository contents endpoint (`/repos/{owner}/{repo}/contents/.github/ISSUE_TEMPLATE`, then per-file reads, then the legacy `.github/ISSUE_TEMPLATE.md`, `ISSUE_TEMPLATE.md`, `docs/ISSUE_TEMPLATE.md`). GitHub's GraphQL `Repository.issueTemplates` was rechecked live and returned an empty list for this repository's four YAML forms, so it cannot be the source. Organization default templates live in the owner's `.github` repository, outside the request boundary, and are reported as unresolved.
+- `issueme_list_issue_templates` (`src/tools/issue-templates.ts`, `src/github/issue-templates-client.ts`, `GitHubClient.listIssueTemplates`/`readIssueTemplate`): classifies `markdown`, `issue_form`, `config`, and `unsupported` files; parses Markdown front matter and form top-level keys plus element headers (type, id, label, required) with a bounded line parser because the package has no YAML dependency; never validates forms. Files over 100 KB are listed without content. List mode returns bounded previews (default 300 chars); `filename` returns windowed full text (default 4000, max 8000) with `after` continuation bound to repository, path, and size. Plain file names only; 403 is rewrapped as an explicit Contents-permission error; absent templates are `issue_templates_none`. Runtime bounding redacts token-like text and truncates summaries. No issue is created, no label applied, no file written; `issueme_create_issue` guidance points to the tool.
+- Tests: `test/issue-templates-tool.test.mjs` (parsers, directory listing with forms/markdown/config/unsupported/oversized/subdirectory, previews, single-file windows and continuation, unsafe and unknown names, legacy fallback, none, 403). Registration, contracts, budget, smoke, docs, SECURITY, compatibility matrix, usage, and CHANGELOG updated (47 tools).
 
 ### 22. Add gated issue suggestion review
 

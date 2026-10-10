@@ -11,6 +11,9 @@ import {
 	MAX_TOOL_ERROR_DETAIL_STRING_CHARS,
 	MAX_TOOL_ERROR_MESSAGE_CHARS,
 	MAX_TOOL_ISSUE_TYPES,
+	MAX_TOOL_ISSUE_TEMPLATES,
+	MAX_TOOL_ISSUE_TEMPLATE_CONTENT_CHARS,
+	MAX_TOOL_ISSUE_TEMPLATE_FORM_ELEMENTS,
 	MAX_TOOL_ISSUES,
 	MAX_TOOL_LABELS,
 	MAX_TOOL_MILESTONES,
@@ -32,7 +35,7 @@ import { CONTINUATION_SNAPSHOT_NOTE } from "../github/continuation.ts";
 import { parseGitHubRepository, resolveCurrentRepository } from "../github/repository.ts";
 import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.ts";
 import { relativeIssuePath, writeIssueRecord } from "../issues/store.ts";
-import type { GitHubIssueResponse, GitHubRepository, IssueMeConfig, IssueMeToolDetails, IssueMeToolResult, IssueRecord, IssueRelationshipSummary, IssueWriteResult, SafeToolError, ToolAssigneeSummary, ToolBulkIssueResultStatus, ToolBulkIssueResultSummary, ToolCommentSummary, ToolContinuationSummary, ToolFileActionSummary, ToolIssueCommentSummary, ToolIssueDependencySummary, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolIssueTimelineEventSummary, ToolIssueTypeSummary, ToolLabelSummary, ToolMilestoneSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemFieldValueSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary, ToolRelatedIssueSummary } from "../types.ts";
+import type { GitHubIssueResponse, GitHubRepository, IssueMeConfig, IssueMeToolDetails, IssueMeToolResult, IssueRecord, IssueRelationshipSummary, IssueWriteResult, SafeToolError, ToolAssigneeSummary, ToolBulkIssueResultStatus, ToolBulkIssueResultSummary, ToolCommentSummary, ToolContinuationSummary, ToolFileActionSummary, ToolIssueCommentSummary, ToolIssueDependencySummary, ToolIssueDevelopmentLinkSummary, ToolIssueSummary, ToolIssueTemplateConfigSummary, ToolIssueTemplateFormElementSummary, ToolIssueTemplateSummary, ToolIssueTimelineEventSummary, ToolIssueTypeSummary, ToolLabelSummary, ToolMilestoneSummary, ToolProjectFieldOptionSummary, ToolProjectFieldSummary, ToolProjectItemFieldValueSummary, ToolProjectItemSummary, ToolProjectIterationSummary, ToolProjectSummary, ToolRelatedIssueSummary } from "../types.ts";
 import { assertNotAborted } from "../utils/abort.ts";
 import { ALL_ISSUE_CREATORS, GITHUB_LOGIN_PATTERN, isValidGitHubLogin, issueCreatorEquals, normalizeAllowedIssueCreatorForLoad } from "../utils/github-login.ts";
 import { assertCollectionItemLimit } from "../utils/validation.ts";
@@ -381,6 +384,7 @@ function buildToolDetailBounds(normalizedDetails: IssueMeToolDetails): ToolDetai
 	const milestones = limitArray(normalizedDetails.milestones, MAX_TOOL_MILESTONES);
 	const assignees = limitArray(normalizedDetails.assignees, MAX_TOOL_ASSIGNEES);
 	const issueTypes = limitArray(normalizedDetails.issueTypes, MAX_TOOL_ISSUE_TYPES);
+	const issueTemplates = limitArray(normalizedDetails.issueTemplates, MAX_TOOL_ISSUE_TEMPLATES);
 	const projects = limitArray(normalizedDetails.projects, MAX_TOOL_PROJECTS);
 	const projectFields = limitArray(normalizedDetails.projectFields, MAX_TOOL_PROJECT_FIELDS);
 	const projectItems = limitArray(normalizedDetails.projectItems, MAX_TOOL_PROJECT_ITEMS);
@@ -405,6 +409,9 @@ function buildToolDetailBounds(normalizedDetails: IssueMeToolDetails): ToolDetai
 		milestones,
 		assignees,
 		issueTypes,
+		issueTemplates,
+		issueTemplate: boundToolIssueTemplateSummary(normalizedDetails.issueTemplate),
+		issueTemplateConfig: boundToolIssueTemplateConfigSummary(normalizedDetails.issueTemplateConfig),
 		project: boundToolProjectSummary(normalizedDetails.project),
 		projects,
 		projectFields,
@@ -424,6 +431,7 @@ function buildToolDetailBounds(normalizedDetails: IssueMeToolDetails): ToolDetai
 		boundedMilestones: milestones.value?.map(boundToolMilestoneSummary),
 		boundedAssignees: assignees.value?.map(boundToolAssigneeSummary),
 		boundedIssueTypes: issueTypes.value?.map(boundToolIssueTypeSummary),
+		boundedIssueTemplates: issueTemplates.value?.map(boundToolIssueTemplateSummary),
 		boundedProjects: projects.value?.map(boundToolProjectSummary),
 		boundedProjectFields: projectFields.value?.map(boundToolProjectFieldSummary),
 		boundedProjectItems: projectItems.value?.map(boundToolProjectItemSummary),
@@ -455,6 +463,9 @@ function buildBoundedToolDetails(normalizedDetails: IssueMeToolDetails, bounds: 
 	assignDefinedToolDetail(output, "milestones", collectBoundedValues(bounds.boundedMilestones));
 	assignDefinedToolDetail(output, "assignees", collectBoundedValues(bounds.boundedAssignees));
 	assignDefinedToolDetail(output, "issueTypes", collectBoundedValues(bounds.boundedIssueTypes));
+	assignDefinedToolDetail(output, "issueTemplates", collectBoundedValues(bounds.boundedIssueTemplates));
+	assignDefinedToolDetail(output, "issueTemplate", bounds.issueTemplate.value);
+	assignDefinedToolDetail(output, "issueTemplateConfig", bounds.issueTemplateConfig.value);
 	assignDefinedToolDetail(output, "project", bounds.project.value);
 	assignDefinedToolDetail(output, "projects", collectBoundedValues(bounds.boundedProjects));
 	assignDefinedToolDetail(output, "projectFields", collectBoundedValues(bounds.boundedProjectFields));
@@ -709,6 +720,9 @@ interface ToolDetailBounds {
 	milestones: LimitedArray<ToolMilestoneSummary>;
 	assignees: LimitedArray<ToolAssigneeSummary>;
 	issueTypes: LimitedArray<ToolIssueTypeSummary>;
+	issueTemplates: LimitedArray<ToolIssueTemplateSummary>;
+	issueTemplate: BoundedIssueTemplateSummary;
+	issueTemplateConfig: BoundedIssueTemplateConfigSummary;
 	project: BoundedProjectSummary;
 	projects: LimitedArray<ToolProjectSummary>;
 	projectFields: LimitedArray<ToolProjectFieldSummary>;
@@ -728,6 +742,7 @@ interface ToolDetailBounds {
 	boundedMilestones?: BoundedMilestoneSummary[];
 	boundedAssignees?: BoundedAssigneeSummary[];
 	boundedIssueTypes?: BoundedIssueTypeSummary[];
+	boundedIssueTemplates?: BoundedIssueTemplateSummary[];
 	boundedProjects?: BoundedProjectSummary[];
 	boundedProjectFields?: BoundedProjectFieldSummary[];
 	boundedProjectItems?: BoundedProjectItemSummary[];
@@ -801,6 +816,18 @@ interface BoundedProjectSummary {
 
 interface BoundedIssueTypeSummary {
 	value: ToolIssueTypeSummary;
+	truncated: boolean;
+	truncation: Record<string, unknown>;
+}
+
+interface BoundedIssueTemplateSummary {
+	value?: ToolIssueTemplateSummary;
+	truncated: boolean;
+	truncation: Record<string, unknown>;
+}
+
+interface BoundedIssueTemplateConfigSummary {
+	value?: ToolIssueTemplateConfigSummary;
 	truncated: boolean;
 	truncation: Record<string, unknown>;
 }
@@ -1089,6 +1116,65 @@ function boundToolIssueTypeSummary(type: ToolIssueTypeSummary): BoundedIssueType
 	assignDefinedProperty(value, "description", description);
 	assignDefinedProperty(value, "color", color);
 	assignDefinedProperty(value, "isEnabled", booleanOrUndefined(type.isEnabled));
+	return { value, truncated: hasTruncation(truncation), truncation };
+}
+
+function boundToolIssueTemplateSummary(template: ToolIssueTemplateSummary | undefined): BoundedIssueTemplateSummary {
+	if (template === undefined) return { truncated: false, truncation: {} };
+	const truncation: Record<string, unknown> = {};
+	const filename = truncateSafeString(redactKnownSensitiveText(template.filename), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const path = truncateSafeString(redactKnownSensitiveText(template.path), MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "filename", filename, template.filename, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	recordTruncationIfChanged(truncation, "path", path, template.path, MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+	const value: ToolIssueTemplateSummary = { filename, path, format: template.format, size: safeIntegerOrUndefined(template.size) ?? 0 };
+	for (const field of ["name", "about", "title"] as const) {
+		const bounded = redactAndTruncateOptionalString(template[field], MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+		recordTruncationIfChanged(truncation, field, bounded, template[field], MAX_TOOL_ERROR_DETAIL_STRING_CHARS);
+		assignDefinedProperty(value, field, bounded);
+	}
+	for (const field of ["labels", "assignees"] as const) {
+		const limited = limitArray(template[field], MAX_TOOL_LABELS);
+		recordLimitedArrayTruncation(truncation, field, limited, template[field]?.length, MAX_TOOL_LABELS);
+		assignDefinedProperty(value, field, limited.value?.map((item) => truncateSafeString(redactKnownSensitiveText(item), MAX_TOOL_ERROR_DETAIL_STRING_CHARS)));
+	}
+	const elements = limitArray(template.formElements, MAX_TOOL_ISSUE_TEMPLATE_FORM_ELEMENTS);
+	recordLimitedArrayTruncation(truncation, "formElements", elements, template.formElements?.length, MAX_TOOL_ISSUE_TEMPLATE_FORM_ELEMENTS);
+	assignDefinedProperty(value, "formElements", elements.value?.map(boundToolIssueTemplateFormElement));
+	assignDefinedProperty(value, "formElementsCount", safeIntegerOrUndefined(template.formElementsCount));
+	const content = redactAndTruncateOptionalString(template.content, MAX_TOOL_ISSUE_TEMPLATE_CONTENT_CHARS);
+	recordTruncationIfChanged(truncation, "content", content, template.content, MAX_TOOL_ISSUE_TEMPLATE_CONTENT_CHARS);
+	assignDefinedProperty(value, "content", content);
+	assignDefinedProperty(value, "contentOffset", safeIntegerOrUndefined(template.contentOffset));
+	assignDefinedProperty(value, "contentLength", safeIntegerOrUndefined(template.contentLength));
+	assignDefinedProperty(value, "contentTruncated", booleanOrUndefined(template.contentTruncated));
+	assignDefinedProperty(value, "tooLarge", booleanOrUndefined(template.tooLarge));
+	return { value, truncated: hasTruncation(truncation), truncation };
+}
+
+function boundToolIssueTemplateFormElement(element: ToolIssueTemplateFormElementSummary): ToolIssueTemplateFormElementSummary {
+	const value: ToolIssueTemplateFormElementSummary = { type: truncateSafeString(redactKnownSensitiveText(element.type), 64) };
+	assignDefinedProperty(value, "id", redactAndTruncateOptionalString(element.id, MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+	assignDefinedProperty(value, "label", redactAndTruncateOptionalString(element.label, MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+	assignDefinedProperty(value, "required", booleanOrUndefined(element.required));
+	return value;
+}
+
+function boundToolIssueTemplateConfigSummary(config: ToolIssueTemplateConfigSummary | undefined): BoundedIssueTemplateConfigSummary {
+	if (config === undefined) return { truncated: false, truncation: {} };
+	const truncation: Record<string, unknown> = {};
+	const links = limitArray(config.contactLinks, MAX_TOOL_LABELS);
+	recordLimitedArrayTruncation(truncation, "contactLinks", links, config.contactLinks.length, MAX_TOOL_LABELS);
+	const value: ToolIssueTemplateConfigSummary = {
+		path: truncateSafeString(redactKnownSensitiveText(config.path), MAX_TOOL_ERROR_DETAIL_STRING_CHARS),
+		contactLinks: (links.value ?? []).map((link) => {
+			const bounded: ToolIssueTemplateConfigSummary["contactLinks"][number] = {};
+			assignDefinedProperty(bounded, "name", redactAndTruncateOptionalString(link.name, MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+			assignDefinedProperty(bounded, "url", redactAndTruncateOptionalString(link.url, MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+			assignDefinedProperty(bounded, "about", redactAndTruncateOptionalString(link.about, MAX_TOOL_ERROR_DETAIL_STRING_CHARS));
+			return bounded;
+		}),
+	};
+	assignDefinedProperty(value, "blankIssuesEnabled", booleanOrUndefined(config.blankIssuesEnabled));
 	return { value, truncated: hasTruncation(truncation), truncation };
 }
 
@@ -1478,6 +1564,7 @@ function buildToolTruncation(details: IssueMeToolDetails, limits: ToolDetailBoun
 	addMilestoneToolTruncation(truncation, details, limits);
 	addAssigneeToolTruncation(truncation, details, limits);
 	addIssueTypeToolTruncation(truncation, details, limits);
+	addIssueTemplateToolTruncation(truncation, details, limits);
 	addProjectToolTruncation(truncation, details, limits);
 	addProjectFieldToolTruncation(truncation, details, limits);
 	addDevelopmentLinkToolTruncation(truncation, details, limits);
@@ -1521,6 +1608,16 @@ function addIssueTypeToolTruncation(target: Record<string, unknown>, details: Is
 		.filter(([, count]) => count > 0)
 		.map(([field, count]) => [field, { affectedIssueTypes: count }]));
 	addToolArraySummaryTruncation(target, "issueTypes", limits.issueTypes, details.issueTypes?.length, MAX_TOOL_ISSUE_TYPES, summaryTruncation);
+}
+
+function addIssueTemplateToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
+	const summaryTruncation = Object.fromEntries(["name", "about", "title", "labels", "assignees", "formElements", "content"]
+		.map((field) => [field, (limits.boundedIssueTemplates ?? []).filter((summary) => summary.truncation[field] !== undefined).length] as const)
+		.filter(([, count]) => count > 0)
+		.map(([field, count]) => [field, { affectedIssueTemplates: count }]));
+	addToolArraySummaryTruncation(target, "issueTemplates", limits.issueTemplates, details.issueTemplates?.length, MAX_TOOL_ISSUE_TEMPLATES, summaryTruncation);
+	if (limits.issueTemplate.truncated) target.issueTemplate = limits.issueTemplate.truncation;
+	if (limits.issueTemplateConfig.truncated) target.issueTemplateConfig = limits.issueTemplateConfig.truncation;
 }
 
 function addProjectToolTruncation(target: Record<string, unknown>, details: IssueMeToolDetails, limits: ToolDetailBounds): void {
@@ -1749,7 +1846,8 @@ function sanitizeErrorCode(code: string): string {
 	return code.replace(/[^a-z0-9_.-]/gi, "_").slice(0, 120) || "issueme_error";
 }
 
-function redactKnownSensitiveText(text: string): string {
+/** Exported so tools that embed repository text (for example template content) can redact it before rendering. */
+export function redactKnownSensitiveText(text: string): string {
 	return text
 		.replace(/github_pat_\w+/g, "[REDACTED]")
 		.replace(/gh[pousr]_\w+/g, "[REDACTED]");

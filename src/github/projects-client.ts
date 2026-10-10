@@ -508,6 +508,49 @@ export function buildArchiveProjectV2ItemMutation(action: ProjectV2ItemArchiveAc
 	}`;
 }
 
+/** `afterId` null moves the item to the top (schema-documented). The payload's `items` connection is the new order, used for verification. */
+export function buildMoveProjectV2ItemMutation(): string {
+	return `mutation IssueMeMoveProjectV2Item($projectId: ID!, $itemId: ID!, $afterId: ID, $verifyFirst: Int!) {
+		updateProjectV2ItemPosition(input: {projectId: $projectId, itemId: $itemId, afterId: $afterId}) {
+			items(first: $verifyFirst) {
+				nodes { id }
+			}
+		}
+	}`;
+}
+
+export interface ProjectV2ItemMoveVerification {
+	/** Zero-based position of the moved item inside the returned window. */
+	position: number;
+	/** How many items GitHub returned in the new order; verification is limited to this window. */
+	inspected: number;
+}
+
+/**
+ * Verifies the moved item is at the top (no anchor) or directly after the anchor inside the returned window. Anything else
+ * is reported as an accepted-but-unverified mutation so callers can inspect the board; repeating the move is safe.
+ */
+export function normalizeMoveProjectV2ItemResult(data: Record<string, unknown>, itemId: string, afterItemId: string | undefined): ProjectV2ItemMoveVerification {
+	const payload = isObject(data.updateProjectV2ItemPosition) ? data.updateProjectV2ItemPosition : undefined;
+	const items = payload && isObject(payload.items) ? payload.items : undefined;
+	const nodes = items && Array.isArray(items.nodes) ? items.nodes : undefined;
+	if (!nodes) {
+		throw new GitHubApiError("GitHub GraphQL updateProjectV2ItemPosition mutation returned an unexpected response shape.", { code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" });
+	}
+	const order = nodes.map((node) => (isObject(node) ? normalizeProjectV2OutputId(node.id, "itemId") : undefined)).filter((id): id is string => typeof id === "string");
+	const position = order.indexOf(itemId);
+	const anchorPosition = afterItemId === undefined ? undefined : order.indexOf(afterItemId);
+	const verified = position >= 0 && (afterItemId === undefined ? position === 0 : anchorPosition !== undefined && anchorPosition >= 0 && position === anchorPosition + 1);
+	if (!verified) {
+		const expectation = afterItemId === undefined ? "at the top" : `directly after ${afterItemId}`;
+		throw new GitHubApiError(
+			`GitHub accepted updateProjectV2ItemPosition, but the returned order (first ${order.length} items) does not show ${itemId} ${expectation}; a concurrent board edit or a longer board may explain it. Inspect the board with issueme_list_project_items; repeating the move is safe.`,
+			{ code: ISSUEME_ERROR_CODES.GITHUB_RESPONSE_SHAPE_INVALID, path: `${GITHUB_API_BASE_URL}/graphql`, mutationSettlement: "remote_success_known" },
+		);
+	}
+	return { position, inspected: order.length };
+}
+
 function projectV2ItemValidationSelection(): string {
 	return `id
 				type
@@ -905,6 +948,8 @@ export const PROJECT_V2_ITEM_ISSUE_STATE_POLICY = {
 	clear_field: "open_or_closed",
 	remove_item: "open_or_closed",
 	archive_item: "open_or_closed",
+	/** Ordering represents priority of active work, so it stays open-only (Task 5 table, Task 17). */
+	move_item: "open_only",
 } as const satisfies Record<string, ProjectV2ItemIssueStatePolicy>;
 
 export function assertProjectV2ItemTargetsIssue(
@@ -922,6 +967,34 @@ export function assertProjectV2ItemTargetsIssue(
 	if (issue.actualRepository.toLowerCase() !== repository.toLowerCase()) throw projectV2ItemRepositoryMismatchError(input, repository, issue.actualRepository);
 	if (issue.actualIssueNumber !== input.issueNumber) throw projectV2ItemIssueNumberMismatchError(input, issue.actualIssueNumber);
 	if (statePolicy === "open_only" && issue.state !== "open") throw new ClosedIssueMutationError(issue.actualIssueNumber, issue.state, projectV2ItemContentToSafeSummary(repository, content, issue.actualIssueNumber, issue.state));
+}
+
+/** The anchor for a move must be an accessible item on the same board; its content type does not matter because ordering is relative. */
+export function assertProjectV2AnchorItem(data: ProjectV2ItemValidationData, input: { projectId: string; itemId: string; afterItemId: string }): void {
+	const anchor = data.node;
+	if (!isObject(anchor)) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			"afterItemId must resolve to an accessible GitHub Projects v2 item on the same board before IssueMe moves an item.",
+			{ itemId: input.itemId, afterItemId: input.afterItemId, projectId: input.projectId },
+			{ recoveryHint: "Use issueme_list_project_items on the selected project to rediscover anchor item IDs." },
+		);
+	}
+	const actualProjectId = requireProjectV2ItemProjectId(anchor);
+	if (actualProjectId !== input.projectId) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			"afterItemId must belong to projectId; refusing to order against an item from another board.",
+			{ itemId: input.itemId, afterItemId: input.afterItemId, projectId: input.projectId, actualProjectId },
+		);
+	}
+	if (anchor.type === "REDACTED" || !isObject(anchor.content)) {
+		throw new IssueMeError(
+			ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT,
+			"afterItemId resolves to an item whose content is not accessible; refusing to use it as an anchor.",
+			{ itemId: input.itemId, afterItemId: input.afterItemId, projectId: input.projectId, contentType: projectV2ItemContentType(anchor.content) },
+		);
+	}
 }
 
 function inaccessibleProjectV2ItemError(input: { projectId: string; itemId: string; issueNumber: number }): IssueMeError {

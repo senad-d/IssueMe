@@ -7,6 +7,7 @@ import {
 	buildArchiveProjectV2ItemMutation,
 	buildClearProjectV2ItemFieldValueMutation,
 	buildDeleteProjectV2ItemMutation,
+	buildMoveProjectV2ItemMutation,
 	buildProjectV2AddValidationQuery,
 	buildProjectV2FieldsByIdQuery,
 	buildProjectV2FieldsByNumberQuery,
@@ -48,6 +49,7 @@ function documents() {
 		["buildClearProjectV2ItemFieldValueMutation", buildClearProjectV2ItemFieldValueMutation()],
 		["buildArchiveProjectV2ItemMutation(archive)", buildArchiveProjectV2ItemMutation("archive")],
 		["buildArchiveProjectV2ItemMutation(unarchive)", buildArchiveProjectV2ItemMutation("unarchive")],
+		["buildMoveProjectV2ItemMutation", buildMoveProjectV2ItemMutation()],
 		["buildIssueDevelopmentLinksQuery", buildIssueDevelopmentLinksQuery()],
 		["buildSubIssueRelationshipsQuery", buildSubIssueRelationshipsQuery()],
 	];

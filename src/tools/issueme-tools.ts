@@ -10,6 +10,7 @@ import { registerDeleteIssueTool } from "./delete-issue.ts";
 import { registerListIssueDevelopmentLinksTool } from "./development-links.ts";
 import { registerGetIssueTool } from "./get-issue.ts";
 import { registerIssueCommentReadTools } from "./issue-comments.ts";
+import { registerListIssueTemplatesTool } from "./issue-templates.ts";
 import { registerListIssueTypesTool } from "./issue-types.ts";
 import { registerIssueDependencyTools } from "./issue-dependencies.ts";
 import { registerListIssueTimelineTool } from "./issue-timeline.ts";
@@ -40,6 +41,7 @@ export function registerIssueMeTools(pi: ExtensionAPI, options: IssueMeToolRegis
 	registerListMilestonesTool(piWithResultPolicy, options);
 	registerListAssigneesTool(piWithResultPolicy, options);
 	registerListIssueTypesTool(piWithResultPolicy, options);
+	registerListIssueTemplatesTool(piWithResultPolicy, options);
 	registerProjectTools(piWithResultPolicy, options);
 	registerProjectItemTools(piWithResultPolicy, options);
 	registerProjectItemMaintenanceTools(piWithResultPolicy, options);

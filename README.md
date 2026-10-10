@@ -31,7 +31,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 
 - **GitHub API native:** no GitHub CLI dependency and no shell execution for GitHub issue operations.
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
-- **Agent tool suite:** registers forty-five `issueme_*` tools for repository overview, issue, label, milestone, assignee, issue-type, Projects v2 (discovery, items, maintenance), comment, sub-issue, dependency, related-issue, timeline, development-link, permanent-deletion, and bulk workflows.
+- **Agent tool suite:** registers forty-seven `issueme_*` tools for repository overview, issue, label, milestone, assignee, issue-type, issue-template, Projects v2 (discovery, items, maintenance, ordering), comment, sub-issue, dependency, related-issue, timeline, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
 - **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels/reopen/confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
@@ -173,7 +173,7 @@ IssueMe provides tools; your project `SKILL.md` should describe your team's issu
 
 ## Agent Tools
 
-IssueMe registers forty-five `issueme_*` tools. The most common flow is:
+IssueMe registers forty-seven `issueme_*` tools. The most common flow is:
 
 1. Orient: `issueme_get_overview` returns bounded summaries in one call, with no cache writes and at most five GitHub requests. Inspect section status; returned rows are not repository totals.
 2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_get_project_fields`, `issueme_list_project_items`, `issueme_list_issue_comments`, `issueme_list_sub_issues`, `issueme_list_issue_dependencies`, `issueme_list_issue_timeline`, and `issueme_list_issue_development_links`. When a result is truncated, pass `details.continuation.nextToken` as `after` with the same filters to read the next page. Sync only when local cache files are needed.
@@ -212,10 +212,10 @@ IssueMe accepts either kind of personal access token and behaves the same with b
 
 | Token type | Grant | Covers | Cannot reach |
 | --- | --- | --- | --- |
-| Fine-grained personal access token | Repository permissions: Issues read and write, Metadata read. For organization boards add the organization permission Projects. | Every issue, comment, label, milestone, assignee, sub-issue, dependency, related-issue, timeline, development-link, issue-type, deletion, and bulk tool. Projects v2 boards owned by an organization. | Projects v2 boards owned by a user account. GitHub documents this as a limitation of fine-grained tokens, and no permission exists to grant it. |
+| Fine-grained personal access token | Repository permissions: Issues read and write, Metadata read, Contents read (issue template discovery). For organization boards add the organization permission Projects. | Every issue, comment, label, milestone, assignee, sub-issue, dependency, related-issue, timeline, development-link, issue-type, deletion, and bulk tool. Projects v2 boards owned by an organization. | Projects v2 boards owned by a user account. GitHub documents this as a limitation of fine-grained tokens, and no permission exists to grant it. |
 | Classic personal access token | Scopes `repo` and `project` (`read:project` is enough for read-only board discovery). | Everything above plus user-owned Projects v2 boards. | Nothing, but `repo` grants access to every repository the account can reach, so prefer the fine-grained token unless you need a user-owned board. |
 
-How the limitation shows up: with a fine-grained token the eight Projects v2 tools (`issueme_list_projects`, `issueme_get_project_fields`, `issueme_add_issue_to_project`, `issueme_update_project_item`, `issueme_list_project_items`, `issueme_get_project_item`, `issueme_remove_issue_from_project`, `issueme_clear_project_item_field`, `issueme_archive_project_item`) fail cleanly with `github_projects_v2_forbidden` ("Resource not accessible by personal access token"), and `issueme_get_overview` reports its projects section as unavailable while every other section still works. Nothing else degrades.
+How the limitation shows up: with a fine-grained token the Projects v2 tools (`issueme_list_projects`, `issueme_get_project_fields`, `issueme_add_issue_to_project`, `issueme_update_project_item`, `issueme_list_project_items`, `issueme_get_project_item`, `issueme_remove_issue_from_project`, `issueme_clear_project_item_field`, `issueme_archive_project_item`, `issueme_move_project_item`) fail cleanly with `github_projects_v2_forbidden` ("Resource not accessible by personal access token"), and `issueme_get_overview` reports its projects section as unavailable while every other section still works. Nothing else degrades.
 
 Independent of token type:
 

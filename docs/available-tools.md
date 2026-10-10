@@ -21,6 +21,7 @@
 - `issueme_list_milestones`
 - `issueme_list_assignees`
 - `issueme_list_issue_types`
+- `issueme_list_issue_templates`
 - `issueme_list_projects`
 - `issueme_get_project_fields`
 - `issueme_add_issue_to_project`
@@ -30,6 +31,7 @@
 - `issueme_remove_issue_from_project`
 - `issueme_clear_project_item_field`
 - `issueme_archive_project_item`
+- `issueme_move_project_item`
 - `issueme_manage_label`
 - `issueme_manage_milestone`
 - `issueme_create_issue`

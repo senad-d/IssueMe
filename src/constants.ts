@@ -46,3 +46,7 @@ export const MAX_TOOL_TIMELINE_EVENT_TYPES = 25;
 export const MAX_ISSUE_TYPE_NAME_CHARS = 100;
 export const MAX_TOOL_COMMENT_BODY_CHARS = 4000;
 export const PROJECT_TRUST_REQUIREMENT = "Project trust is required before IssueMe reads project-local config, .env, Git config, or issue cache files.";
+export const MAX_TOOL_ISSUE_TEMPLATES = 25;
+export const MAX_TOOL_ISSUE_TEMPLATE_CONTENT_CHARS = 8000;
+export const MAX_TOOL_ISSUE_TEMPLATE_FORM_ELEMENTS = 50;
+export const MAX_ISSUE_TEMPLATE_FILE_BYTES = 100_000;

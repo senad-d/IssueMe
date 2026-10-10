@@ -3,7 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { ISSUEME_ERROR_CODES, IssueMeError, isRemoteMutationSuccessKnown } from "../errors.ts";
-import type { GitHubProjectV2ItemArchiveResult, GitHubProjectV2ItemFieldClearResult, GitHubProjectV2ItemRemovalResult } from "../github/client.ts";
+import type { GitHubProjectV2ItemArchiveResult, GitHubProjectV2ItemFieldClearResult, GitHubProjectV2ItemMoveResult, GitHubProjectV2ItemRemovalResult } from "../github/client.ts";
 import { issueResponseToSafeSummary } from "../github/issues-client.ts";
 import type { GitHubIssueResponse, IssueMeToolDetails, ToolProjectItemSummary } from "../types.ts";
 import { normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId } from "../utils/validation.ts";
@@ -43,7 +43,20 @@ const ArchiveProjectItemParams = Type.Object(
 	{ additionalProperties: false },
 );
 
+const MoveProjectItemParams = Type.Object(
+	{
+		projectId: Type.String({ description: "ProjectV2 node ID." }),
+		itemId: Type.String({ description: "ProjectV2Item node ID to move." }),
+		issueNumber: Type.Integer({ minimum: 1, description: "Open issue number represented by item." }),
+		afterItemId: Type.Optional(Type.String({ description: "Anchor ProjectV2Item node ID on the same board; omit to move to top." })),
+	},
+	{ additionalProperties: false },
+);
+
+const MOVE_POLICY_NOTE = "Moving changes board order only; field values, archive state, issue relationships, and the issue itself are unchanged. Ordering requires an open backing issue.";
+
 type RemoveIssueFromProjectToolParams = Static<typeof RemoveIssueFromProjectParams>;
+type MoveProjectItemToolParams = Static<typeof MoveProjectItemParams>;
 type ClearProjectItemFieldToolParams = Static<typeof ClearProjectItemFieldParams>;
 type ArchiveProjectItemToolParams = Static<typeof ArchiveProjectItemParams>;
 
@@ -57,6 +70,46 @@ export function registerProjectItemMaintenanceTools(pi: ExtensionAPI, options: I
 	registerRemoveIssueFromProjectTool(pi, options);
 	registerClearProjectItemFieldTool(pi, options);
 	registerArchiveProjectItemTool(pi, options);
+	registerMoveProjectItemTool(pi, options);
+}
+
+export function registerMoveProjectItemTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
+	pi.registerTool(
+		defineTool({
+			name: "issueme_move_project_item",
+			label: "IssueMe Move Project Item",
+			description: "Move one Projects v2 item to top or after another item.",
+			promptSnippet: "Move one Projects v2 item for priority.",
+			promptGuidelines: [
+				"Use issueme_move_project_item for board priority only, with discovered item IDs; omit afterItemId to move to top, otherwise pass an anchor item from the same board.",
+			],
+			executionMode: "sequential",
+			parameters: MoveProjectItemParams,
+			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+				const normalized = normalizeMoveProjectItemParams(params);
+				const runtime = await createIssueMeRuntime(ctx, options.runtime);
+				await assertExistingIssueCreatorAllowed(runtime, normalized.issueNumber, "move_project_item", signal);
+				let result: GitHubProjectV2ItemMoveResult;
+				try {
+					result = await runtime.client.moveProjectV2Item(normalized, signal);
+				} catch (error) {
+					if (!isRemoteMutationSuccessKnown(error)) throw error;
+					return remoteMutationPartialSuccessToolText(
+						`GitHub accepted the request to move project item ${normalized.itemId}, but IssueMe could not verify its new position.`,
+						error,
+						{ repository: runtime.repository, creatorScope: issueCreatorScopeLabel(runtime.config), changedFields: ["position"] },
+						"move_project_item_response_partial_success",
+					);
+				}
+				return toolText(formatMoveText(result, normalized), buildMaintenanceDetails(runtime, result.issue, normalized, {
+					status: "project_item_moved",
+					changedFields: ["position"],
+					counts: { changed: 1, position: result.position, inspected: result.inspected },
+					message: MOVE_POLICY_NOTE,
+				}));
+			},
+		}),
+	);
 }
 
 export function registerRemoveIssueFromProjectTool(pi: ExtensionAPI, options: IssueMeToolRegistrationOptions = {}) {
@@ -196,6 +249,16 @@ function normalizeClearProjectItemFieldParams(params: ClearProjectItemFieldToolP
 	return { ...normalizeProjectItemTarget(params), fieldId: normalizeRequiredGitHubOpaqueId(params.fieldId, "fieldId") };
 }
 
+function normalizeMoveProjectItemParams(params: MoveProjectItemToolParams): NormalizedProjectItemTarget & { afterItemId?: string } {
+	const target = normalizeProjectItemTarget(params);
+	if (params.afterItemId === undefined) return target;
+	const afterItemId = normalizeRequiredGitHubOpaqueId(params.afterItemId, "afterItemId");
+	if (afterItemId === target.itemId) {
+		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "afterItemId must differ from itemId; an item cannot be positioned after itself.", { field: "afterItemId" });
+	}
+	return { ...target, afterItemId };
+}
+
 function normalizeArchiveProjectItemParams(params: ArchiveProjectItemToolParams): NormalizedProjectItemTarget & { action: "archive" | "unarchive" } {
 	if (params.action !== "archive" && params.action !== "unarchive") {
 		throw new IssueMeError(ISSUEME_ERROR_CODES.INVALID_TOOL_INPUT, "action must be archive or unarchive.", { field: "action" });
@@ -207,7 +270,7 @@ function buildMaintenanceDetails(
 	runtime: IssueMeRuntime,
 	issue: GitHubIssueResponse,
 	target: NormalizedProjectItemTarget,
-	extra: { status: string; changedFields: string[]; isArchived?: boolean; removedPaths?: string[] },
+	extra: { status: string; changedFields: string[]; isArchived?: boolean; removedPaths?: string[]; counts?: Record<string, number>; message?: string },
 ): IssueMeToolDetails {
 	const issueSummary = issueResponseToSafeSummary(runtime.repository, issue, target.issueNumber);
 	const projectItem: ToolProjectItemSummary = { id: target.itemId };
@@ -220,11 +283,20 @@ function buildMaintenanceDetails(
 		...(issueSummary ? { issue: issueSummary } : {}),
 		projectItem,
 		changedFields: extra.changedFields,
-		counts: { changed: extra.changedFields.length > 0 ? 1 : 0 },
+		counts: extra.counts ?? { changed: extra.changedFields.length > 0 ? 1 : 0 },
 		cacheUpdated: false,
 		needsSync: false,
-		message: PROJECT_ONLY_POLICY_NOTE,
+		message: extra.message ?? PROJECT_ONLY_POLICY_NOTE,
 	};
+}
+
+function formatMoveText(result: GitHubProjectV2ItemMoveResult, target: NormalizedProjectItemTarget & { afterItemId?: string }): string {
+	const destination = result.afterItemId === undefined ? `to the top of project ${target.projectId}` : `directly after item ${result.afterItemId} on project ${target.projectId}`;
+	return [
+		`Moved project item ${result.itemId} (issue #${target.issueNumber}) ${destination}.`,
+		`Verified at position ${result.position + 1} of the first ${result.inspected} items in the order GitHub returned; board edits made after this response are not tracked.`,
+		MOVE_POLICY_NOTE,
+	].join("\n");
 }
 
 function formatRemovalText(result: GitHubProjectV2ItemRemovalResult, target: NormalizedProjectItemTarget): string {

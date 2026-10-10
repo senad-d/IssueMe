@@ -28,6 +28,7 @@ const toolSmokeScenarios = [
   { name: "issueme_list_milestones", params: { state: "all", limit: 5 } },
   { name: "issueme_list_assignees", params: { query: "bot", limit: 5 } },
   { name: "issueme_list_issue_types", params: {} },
+  { name: "issueme_list_issue_templates", params: {} },
   { name: "issueme_list_projects", params: { limit: 5 } },
   { name: "issueme_get_project_fields", params: { projectNumber: 1, fieldLimit: 5 } },
   { name: "issueme_add_issue_to_project", params: { issueNumber: 10, projectId: "PVT_repo_1" } },
@@ -45,6 +46,7 @@ const toolSmokeScenarios = [
   { name: "issueme_list_project_items", params: { projectId: "PVT_repo_1", limit: 5 } },
   { name: "issueme_get_project_item", params: { projectId: "PVT_repo_1", issueNumber: 10 } },
   { name: "issueme_archive_project_item", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, action: "archive" } },
+  { name: "issueme_move_project_item", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10 } },
   { name: "issueme_clear_project_item_field", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, fieldId: "PVTSSF_status" } },
   { name: "issueme_remove_issue_from_project", params: { projectId: "PVT_repo_1", itemId: "PVTI_10", issueNumber: 10, confirmRemove: true } },
   { name: "issueme_manage_label", params: { action: "create", name: "safe-smoke", color: "0e8a16", description: "Handler smoke label" } },
@@ -634,6 +636,11 @@ function createMockGitHubClient() {
       const issue = ensureOpen(input.issueNumber);
       return { status: input.action === "archive" ? "archived" : "unarchived", itemId: input.itemId, issue, isArchived: input.action === "archive" };
     },
+    async moveProjectV2Item(input) {
+      record("moveProjectV2Item", `${input.itemId}/${input.afterItemId ?? "top"}`, { projectId: input.projectId });
+      const issue = ensureOpen(input.issueNumber);
+      return { status: "moved", itemId: input.itemId, issue, ...(input.afterItemId ? { afterItemId: input.afterItemId } : {}), position: 0, inspected: 1 };
+    },
     async listIssueComments(issueNumber, filters = {}) {
       record("listIssueComments", issueNumber, { limit: filters.limit, since: filters.since });
       getIssueOrThrow(issueNumber);
@@ -647,6 +654,16 @@ function createMockGitHubClient() {
       const comment = (comments.get(issueNumber) ?? []).find((candidate) => candidate.id === commentId);
       if (!comment) throw new Error(`Mock GitHub comment ${commentId} not found on issue #${issueNumber}.`);
       return { issue, comment };
+    },
+    async listIssueTemplates() {
+      record("listIssueTemplates", 0);
+      const template = { filename: "bug_report.md", path: ".github/ISSUE_TEMPLATE/bug_report.md", format: "markdown", size: 42, name: "Bug report", labels: ["bug"], contentLength: 20 };
+      return { source: "directory", sourcePath: ".github/ISSUE_TEMPLATE", templates: [{ template, text: "---\nname: Bug report\n---\nSteps" }], config: { path: ".github/ISSUE_TEMPLATE/config.yml", blankIssuesEnabled: false, contactLinks: [] }, truncated: false };
+    },
+    async readIssueTemplate(filename) {
+      record("readIssueTemplate", 0, { filename });
+      const template = { filename, path: `.github/ISSUE_TEMPLATE/${filename}`, format: "markdown", size: 42, name: "Bug report", contentLength: 20 };
+      return { template, text: "---\nname: Bug report\n---\nSteps" };
     },
     async listRepositoryIssueTypes() {
       record("listRepositoryIssueTypes", smokeRepository);

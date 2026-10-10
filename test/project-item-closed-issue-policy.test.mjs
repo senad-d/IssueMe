@@ -89,7 +89,7 @@ function assertNoToken(value) {
 }
 
 test("the per-action issue-state policy is explicit and the shared item assertion enforces it", () => {
-	assert.deepEqual(PROJECT_V2_ITEM_ISSUE_STATE_POLICY, { add_to_project: "open_only", update_field: "open_or_closed", clear_field: "open_or_closed", remove_item: "open_or_closed", archive_item: "open_or_closed" });
+	assert.deepEqual(PROJECT_V2_ITEM_ISSUE_STATE_POLICY, { add_to_project: "open_only", update_field: "open_or_closed", clear_field: "open_or_closed", remove_item: "open_or_closed", archive_item: "open_or_closed", move_item: "open_only" });
 	const data = { node: itemNode() };
 	assert.throws(() => assertProjectV2ItemTargetsIssue(data, TARGET, TEST_REPOSITORY), (error) => error instanceof ClosedIssueMutationError && error.issueNumber === 7, "default policy stays open-only");
 	assert.throws(() => assertProjectV2ItemTargetsIssue(data, TARGET, TEST_REPOSITORY, "open_only"), ClosedIssueMutationError);
@@ -138,6 +138,7 @@ test("adding a closed issue to a board is still refused directly and through bul
 	const server = closedIssueServer();
 	const { run } = await allTools(server);
 	await assert.rejects(() => run("issueme_add_issue_to_project", { issueNumber: 7, projectId: "PVT_1" }), (error) => error instanceof ClosedIssueMutationError && error.safeDetails.status === "closed_issue_mutation_refused");
+	await assert.rejects(() => run("issueme_move_project_item", { ...TARGET }), (error) => error instanceof ClosedIssueMutationError, "ordering stays open-only under the approved policy");
 	const bulk = await run("issueme_bulk_update_issues", { issueNumbers: [7], action: "add_to_project", projectId: "PVT_1" });
 	assert.equal(bulk.details.result, "error");
 	assert.deepEqual(bulk.details.bulkResults.map((entry) => [entry.status, entry.error.code]), [["failed", ISSUEME_ERROR_CODES.CLOSED_ISSUE_MUTATION_REFUSED]]);

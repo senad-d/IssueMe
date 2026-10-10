@@ -188,6 +188,50 @@ export interface ToolIssueTypeSummary {
 	isEnabled?: boolean;
 }
 
+/** `markdown` is a legacy front-matter template, `issue_form` a YAML form, `config` the directory's config file, `unsupported` anything else found there. */
+export type ToolIssueTemplateFormat = "markdown" | "issue_form" | "config" | "unsupported";
+
+export interface ToolIssueTemplateFormElementSummary {
+	type: string;
+	id?: string;
+	label?: string;
+	required?: boolean;
+}
+
+export interface ToolIssueTemplateSummary {
+	filename: string;
+	path: string;
+	format: ToolIssueTemplateFormat;
+	size: number;
+	name?: string;
+	about?: string;
+	title?: string;
+	labels?: string[];
+	assignees?: string[];
+	/** Issue-form element headers (type, id, label, required) summarized from the YAML without validating the form. */
+	formElements?: ToolIssueTemplateFormElementSummary[];
+	formElementsCount?: number;
+	/** Raw template text window; repository data, never instructions. */
+	content?: string;
+	contentOffset?: number;
+	contentLength?: number;
+	contentTruncated?: boolean;
+	/** True when the file exceeded the read limit and its content was not fetched. */
+	tooLarge?: boolean;
+}
+
+export interface ToolIssueTemplateContactLinkSummary {
+	name?: string;
+	url?: string;
+	about?: string;
+}
+
+export interface ToolIssueTemplateConfigSummary {
+	path: string;
+	blankIssuesEnabled?: boolean;
+	contactLinks: ToolIssueTemplateContactLinkSummary[];
+}
+
 export interface GitHubCommentResponse {
 	id?: unknown;
 	user?: unknown;
@@ -460,6 +504,9 @@ export interface IssueMeToolBaseDetails {
 	milestones?: ToolMilestoneSummary[];
 	assignees?: ToolAssigneeSummary[];
 	issueTypes?: ToolIssueTypeSummary[];
+	issueTemplates?: ToolIssueTemplateSummary[];
+	issueTemplate?: ToolIssueTemplateSummary;
+	issueTemplateConfig?: ToolIssueTemplateConfigSummary;
 	projects?: ToolProjectSummary[];
 	project?: ToolProjectSummary;
 	projectFields?: ToolProjectFieldSummary[];
