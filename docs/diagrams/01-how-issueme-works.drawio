@@ -1,0 +1,122 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="31.7.0">
+  <diagram id="01-how-issueme-works" name="How IssueMe works">
+    <mxGraphModel dx="1500" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1210" pageHeight="1280" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="How IssueMe works" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=30;fontColor=#0F172A;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1130" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="On-demand tools, not a background bot. GitHub is the source of truth; the local cache is optional." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1130" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="user" value="&lt;b&gt;You&lt;/b&gt;&lt;br&gt;Ask for an issue workflow&lt;br&gt;Optional project skill" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="250" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="agent" value="&lt;b&gt;Pi agent&lt;/b&gt;&lt;br&gt;Reads your request / skill&lt;br&gt;Chooses tools and exact targets" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="390" y="180" width="280" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="tools" value="&lt;b&gt;IssueMe extension&lt;/b&gt;&lt;br&gt;47 issueme_* tools + /issueme&lt;br&gt;Typed inputs; bounded outputs" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="180" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="local" value="&lt;b&gt;Cached get_issue (no refresh)&lt;/b&gt;&lt;br&gt;Trust + config + repository checks&lt;br&gt;No token or network needed" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F5F3FF;strokeColor=#7C3AED;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="330" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="runtime" value="&lt;b&gt;Remote-operation checks&lt;/b&gt;&lt;br&gt;Trusted project; config; repo; token&lt;br&gt;Creator scope + target identity&lt;br&gt;Open-state / permission policy" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="370" width="380" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="cache" value="&lt;b&gt;Optional local JSON cache&lt;/b&gt;&lt;br&gt;.pi/issues/&amp;lt;number&amp;gt;-&amp;lt;slug&amp;gt;.json&lt;br&gt;Open, in-scope issues only&lt;br&gt;Bodies + up to 100 comments" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F5F3FF;strokeColor=#7C3AED;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="330" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="&lt;b&gt;GitHub API clients&lt;/b&gt;&lt;br&gt;REST: issues, comments, taxonomy,&lt;br&gt;templates, dependencies, related links&lt;br&gt;GraphQL: boards, sub-issues,&lt;br&gt;development links, issue deletion" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="600" width="380" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="result" value="&lt;b&gt;Result back to the agent → you&lt;/b&gt;&lt;br&gt;Inspect isError + details.result / status / needsSync&lt;br&gt;Report verified changes; reconcile partial outcomes" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="890" width="600" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="github" value="&lt;b&gt;GitHub • source of truth&lt;/b&gt;&lt;br&gt;Reads and explicit mutations&lt;br&gt;No automatic retry or rollback" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="890" width="380" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="user" target="agent">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="agent" target="tools">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="730" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="tools" target="runtime">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="335"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.85;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;dashed=1;" edge="1" parent="1" source="tools" target="local">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720" y="282"/>
+              <mxPoint x="720" y="430"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="local" target="cache">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="205" y="545"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="runtime" target="api">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="560"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;dashed=1;" edge="1" parent="1" source="api" target="cache">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="550" y="690"/>
+              <mxPoint x="550" y="680"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="cache-edge-note" value="Sync / refresh / cache-aware issue actions" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="395" y="615" width="340" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;startArrow=block;startFill=1;" edge="1" parent="1" source="api" target="github">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="835"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.275;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="cache" target="result">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="205" y="825"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="github" target="result">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="715" y="960"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Safety boundary&lt;/b&gt;&lt;br&gt;Tokens stay out of config/cache/output. Requests and issue targets are repository-scoped.&lt;br&gt;Cache/config writes use safe paths and file-mutation queues; IssueMe mutations run sequentially.&lt;br&gt;No GitHub CLI, webhooks, listeners, or automatic issue changes from editing a cache file." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1100" width="1130" height="140" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -40,6 +40,8 @@
     "SECURITY.md",
     "CHANGELOG.md",
     "docs/**/*.md",
+    "docs/diagrams/*.svg",
+    "docs/diagrams/*.drawio",
     "skills/**/*.md",
     "src/**/*.ts",
     "tsconfig.json"

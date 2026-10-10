@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="31.7.0">
+  <diagram id="02-supported-workflows" name="What can I do with IssueMe?">
+    <mxGraphModel dx="1500" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1260" pageHeight="1235" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="What can I do with IssueMe?" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=30;fontColor=#0F172A;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1180" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Nine workflow families cover all 47 registered tools. Your prompt or project skill composes the steps." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1180" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-0" value="&lt;b&gt;Explore &amp;amp; triage • 7 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Compact repository overview&lt;br&gt;Filtered issue search&lt;br&gt;Labels, milestones, assignable people&lt;br&gt;Organization issue types&lt;br&gt;Repository templates &amp;amp; issue forms" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-1" value="&lt;b&gt;Local issue context • 2 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Sync open issues to local JSON&lt;br&gt;Read by number, filename, or title&lt;br&gt;Refresh one issue from GitHub&lt;br&gt;Remove stale closed cache entries&lt;br&gt;Cache is not a two-way sync" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F5F3FF;strokeColor=#7C3AED;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="450" y="190" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-2" value="&lt;b&gt;Issue lifecycle • 7 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Create and update issue fields&lt;br&gt;Assign people; change labels&lt;br&gt;Close with a reason&lt;br&gt;Explicitly reopen&lt;br&gt;Confirmed permanent deletion" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="190" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-3" value="&lt;b&gt;Discussion • 5 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;List comments with continuation&lt;br&gt;Read one comment / long-body windows&lt;br&gt;Post a progress note&lt;br&gt;Edit or delete an exact comment&lt;br&gt;Reads also work on closed issues" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="475" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-4" value="&lt;b&gt;Repository planning • 2 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Create / rename / recolor labels&lt;br&gt;Create / edit / close / reopen milestones&lt;br&gt;Confirmed taxonomy deletion&lt;br&gt;Separate from issue-level assignment&lt;br&gt;No issue-type administration" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="450" y="475" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-5" value="&lt;b&gt;Break down &amp;amp; link work • 11 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Native parent / child sub-issues (5)&lt;br&gt;Reorder all current children&lt;br&gt;Native prerequisite dependencies (3)&lt;br&gt;Native related-issue links (3)&lt;br&gt;Never a body-text fallback" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="475" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-6" value="&lt;b&gt;Projects v2 • 10 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Discover boards, fields, and items&lt;br&gt;Add an open issue&lt;br&gt;Set / clear typed field values&lt;br&gt;Move item to top or after an anchor&lt;br&gt;Archive / restore / remove an item" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="760" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-7" value="&lt;b&gt;History &amp;amp; linked work • 2 tools&lt;/b&gt;&lt;br&gt;&lt;br&gt;Read issue timeline events&lt;br&gt;Inspect linked PRs, branches, commits&lt;br&gt;Check for existing work before coding&lt;br&gt;Metadata only; no PR bodies&lt;br&gt;Does not create or merge PRs" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="450" y="760" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="family-8" value="&lt;b&gt;Explicit batch changes • 1 tool&lt;/b&gt;&lt;br&gt;&lt;br&gt;One action on 1–50 exact issue numbers&lt;br&gt;Labels, people, milestone, board, state&lt;br&gt;Sequential per-issue execution&lt;br&gt;Stops on failure / partial by default&lt;br&gt;Per-item results; no transaction" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="760" width="360" height="235" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Not a Git or PR automation extension&lt;/b&gt;&lt;br&gt;IssueMe inspects linked development but does not implement code, create branches, push commits, or merge PRs.&lt;br&gt;GitHub permissions and feature availability still apply. Unsupported native features are reported, not imitated." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1070" width="1180" height="125" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

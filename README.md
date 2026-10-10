@@ -16,7 +16,7 @@
 
 ---
 
-IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issues layer. It uses GitHub REST and GraphQL APIs, keeps bounded local JSON cache files for open issues, and exposes tools for syncing, triage, labels, milestones, comments, assignees, Projects v2, native sub-issues, linked-development inspection, confirmed issue deletion, and explicit bulk updates.
+IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issues layer. It uses GitHub REST and GraphQL APIs, keeps bounded local JSON cache files for open issues, and exposes tools for syncing, triage, labels, milestones, comments, assignees, issue types, issue templates, Projects v2 boards and item ordering, native sub-issues, dependencies and related issues, issue history, linked-development inspection, confirmed issue deletion, and explicit bulk updates.
 
 <table align="center">
   <tr>
@@ -33,7 +33,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 - **Repository scoped:** resolves the current `owner/repo` from trusted project context and validates GitHub request boundaries.
 - **Agent tool suite:** registers forty-seven `issueme_*` tools for repository overview, issue, label, milestone, assignee, issue-type, issue-template, Projects v2 (discovery, items, maintenance, ordering), comment, sub-issue, dependency, related-issue, timeline, development-link, permanent-deletion, and bulk workflows.
 - **Local issue cache:** writes open issues to `.pi/issues/<number>-<title-slug>.json` (git-invisible via a directory-local `.gitignore`) so agents can inspect full bodies/comments without oversized tool results or a dirtied `git status`.
-- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels/reopen/confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
+- **Safety-aware:** honors pi project trust, keeps tokens out of config/cache/tool output, limits closed-issue changes to labels, project-only board metadata, reopen, and confirmed deletion, bounds results, and requires explicit confirmation for destructive taxonomy and permanent issue-deletion operations.
 - **Workflow friendly:** `/issueme` opens a non-secret configuration UI and `/issueme start [skill-path]` kicks off your project issue-management skill.
 
 > **Status:** `0.1.0` is unreleased. Source, tests, this README, [`SECURITY.md`](SECURITY.md), and the files under [`docs/`](docs/) describe current implemented behavior.
@@ -43,6 +43,7 @@ IssueMe is a pi extension that gives LLM agents a repository-scoped GitHub Issue
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Visual Workflow Guide](#visual-workflow-guide)
 - [Installation](#installation)
 - [Daily Usage](#daily-usage)
 - [Commands](#commands)
@@ -99,6 +100,16 @@ Recommended workflow kickoff:
 ```
 
 If the npm package is unavailable before a public release, use the source checkout workflow below. See [`docs/configuration.md`](docs/configuration.md) for token/config details and [`docs/usage.md`](docs/usage.md) for workflow examples.
+
+---
+
+## Visual Workflow Guide
+
+See [how IssueMe works and which workflows it supports](docs/workflows.md): seven diagrams covering architecture, the full 47-tool workflow map, daily issue management, native relationships, Projects v2, explicit bulk changes, and safe recovery.
+
+[![IssueMe's nine supported workflow families](docs/diagrams/02-supported-workflows.svg)](docs/workflows.md)
+
+Editable draw.io sources and zoomable SVGs are in [`docs/diagrams/`](docs/diagrams/README.md).
 
 ---
 
@@ -176,8 +187,8 @@ IssueMe provides tools; your project `SKILL.md` should describe your team's issu
 IssueMe registers forty-seven `issueme_*` tools. The most common flow is:
 
 1. Orient: `issueme_get_overview` returns bounded summaries in one call, with no cache writes and at most five GitHub requests. Inspect section status; returned rows are not repository totals.
-2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_get_project_fields`, `issueme_list_project_items`, `issueme_list_issue_comments`, `issueme_list_sub_issues`, `issueme_list_issue_dependencies`, `issueme_list_issue_timeline`, and `issueme_list_issue_development_links`. When a result is truncated, pass `details.continuation.nextToken` as `after` with the same filters to read the next page. Sync only when local cache files are needed.
-3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update/clear/archive/remove Projects v2 items, manage native sub-issues and blocked-by dependencies, or bulk-update a confirmed list of issue numbers.
+2. Drill down: `issueme_list_issues`, `issueme_get_issue`, taxonomy/people discovery, `issueme_list_issue_types`, `issueme_list_issue_templates`, `issueme_get_project_fields`, `issueme_list_project_items`, `issueme_list_issue_comments`, `issueme_list_sub_issues`, `issueme_list_issue_dependencies`, `issueme_list_related_issues`, `issueme_list_issue_timeline`, and `issueme_list_issue_development_links`. When a result is truncated, pass `details.continuation.nextToken` as `after` with the same filters to read the next page. Sync only when local cache files are needed.
+3. Mutate explicitly: create/update/comment/assign/label/reopen/close issues, permanently delete one confirmed mistaken issue, manage label/milestone taxonomy, add/update/clear/archive/move/remove Projects v2 items, manage native sub-issues, blocked-by dependencies, and related issues, or bulk-update a confirmed list of issue numbers.
 
 Use the detailed references when building agent workflows:
 
@@ -318,6 +329,7 @@ The publish script validates, versions, tags, publishes with `npm publish --acce
 
 ## More Documentation
 
+- [`docs/workflows.md`](docs/workflows.md) - visual guide to architecture, supported workflows, and safe recovery; editable diagram sources included.
 - [`docs/usage.md`](docs/usage.md) - daily workflows, starter `SKILL.md`, and prompt examples.
 - [`docs/configuration.md`](docs/configuration.md) - config schema, auth, trust policy, local cache files, and GitHub request policy.
 - [`docs/tool-reference.md`](docs/tool-reference.md) - complete tool catalog, result semantics, examples, and limitations.

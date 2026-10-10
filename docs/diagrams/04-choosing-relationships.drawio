@@ -1,0 +1,91 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="31.7.0">
+  <diagram id="04-choosing-relationships" name="Choose the right relationship">
+    <mxGraphModel dx="1500" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1250" pageHeight="1710" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Choose the right relationship" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=30;fontColor=#0F172A;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1170" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Decomposition, prerequisites, and related context are different. Examples use fictional issue numbers." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1170" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="decomposition" value="&lt;b&gt;SUB-ISSUES&lt;/b&gt;&lt;br&gt;“Parts of this work”" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="210" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent" value="&lt;b&gt;#42 • Ship sign-in&lt;/b&gt;&lt;br&gt;Parent / larger task" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="190" width="300" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="child1" value="&lt;b&gt;#43 • Build form&lt;/b&gt;&lt;br&gt;Native child of #42" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="830" y="190" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="child2" value="&lt;b&gt;#44 • Add tests&lt;/b&gt;&lt;br&gt;Native child of #42" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="830" y="370" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="contains" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="parent" target="child1">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="250"/>
+            </Array>
+            <mxPoint x="0" y="-20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="parent" target="child2">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="470" y="430"/>
+              <mxPoint x="725" y="430"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sub-tools" value="&lt;b&gt;Inspect → create/attach → prioritize or detach&lt;/b&gt;&lt;br&gt;list_sub_issues · create_sub_issue · add_sub_issue · reorder_sub_issues · remove_sub_issue&lt;br&gt;Reorder needs every current child exactly once. Cache refresh is supported; detaching never deletes an issue." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="530" width="890" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="dependency" value="&lt;b&gt;DEPENDENCIES&lt;/b&gt;&lt;br&gt;“Must finish first”" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="210" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="blocker" value="&lt;b&gt;#17 • Add auth API&lt;/b&gt;&lt;br&gt;Prerequisite / blocker" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="740" width="300" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="dependent" value="&lt;b&gt;#42 • Ship sign-in&lt;/b&gt;&lt;br&gt;Dependent / blocked issue" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="830" y="740" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="blocks" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="blocker" target="dependent">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="800"/>
+            </Array>
+            <mxPoint x="0" y="-20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="dep-tools" value="&lt;b&gt;Record #42 as blocked by #17&lt;/b&gt;&lt;br&gt;add_issue_dependency { issueNumber: 42, blockingIssueNumber: 17 }&lt;br&gt;list_issue_dependencies reads blocked_by / blocking; remove_issue_dependency detaches the edge.&lt;br&gt;Native REST links; not cached; no automatic scheduling or automatic closure." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="910" width="890" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="related" value="&lt;b&gt;RELATED ISSUES&lt;/b&gt;&lt;br&gt;“Useful context”" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1140" width="210" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="related-a" value="&lt;b&gt;#42 • Ship sign-in&lt;/b&gt;&lt;br&gt;Requested issue" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1140" width="300" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="related-b" value="&lt;b&gt;#88 • Session UX&lt;/b&gt;&lt;br&gt;Related topic, not a blocker" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="830" y="1140" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="relates_to" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="related-a" target="related-b">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="1200"/>
+            </Array>
+            <mxPoint x="0" y="-20" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="related-tools" value="&lt;b&gt;Link context without implying order or parenthood&lt;/b&gt;&lt;br&gt;list_related_issues · add_related_issue · remove_related_issue&lt;br&gt;Reports the collection GitHub returns for the requested issue; does not assume a reverse link.&lt;br&gt;Native REST links; not cached. Relationship mutations need open, in-scope targets." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1310" width="890" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="note" value="&lt;b&gt;Unavailable native feature? Report the refusal.&lt;/b&gt;&lt;br&gt;IssueMe never replaces native relationships with “blocked by”, “depends on”, or parent links in issue body text.&lt;br&gt;If child creation succeeds but attachment fails, inspect the created child and attach it—do not create another child." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1540" width="1170" height="130" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

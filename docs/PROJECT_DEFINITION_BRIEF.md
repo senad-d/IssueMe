@@ -33,6 +33,12 @@
   - Apply guarded bulk updates to explicit issue-number lists.
   - Inspect, create, attach, remove, and reorder native GitHub sub-issue relationships.
   - Inspect, add, and remove native blocked-by dependencies without body-only fallbacks.
+  - Inspect, add, and remove native related-issue links; read bounded issue history from the timeline.
+  - Read issue comments beyond the cache cap and single comments by ID without cache writes.
+  - Discover organization issue types and set, change, or clear an issue's type with persisted-type verification.
+  - Read repository issue templates and forms (bounded, as repository data) before creating issues.
+  - List and read Projects v2 items with typed field values; clear fields, archive/unarchive, remove, and reorder items (metadata changes accept closed backing issues under the approved exception; adding and reordering require open issues).
+  - Resume truncated discovery results with bound continuation tokens; retain GitHub close reasons in records and summaries.
   - Start issue workflows with `/issueme start [skill-path]` using an explicit or configured project-local skill file.
 - Non-goals:
   - No GitHub CLI.
@@ -78,6 +84,14 @@
 | Tool | `issueme_delete_issue` | Permanently delete one mistaken GitHub issue | Implemented with REST identity/creator preflight plus GraphQL `deleteIssue`; requires explicit irreversible intent, `confirmDelete: true`, non-PR target, and repository administrator permission. |
 | Tool | `issueme_bulk_update_issues` | Apply guarded bulk actions to explicit issue-number lists | Implemented sequentially with bounded per-issue results and no query-derived mutation targets. |
 | Tool | `issueme_list_issue_dependencies`, `issueme_add_issue_dependency`, `issueme_remove_issue_dependency` | Inspect and manage native blocked-by/blocking links | Implemented over GitHub's REST dependency endpoints with open-issue, creator-scope, pull-request, and self-dependency guards; no body-only fallback. |
+| Tool | `issueme_list_related_issues`, `issueme_add_related_issue`, `issueme_remove_related_issue` | Inspect and manage native related-issue links | Implemented over GitHub's REST `relates_to` endpoints with the dependency guards; GitHub mirrors each link on both issues (live-verified). |
+| Tool | `issueme_list_issue_timeline` | Read bounded issue history | Implemented read-only over the REST timeline with typed known events, flagged unfamiliar events, `eventTypes` filtering, and continuation. |
+| Tool | `issueme_list_issue_comments`, `issueme_get_comment` | Read comments beyond the cache cap | Implemented read-only with stable IDs, bounded body windows, `since`, ownership verification, and continuation; no cache writes. |
+| Tool | `issueme_list_issue_types` | Discover organization issue types | Implemented read-only through the single allowed `/orgs/{owner}/issue-types` request; user-owned repositories report `issue_types_unavailable`. `type`/`clearType` on create/update verify the persisted type. |
+| Tool | `issueme_list_issue_templates` | Read repository issue templates and forms | Implemented read-only over the repository contents endpoint with bounded previews, windowed full text, parsed front matter and form headers (never validated), and unresolved organization defaults. |
+| Tool | `issueme_list_project_items`, `issueme_get_project_item` | Read Projects v2 items and typed values | Implemented read-only through GraphQL; only current-repository issue items in creator scope expose content, others are counted and omitted. |
+| Tool | `issueme_remove_issue_from_project`, `issueme_clear_project_item_field`, `issueme_archive_project_item` | Maintain Projects v2 items without touching the issue | Implemented with identity validation, verified absence/read-back/state, and the approved closed-issue exception for board metadata. |
+| Tool | `issueme_move_project_item` | Reorder one Projects v2 item | Implemented with `updateProjectV2ItemPosition`, same-board anchor validation, open-issue requirement, and verification against the returned order. |
 | Event | Lifecycle only if needed | Status/cleanup | No background listeners, timers, sockets, or webhooks. |
 | UI | Config TUI | Configure non-secret settings | Implemented for TUI mode with safe non-TUI fallback. |
 | Resource | Project-local skill path | User-supplied workflow guide | No bundled skill; validated path must remain inside the trusted project; prompts use relative `@path` references rather than absolute local paths. |

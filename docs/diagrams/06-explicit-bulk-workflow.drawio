@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="31.7.0">
+  <diagram id="06-explicit-bulk-workflow" name="Batch changes without a blind mass update">
+    <mxGraphModel dx="1500" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1340" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Batch changes without a blind mass update" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=30;fontColor=#0F172A;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1220" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="bulk_update_issues applies one action sequentially. It is not a transaction and does not roll back earlier successes." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1220" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="discover" value="&lt;b&gt;1. Discover candidates&lt;/b&gt;&lt;br&gt;list_issues + relevant metadata&lt;br&gt;Search results are read-only&lt;br&gt;They are not mutation targets yet" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="340" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="confirm" value="&lt;b&gt;2. Confirm exact issue numbers&lt;/b&gt;&lt;br&gt;Explicit list of 1–50 numbers&lt;br&gt;Confirm the intended action&lt;br&gt;No search/query batch targets" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="190" width="340" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="call" value="&lt;b&gt;3. Call bulk_update_issues&lt;/b&gt;&lt;br&gt;issueNumbers + one action&lt;br&gt;Provide action-specific values&lt;br&gt;continueOnError defaults to false" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="920" y="190" width="340" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="execute" value="&lt;b&gt;4. Process one issue at a time&lt;/b&gt;&lt;br&gt;Revalidate target and permissions&lt;br&gt;Apply matching single-issue rules&lt;br&gt;Refresh/remove cache if applicable&lt;br&gt;Collect per-issue outcomes" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="920" y="490" width="340" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="inspect" value="&lt;b&gt;5. Review details.bulkResults&lt;/b&gt;&lt;br&gt;success / partial_success&lt;br&gt;failed / skipped&lt;br&gt;Inspect each # before retrying&lt;br&gt;Do not infer success from no throw" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="490" width="340" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="done" value="&lt;b&gt;Successful run&lt;/b&gt;&lt;br&gt;Report verified changes&lt;br&gt;Preserve explicit scope&lt;br&gt;Idempotent no-ops are successes" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="490" width="340" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="stop" value="&lt;b&gt;Failure / partial success&lt;/b&gt;&lt;br&gt;Stop by default; later issues skipped&lt;br&gt;Earlier changes remain on GitHub&lt;br&gt;No automatic rollback&lt;br&gt;API failure / cancellation stays fail-fast" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="860" width="340" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="recover" value="&lt;b&gt;Reconcile, then retry a subset&lt;/b&gt;&lt;br&gt;Inspect remote state per issue&lt;br&gt;Repair issue cache when needed&lt;br&gt;Retry only confirmed missing work&lt;br&gt;Leave confirmed successes alone" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="860" width="340" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="continue" value="&lt;b&gt;Opt-in continuation&lt;/b&gt;&lt;br&gt;continueOnError: true only when&lt;br&gt;the user accepts partial failures&lt;br&gt;Does not bypass fatal API/cancel stops&lt;br&gt;Still inspect every per-item result" style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="920" y="860" width="340" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="actions" value="&lt;b&gt;Supported actions&lt;/b&gt;&lt;br&gt;add_labels · remove_labels · assign · unassign · set_milestone · clear_milestone · add_to_project · close · reopen&lt;br&gt;Label actions accept open/closed issues; reopen is explicit; other active mutations require open issues.&lt;br&gt;Close on an already-closed issue is a no-op. Discover taxonomy/people/boards before applying unknown values." style="rounded=1;arcSize=12;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=18;fontColor=#0F172A;fillColor=#F8FAFC;strokeColor=#64748B;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1140" width="1220" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="discover" target="confirm">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="265"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="confirm" target="call">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="265"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="call" target="execute">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1090" y="415"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="execute" target="inspect">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="580"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="inspect" target="done">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="580"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="inspect" target="stop">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="765"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=#334155;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="stop" target="recover">
+          <mxGeometry x="0" y="0" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="955"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

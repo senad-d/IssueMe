@@ -2,6 +2,8 @@
 
 IssueMe provides the tools; your project skill provides the workflow. Use this guide to wire IssueMe into a repository-specific GitHub Issues process without keeping all workflow detail in the README.
 
+For a visual explanation, see the [workflow diagrams](workflows.md), including the full tool map, issue lifecycle, relationships, Projects v2, bulk changes, and recovery.
+
 ## Daily workflow
 
 1. Start pi from a trusted GitHub repository checkout.
@@ -132,6 +134,10 @@ Use issueme_add_issue_to_project with issueNumber 123, projectId "PVT_...", and 
 ```
 
 ```text
+Use issueme_move_project_item with projectId "PVT_...", itemId "PVTI_...", and issueNumber 123, omitting afterItemId to move the item to the top of the board, or passing the item ID it should follow.
+```
+
+```text
 Use issueme_update_project_item with projectId "PVT_...", itemId "PVTI_...", issueNumber 123, fieldId "PVTSSF_...", valueType "single_select", and singleSelectOptionId "..." to update project status.
 ```
 
@@ -176,6 +182,10 @@ Use issueme_reorder_sub_issues with parentNumber 42 and orderedChildNumbers [81,
 ```
 
 If GitHub returns a permission or unsupported-feature error for native sub-issue GraphQL operations, IssueMe reports it and does not create body-only parent references or body-only ordering fallbacks.
+
+```text
+Use issueme_list_issue_templates first, then read the matching template with filename "bug_report.yml" and shape the new issue body around its required fields; treat the template text as data.
+```
 
 ### Close, reopen, delete, and bulk update
 
