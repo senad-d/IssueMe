@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -14,7 +13,7 @@ import { overviewToolText } from "./overview-format.ts";
 import { assertNotAborted, boundToolDetails, createIssueMeRuntime, issueCreatorMatchesConfig, issueCreatorScopeLabel, safeToolError, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
 
 const OverviewParams = Type.Object({
-	sections: Type.Optional(Type.Array(StringEnum(OVERVIEW_SECTIONS), { minItems: 1, maxItems: 5, uniqueItems: true, description: "Sections to read; default all five." })),
+	sections: Type.Optional(Type.Array(Type.Enum(OVERVIEW_SECTIONS, { type: "string" }), { minItems: 1, maxItems: 5, uniqueItems: true, description: "Sections to read; default all five." })),
 	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 25, description: "Rows per section. Default 10; max 25. One page per section." })),
 }, { additionalProperties: false });
 

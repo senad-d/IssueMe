@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -11,7 +10,7 @@ import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorSc
 
 const PROJECT_ONLY_POLICY_NOTE = "Project-only operations accept open or closed backing issues in the current repository and creator scope; the issue, its comments, and other boards are never changed.";
 
-const ArchiveAction = StringEnum(["archive", "unarchive"] as const, { description: "Archive or restore the item." });
+const ArchiveAction = Type.Enum(["archive", "unarchive"] as const, { type: "string", description: "Archive or restore the item." });
 
 const RemoveIssueFromProjectParams = Type.Object(
 	{

@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -28,11 +27,13 @@ import {
 
 const BULK_ISSUE_ACTIONS = ["add_labels", "remove_labels", "assign", "unassign", "set_milestone", "clear_milestone", "add_to_project", "close", "reopen"] as const;
 
-const BulkIssueAction = StringEnum(BULK_ISSUE_ACTIONS, {
+const BulkIssueAction = Type.Enum(BULK_ISSUE_ACTIONS, {
+	type: "string",
 	description: "Bulk action.",
 });
 
-const BulkCloseReason = StringEnum(["completed", "not_planned"] as const, {
+const BulkCloseReason = Type.Enum(["completed", "not_planned"] as const, {
+	type: "string",
 	description: "Close reason for close; omit for default.",
 });
 

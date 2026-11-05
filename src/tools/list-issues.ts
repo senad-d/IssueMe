@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -16,7 +15,7 @@ const DEFAULT_ISSUE_LIST_LIMIT = 25;
 
 const ListIssuesParams = Type.Object(
 	{
-		state: Type.Optional(StringEnum(["open", "closed", "all"] as const, { description: "Issue state. Default open." })),
+		state: Type.Optional(Type.Enum(["open", "closed", "all"] as const, { type: "string", description: "Issue state. Default open." })),
 		labels: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_TOOL_LABELS, description: `Required label names. Max ${MAX_TOOL_LABELS}.` })),
 		assignee: Type.Optional(Type.String({ description: "Assigned login, none, or *." })),
 		creator: Type.Optional(Type.String({ description: "Creator login; alias of author." })),
@@ -25,8 +24,8 @@ const ListIssuesParams = Type.Object(
 		milestone: Type.Optional(Type.String({ description: "Milestone number/title, none, or *." })),
 		type: Type.Optional(Type.String({ description: "Issue type name; * or none without query." })),
 		since: Type.Optional(Type.String({ description: "Updated at/after ISO date (YYYY-MM-DD) or timestamp with timezone." })),
-		sort: Type.Optional(StringEnum(["created", "updated", "comments"] as const, { description: "Sort field." })),
-		direction: Type.Optional(StringEnum(["asc", "desc"] as const, { description: "Sort direction." })),
+		sort: Type.Optional(Type.Enum(["created", "updated", "comments"] as const, { type: "string", description: "Sort field." })),
+		direction: Type.Optional(Type.Enum(["asc", "desc"] as const, { type: "string", description: "Sort direction." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_ISSUES, description: `Max results. Default ${DEFAULT_ISSUE_LIST_LIMIT}; max ${MAX_TOOL_ISSUES}.` })),
 		query: Type.Optional(Type.String({ description: "Text search; repo/is:issue are added." })),
 		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),

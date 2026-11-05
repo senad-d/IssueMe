@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -15,7 +14,7 @@ const ISO_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d
 
 const ManageMilestoneParams = Type.Object(
 	{
-		action: StringEnum(["create", "update", "close", "reopen", "delete"] as const, { description: "Milestone action." }),
+		action: Type.Enum(["create", "update", "close", "reopen", "delete"] as const, { type: "string", description: "Milestone action." }),
 		number: Type.Optional(Type.Integer({ minimum: 1, description: "Milestone number." })),
 		title: Type.Optional(Type.String({ description: "Milestone title; required for create." })),
 		description: Type.Optional(Type.String({ description: "Milestone description; '' clears on update." })),

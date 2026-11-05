@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -15,11 +14,13 @@ const DEFAULT_PROJECT_FIELD_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELDS);
 const DEFAULT_PROJECT_FIELD_OPTION_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELD_OPTIONS);
 const DEFAULT_PROJECT_ITERATION_LIMIT = Math.min(25, MAX_TOOL_PROJECT_ITERATIONS);
 
-const ProjectScope = StringEnum(["repository", "organization", "user"] as const, {
+const ProjectScope = Type.Enum(["repository", "organization", "user"] as const, {
+	type: "string",
 	description: "Owner scope. Default repository.",
 });
 
-const ProjectFieldValueType = StringEnum(["single_select", "iteration", "date", "text", "number"] as const, {
+const ProjectFieldValueType = Type.Enum(["single_select", "iteration", "date", "text", "number"] as const, {
+	type: "string",
 	description: "Field value type; IDs required for select/iteration.",
 });
 

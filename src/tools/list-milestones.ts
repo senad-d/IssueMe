@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -15,9 +14,9 @@ const DEFAULT_MILESTONE_LIST_LIMIT = Math.min(25, MAX_TOOL_MILESTONES);
 
 const ListMilestonesParams = Type.Object(
 	{
-		state: Type.Optional(StringEnum(["open", "closed", "all"] as const, { description: "Milestone state. Default open." })),
-		sort: Type.Optional(StringEnum(["due_on", "completeness"] as const, { description: "Sort field." })),
-		direction: Type.Optional(StringEnum(["asc", "desc"] as const, { description: "Sort direction." })),
+		state: Type.Optional(Type.Enum(["open", "closed", "all"] as const, { type: "string", description: "Milestone state. Default open." })),
+		sort: Type.Optional(Type.Enum(["due_on", "completeness"] as const, { type: "string", description: "Sort field." })),
+		direction: Type.Optional(Type.Enum(["asc", "desc"] as const, { type: "string", description: "Sort direction." })),
 		limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_TOOL_MILESTONES, description: `Max results. Default ${DEFAULT_MILESTONE_LIST_LIMIT}; max ${MAX_TOOL_MILESTONES}.` })),
 		after: Type.Optional(Type.String({ description: "Continuation token; same filters." })),
 	},

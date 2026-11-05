@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -14,7 +13,7 @@ const DEFAULT_PROJECT_ITEM_LIMIT = Math.min(25, MAX_TOOL_PROJECT_ITEMS);
 const DEFAULT_PROJECT_ITEM_VALUE_LIMIT = Math.min(25, MAX_TOOL_PROJECT_ITEM_VALUES);
 const READ_ONLY_NOTE = "This tool is read-only; it does not change items, fields, issues, or local cache files. Absent fields have no current value.";
 
-const ProjectScope = StringEnum(["repository", "organization", "user"] as const, { description: "Owner scope. Default repository." });
+const ProjectScope = Type.Enum(["repository", "organization", "user"] as const, { type: "string", description: "Owner scope. Default repository." });
 
 const ListProjectItemsParams = Type.Object(
 	{

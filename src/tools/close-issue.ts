@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -12,7 +11,7 @@ import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel
 const CloseIssueParams = Type.Object(
 	{
 		number: Type.Integer({ minimum: 1, description: "Issue number; already closed is no-op." }),
-		reason: Type.Optional(StringEnum(["completed", "not_planned"] as const, { description: "Close reason; omit for GitHub default." })),
+		reason: Type.Optional(Type.Enum(["completed", "not_planned"] as const, { type: "string", description: "Close reason; omit for GitHub default." })),
 	},
 	{ additionalProperties: false },
 );

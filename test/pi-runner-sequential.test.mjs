@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -262,11 +262,67 @@ function makeIssueFetch(sessionRef) {
 	return { calls, fetchFn, issues };
 }
 
+async function enumDiscoveryFetch(calls, input, init = {}) {
+	const url = new URL(input.toString());
+	assert.equal(init.method ?? "GET", "GET");
+	assert.ok(["/repos/owner/repo/labels", "/repos/owner/repo/milestones"].includes(url.pathname), `Unexpected request: ${url}`);
+	calls.push(url);
+	return jsonResponse([]);
+}
+
 function executionOrder(events) {
 	return events
 		.filter((event) => event.type === "tool_execution_start" || event.type === "tool_execution_end")
 		.map((event) => `${event.type}:${event.toolName}`);
 }
+
+test("Pi session accepts enum arrays and preserves explicit and omitted discovery filters", async (t) => {
+	const projectRoot = await tempProject();
+	t.after(() => rm(projectRoot, { recursive: true, force: true }));
+	const calls = [];
+	const { toolResults } = await runIssueMeToolBatchThroughPiSession(projectRoot, enumDiscoveryFetch.bind(null, calls), [
+		{ name: "issueme_get_overview", params: { sections: ["labels"] } },
+		{ name: "issueme_list_milestones", params: { state: "closed", sort: "completeness", direction: "desc" } },
+		{ name: "issueme_list_milestones", params: {} },
+	]);
+
+	assert.equal(toolResults.length, 3);
+	assert.ok(toolResults.every((result) => !result.isError && result.details.result === "success"));
+	const overview = toolResults.find((result) => result.toolCallId === "issueme-call-1").details;
+	assert.equal(overview.overview.maxRequests, 1);
+	assert.equal(overview.overview.sections.labels.status, "complete");
+	assert.equal(overview.overview.sections.issues.status, "omitted");
+	assert.deepEqual(overview.labels, []);
+	assert.equal(calls.filter((url) => url.pathname.endsWith("/labels")).length, 1);
+	assert.deepEqual(calls.filter((url) => url.pathname.endsWith("/milestones"))
+		.map((url) => [url.searchParams.get("state"), url.searchParams.get("sort"), url.searchParams.get("direction")])
+		.sort(), [["closed", "completeness", "desc"], ["open", null, null]]);
+	assert.equal(calls.length, 3, "only the selected section and two milestone reads should reach GitHub");
+});
+
+test("Pi session rejects invalid enum values, missing actions, and invalid enum arrays before GitHub", async (t) => {
+	const projectRoot = await tempProject();
+	t.after(() => rm(projectRoot, { recursive: true, force: true }));
+	const mock = makeIssueFetch();
+	const invalidCalls = [
+		{ name: "issueme_assign_issue", params: { number: 10, action: "invalid", assignees: [] } },
+		{ name: "issueme_label_issue", params: { number: 10, labels: [] } },
+		{ name: "issueme_close_issue", params: { number: 10, reason: "invalid" } },
+		{ name: "issueme_list_milestones", params: { state: "invalid" } },
+		{ name: "issueme_get_overview", params: { sections: ["invalid"] } },
+		{ name: "issueme_get_overview", params: { sections: [] } },
+		{ name: "issueme_get_overview", params: { sections: ["labels", "labels"] } },
+	];
+	const { toolResults } = await runIssueMeToolBatchThroughPiSession(projectRoot, mock.fetchFn, invalidCalls);
+
+	assert.equal(toolResults.length, invalidCalls.length);
+	for (const [index, call] of invalidCalls.entries()) {
+		const result = toolResults.find((entry) => entry.toolCallId === `issueme-call-${index + 1}`);
+		assert.equal(result.isError, true, call.name);
+		assert.match(result.content.map((block) => block.text ?? "").join("\n"), new RegExp(`Validation failed for tool "${call.name}"`));
+	}
+	assert.deepEqual(mock.calls, [], "schema-invalid calls must never execute a GitHub request");
+});
 
 test("Pi session serializes same-turn IssueMe write/write cache refreshes for one issue", async () => {
 	const projectRoot = await tempProject();

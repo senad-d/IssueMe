@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -27,7 +26,7 @@ import {
 const DEFAULT_DEPENDENCY_LIMIT = 25;
 const DEPENDENCY_SEMANTICS_NOTE = "Native dependencies are prerequisites (blocked by / blocking), distinct from sub-issue decomposition and related issues; IssueMe never parses or writes body-text blockers.";
 
-const DependencyDirection = StringEnum(["blocked_by", "blocking", "both"] as const, { description: "Edge direction. Default both." });
+const DependencyDirection = Type.Enum(["blocked_by", "blocking", "both"] as const, { type: "string", description: "Edge direction. Default both." });
 
 const ListIssueDependenciesParams = Type.Object(
 	{

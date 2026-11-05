@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -14,7 +13,7 @@ const LABEL_COLOR_PATTERN = /^[0-9a-f]{6}$/i;
 
 const ManageLabelParams = Type.Object(
 	{
-		action: StringEnum(["create", "update", "delete"] as const, { description: "Label action." }),
+		action: Type.Enum(["create", "update", "delete"] as const, { type: "string", description: "Label action." }),
 		name: Type.String({ description: "Label name; existing name for update/delete." }),
 		newName: Type.Optional(Type.String({ description: "New name for update." })),
 		color: Type.Optional(Type.String({ description: "Hex color; # accepted." })),
