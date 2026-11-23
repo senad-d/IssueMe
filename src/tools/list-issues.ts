@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -11,6 +10,7 @@ import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.
 import type { GitHubIssueResponse, IssueMeConfig, IssueMeToolDetails, ToolIssueSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalIsoDateOrTimestamp, normalizeOptionalTextFilter } from "../utils/validation.ts";
 import { appendContinuationLine, createIssueMeRuntime, issueCreatorMatchesConfig, issueCreatorScopeLabel, sanitizeStringList, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const DEFAULT_ISSUE_LIST_LIMIT = 25;
 

@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -10,6 +9,7 @@ import { assertGitHubMilestoneDiscoveryResponse } from "../github/issues-client.
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { normalizeBoundedToolLimit } from "../utils/validation.ts";
 import { appendContinuationLine, createIssueMeRuntime, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const DEFAULT_MILESTONE_LIST_LIMIT = Math.min(25, MAX_TOOL_MILESTONES);
 

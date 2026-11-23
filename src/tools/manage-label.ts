@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -7,6 +6,7 @@ import type { GitHubRepositoryLabelCreateInput, GitHubRepositoryLabelUpdateInput
 import type { GitHubLabelResponse, IssueMeToolDetails, ToolLabelSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, assertOneLine, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, remoteMutationPartialSuccessToolText, safeToolError, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const MAX_LABEL_NAME_CHARS = 50;
 const MAX_LABEL_DESCRIPTION_CHARS = 100;

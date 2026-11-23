@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -9,6 +8,7 @@ import { normalizeContinuationTokenInput } from "../github/continuation.ts";
 import type { IssueMeToolDetails, ToolProjectFieldSummary, ToolProjectItemSummary, ToolProjectSummary } from "../types.ts";
 import { assertNoNullBytes, normalizeBoundedToolLimit, normalizeOptionalGitHubOpaqueId, normalizeOptionalTextFilter, normalizePositiveSafeInteger, normalizeRequiredGitHubOpaqueId, normalizeRequiredIsoDateOnly } from "../utils/validation.ts";
 import { appendContinuationLine, assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, remoteMutationPartialSuccessToolText, toolText, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const DEFAULT_PROJECT_LIST_LIMIT = Math.min(10, MAX_TOOL_PROJECTS);
 const DEFAULT_PROJECT_FIELD_LIMIT = Math.min(25, MAX_TOOL_PROJECT_FIELDS);

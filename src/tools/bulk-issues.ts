@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -25,6 +24,7 @@ import {
 	type IssueMeRuntime,
 	type IssueMeToolRegistrationOptions,
 } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const BULK_ISSUE_ACTIONS = ["add_labels", "remove_labels", "assign", "unassign", "set_milestone", "clear_milestone", "add_to_project", "close", "reopen"] as const;
 

@@ -1,10 +1,10 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 import { MAX_TOOL_LABELS } from "../constants.ts";
 import { mapSequentially } from "../utils/sequential.ts";
 import { assertExistingIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolError, partialSuccessToolText, refreshAndCacheIssue, requireNonEmptyStrings, sanitizeStringList, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const LabelIssueParams = Type.Object(
 	{

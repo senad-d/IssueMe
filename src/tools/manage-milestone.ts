@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -7,6 +6,7 @@ import type { GitHubRepositoryMilestoneCreateInput, GitHubRepositoryMilestoneUpd
 import type { GitHubMilestoneResponse, IssueMeToolDetails, ToolMilestoneSummary } from "../types.ts";
 import { assertMaxLength, assertNoNullBytes, normalizePositiveSafeInteger, normalizeRequiredTrimmedText } from "../utils/validation.ts";
 import { createIssueMeRuntime, remoteMutationPartialSuccessToolText, safeToolError, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const MAX_MILESTONE_TITLE_CHARS = 256;
 const MAX_MILESTONE_DESCRIPTION_CHARS = 1000;
