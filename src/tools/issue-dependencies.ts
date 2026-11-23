@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -23,6 +22,7 @@ import {
 	type IssueMeRuntime,
 	type IssueMeToolRegistrationOptions,
 } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const DEFAULT_DEPENDENCY_LIMIT = 25;
 const DEPENDENCY_SEMANTICS_NOTE = "Native dependencies are prerequisites (blocked by / blocking), distinct from sub-issue decomposition and related issues; IssueMe never parses or writes body-text blockers.";

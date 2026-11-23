@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -8,6 +7,7 @@ import { githubIssueToRecord, issueRecordToToolSummary } from "../issues/format.
 import { removeIssueByNumber, relativeIssuePath } from "../issues/store.ts";
 import type { GitHubIssueResponse, ToolIssueSummary } from "../types.ts";
 import { assertIssueCreatorAllowed, createIssueMeRuntime, issueCreatorScopeLabel, partialSuccessToolText, remoteMutationPartialSuccessToolText, toolText, type IssueMeRuntime, type IssueMeToolRegistrationOptions } from "./runtime.ts";
+import { StringEnum } from "./string-enum.ts";
 
 const CloseIssueParams = Type.Object(
 	{
